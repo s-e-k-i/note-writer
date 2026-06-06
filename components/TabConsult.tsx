@@ -8,6 +8,12 @@ interface Props {
   onSelectTheme: (theme: string) => void;
 }
 
+const CHAT_OPENER: ConsultMessage = {
+  role: "assistant",
+  content:
+    "今、どんな記事を書きたいと思っていますか？\nテーマがなくても、最近気になっていることや読者に伝えたいことがあれば教えてください。",
+};
+
 export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [mode, setMode] = useState<ConsultMode | null>(null);
   const [messages, setMessages] = useState<ConsultMessage[]>([]);
@@ -15,7 +21,8 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [purposeForm, setPurposeForm] = useState<PurposeForm>({ goal: "", target: "", notes: "" });
-  const [selectedTheme, setSelectedTheme] = useState("");
+  const [themeInput, setThemeInput] = useState("");
+  const [cachedMessages, setCachedMessages] = useState<Partial<Record<ConsultMode, ConsultMessage[]>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -52,12 +59,16 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         setStreamText(full);
       }
 
-      setMessages((prev) => [
+      const finalMessages: ConsultMessage[] = [
         ...currentMessages,
         { role: "assistant", content: full },
-      ]);
+      ];
+      setMessages(finalMessages);
+      if (currentMode) {
+        setCachedMessages((prev) => ({ ...prev, [currentMode]: finalMessages }));
+      }
       setStreamText("");
-    } catch (err) {
+    } catch {
       setStreamText("エラーが発生しました。");
     } finally {
       setLoading(false);
@@ -65,20 +76,45 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   };
 
   const handleModeSelect = async (m: ConsultMode) => {
+    const cached = cachedMessages[m];
+    if (cached && cached.length > 0) {
+      setMode(m);
+      setMessages(cached);
+      return;
+    }
     setMode(m);
     setMessages([]);
     if (m === "auto") {
       await callAPI("auto", []);
     } else if (m === "chat") {
-      await callAPI("chat", []);
+      // 初期メッセージはAPI不要で直接セット（修正2）
+      setMessages([CHAT_OPENER]);
+      setCachedMessages((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
+    }
+  };
+
+  const handlePurposeModeClick = () => {
+    const cached = cachedMessages["purpose"];
+    if (cached && cached.length > 0) {
+      setMode("purpose");
+      setMessages(cached);
+    } else {
+      setMode("purpose");
+      setMessages([]);
     }
   };
 
   const handlePurposeSubmit = async () => {
     if (!purposeForm.goal || !purposeForm.target) return;
-    setMode("purpose");
+    // 再提案時はキャッシュをクリアして新規取得
+    setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
     setMessages([]);
     await callAPI("purpose", []);
+  };
+
+  const handleBack = () => {
+    setMode(null);
+    setMessages([]);
   };
 
   const handleSend = async () => {
@@ -90,14 +126,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     await callAPI(mode ?? "chat", newMessages);
   };
 
-  const extractTheme = (text: string) => {
-    const lines = text.split("\n").filter((l) => l.trim());
-    const themeLines = lines.filter((l) =>
-      l.includes("テーマ") || l.includes("タイトル") || l.includes("###") || l.includes("**")
-    );
-    return themeLines[0]?.replace(/[#*]/g, "").trim() || lines[0]?.trim() || text.slice(0, 100);
-  };
-
+  // モード選択画面
   if (!mode) {
     return (
       <div className="space-y-4">
@@ -110,14 +139,20 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             <div className="text-2xl mb-2">✨</div>
             <div className="font-medium text-zinc-100 mb-1">おまかせで提案して</div>
             <div className="text-zinc-400 text-sm">AIが記事DBを分析し、今書くべきテーマを自動提案</div>
+            {cachedMessages.auto && (
+              <div className="text-xs text-amber-400 mt-2">提案あり（続きを表示）</div>
+            )}
           </button>
           <button
-            onClick={() => setMode("purpose")}
+            onClick={handlePurposeModeClick}
             className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
           >
             <div className="text-2xl mb-2">🎯</div>
             <div className="font-medium text-zinc-100 mb-1">目的から考える</div>
             <div className="text-zinc-400 text-sm">書く目的・ターゲットを入力して、戦略的な記事案を提案</div>
+            {cachedMessages.purpose && (
+              <div className="text-xs text-amber-400 mt-2">提案あり（続きを表示）</div>
+            )}
           </button>
           <button
             onClick={() => handleModeSelect("chat")}
@@ -126,16 +161,20 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             <div className="text-2xl mb-2">💬</div>
             <div className="font-medium text-zinc-100 mb-1">一緒に考える（壁打ち）</div>
             <div className="text-zinc-400 text-sm">チャット形式でAIと話しながらテーマを絞り込む</div>
+            {cachedMessages.chat && cachedMessages.chat.length > 1 && (
+              <div className="text-xs text-amber-400 mt-2">会話あり（続きから）</div>
+            )}
           </button>
         </div>
       </div>
     );
   }
 
+  // purpose フォーム画面（結果表示前）
   if (mode === "purpose" && messages.length === 0 && !loading) {
     return (
       <div className="space-y-4 max-w-lg">
-        <button onClick={() => setMode(null)} className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1">
+        <button onClick={handleBack} className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1">
           ← 戻る
         </button>
         <h3 className="font-medium text-zinc-200">目的から記事を考える</h3>
@@ -182,12 +221,24 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     );
   }
 
+  // チャット・結果表示画面
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <button onClick={() => { setMode(null); setMessages([]); }} className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1">
+      <div className="flex items-center gap-4 mb-4">
+        <button onClick={handleBack} className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1">
           ← モード選択に戻る
         </button>
+        {mode === "purpose" && (
+          <button
+            onClick={() => {
+              setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
+              setMessages([]);
+            }}
+            className="text-zinc-600 hover:text-zinc-400 text-xs"
+          >
+            条件を変えて再提案
+          </button>
+        )}
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto pb-4 min-h-0" style={{ maxHeight: "60vh" }}>
@@ -200,34 +251,39 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             ) : (
               <div className="bg-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
                 {m.content}
-                {i === messages.length - 1 && (
+                {i === messages.length - 1 && !loading && (
                   <div className="mt-4 pt-4 border-t border-zinc-700">
-                    <p className="text-xs text-zinc-500 mb-2">このテーマで記事を書きますか？</p>
-                    <div className="flex flex-wrap gap-2">
+                    {/* 修正1：問いかけではなく自然な誘導文 */}
+                    <p className="text-xs text-zinc-500 mb-3">
+                      気になったテーマがあれば、下のボタンから記事を書き始められます
+                    </p>
+                    {/* 修正3：入力必須のボタン */}
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <input
+                        type="text"
+                        placeholder="テーマを入力..."
+                        value={themeInput}
+                        onChange={(e) => setThemeInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && themeInput.trim()) {
+                            onSelectTheme(themeInput.trim());
+                            setThemeInput("");
+                          }
+                        }}
+                        className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 w-52"
+                      />
                       <button
                         onClick={() => {
-                          const theme = extractTheme(m.content);
-                          onSelectTheme(theme);
+                          if (themeInput.trim()) {
+                            onSelectTheme(themeInput.trim());
+                            setThemeInput("");
+                          }
                         }}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-medium rounded-lg transition-colors"
+                        disabled={!themeInput.trim()}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-500 text-black text-xs font-medium rounded-lg transition-colors"
                       >
                         このテーマで記事を書く →
                       </button>
-                      <input
-                        type="text"
-                        placeholder="テーマを手入力..."
-                        value={selectedTheme}
-                        onChange={(e) => setSelectedTheme(e.target.value)}
-                        className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 w-48"
-                      />
-                      {selectedTheme && (
-                        <button
-                          onClick={() => { onSelectTheme(selectedTheme); setSelectedTheme(""); }}
-                          className="px-3 py-1.5 bg-zinc-600 hover:bg-zinc-500 text-zinc-200 text-xs rounded-lg transition-colors"
-                        >
-                          入力テーマで書く →
-                        </button>
-                      )}
                     </div>
                   </div>
                 )}
