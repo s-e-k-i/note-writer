@@ -10,6 +10,27 @@ interface SavedResult {
   result: string;
 }
 
+interface RewriteCache {
+  mode: RewriteMode | null;
+  savedResults: Partial<Record<RewriteMode, SavedResult>>;
+}
+
+const CACHE_KEY = "note_writer_rewrite_cache";
+
+function loadCache(): RewriteCache {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return { mode: null, savedResults: {} };
+}
+
+function saveCache(cache: RewriteCache) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
+
 interface Props {
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
 }
@@ -24,9 +45,35 @@ export default function TabRewrite({ onSaveDraft }: Props) {
   const [savedResults, setSavedResults] = useState<Partial<Record<RewriteMode, SavedResult>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Restore from localStorage on mount
+  useEffect(() => {
+    const cache = loadCache();
+    setSavedResults(cache.savedResults);
+    if (cache.mode) {
+      const sr = cache.savedResults[cache.mode];
+      if (sr) {
+        setMode(cache.mode);
+        setArticleText(sr.articleText);
+        setResult(sr.result);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (result) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [result]);
+
+  // Update savedResults state and persist to localStorage together
+  const persistSavedResults = (
+    updater: (prev: Partial<Record<RewriteMode, SavedResult>>) => Partial<Record<RewriteMode, SavedResult>>,
+    persistedMode: RewriteMode | null
+  ) => {
+    setSavedResults((prev) => {
+      const next = updater(prev);
+      saveCache({ mode: persistedMode, savedResults: next });
+      return next;
+    });
+  };
 
   const handleSelectMode = (m: RewriteMode) => {
     const prev = savedResults[m];
@@ -40,11 +87,16 @@ export default function TabRewrite({ onSaveDraft }: Props) {
     setCopied(false);
     setSaved(false);
     setMode(m);
+    // Persist mode selection (savedResults unchanged)
+    saveCache({ mode: m, savedResults });
   };
 
   const handleBack = () => {
+    // Save current screen state before going back
     if (mode) {
-      setSavedResults((prev) => ({ ...prev, [mode]: { articleText, result } }));
+      persistSavedResults((prev) => ({ ...prev, [mode]: { articleText, result } }), null);
+    } else {
+      saveCache({ mode: null, savedResults });
     }
     setMode(null);
     setCopied(false);
@@ -53,7 +105,9 @@ export default function TabRewrite({ onSaveDraft }: Props) {
 
   const handleReset = () => {
     if (!mode) return;
-    setSavedResults((prev) => ({ ...prev, [mode]: undefined }));
+    // Delete this mode's saved result and return to mode selection
+    persistSavedResults((prev) => ({ ...prev, [mode]: undefined }), null);
+    setMode(null);
     setArticleText("");
     setResult("");
     setCopied(false);
@@ -62,6 +116,8 @@ export default function TabRewrite({ onSaveDraft }: Props) {
 
   const handleSubmit = async () => {
     if (!articleText.trim() || !mode) return;
+    const currentMode = mode;
+    const currentArticleText = articleText;
     setLoading(true);
     setResult("");
     setSaved(false);
@@ -84,6 +140,12 @@ export default function TabRewrite({ onSaveDraft }: Props) {
         full += chunk;
         setResult(full);
       }
+
+      // Persist completed result so navigating away doesn't lose it
+      persistSavedResults(
+        (prev) => ({ ...prev, [currentMode]: { articleText: currentArticleText, result: full } }),
+        currentMode
+      );
     } catch {
       setResult("エラーが発生しました。");
     } finally {
@@ -106,7 +168,7 @@ export default function TabRewrite({ onSaveDraft }: Props) {
 
   const handleSendToPolish = () => {
     const body = extractFinalBody();
-    setSavedResults((prev) => ({ ...prev, rewrite: { articleText, result } }));
+    persistSavedResults((prev) => ({ ...prev, rewrite: { articleText, result } }), "polish");
     setArticleText(body);
     setResult("");
     setCopied(false);
