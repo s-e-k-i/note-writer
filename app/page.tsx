@@ -7,7 +7,7 @@ import TabConsult from "@/components/TabConsult";
 import TabGenerate from "@/components/TabGenerate";
 import TabRewrite from "@/components/TabRewrite";
 import PasswordGate from "@/components/PasswordGate";
-import { Article } from "@/lib/types";
+import { Article, ProposalContext } from "@/lib/types";
 
 type Tab = "database" | "consult" | "generate" | "rewrite";
 
@@ -20,11 +20,11 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("database");
-  const [pendingTheme, setPendingTheme] = useState("");
+  const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
 
-  const handleSelectTheme = (theme: string) => {
-    setPendingTheme(theme);
+  const handleSelectTheme = (proposal: ProposalContext) => {
+    setPendingProposal(proposal);
     setActiveTab("generate");
   };
 
@@ -84,7 +84,7 @@ export default function Home() {
             {activeTab === "generate" && (
               <TabGenerate
                 articles={articles}
-                initialTheme={pendingTheme}
+                initialProposal={pendingProposal}
                 onSaveArticle={handleSaveArticle}
               />
             )}

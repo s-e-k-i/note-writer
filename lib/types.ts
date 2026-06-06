@@ -10,6 +10,13 @@ export interface Article {
   magazines?: string[];
 }
 
+export interface ProposalContext {
+  theme: string;
+  magazine?: string;
+  purpose?: string;
+  fullContext?: string;
+}
+
 export interface ConsultMessage {
   role: "user" | "assistant";
   content: string;

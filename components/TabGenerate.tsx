@@ -1,28 +1,44 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Article } from "@/lib/types";
+import { Article, ProposalContext } from "@/lib/types";
 import { MAGAZINES } from "@/lib/profile";
 
 interface Props {
   articles: Article[];
-  initialTheme?: string;
+  initialProposal?: ProposalContext | null;
   onSaveArticle: (article: Omit<Article, "id" | "number">) => void;
 }
 
-export default function TabGenerate({ articles, initialTheme = "", onSaveArticle }: Props) {
-  const [theme, setTheme] = useState(initialTheme);
-  const [magazine, setMagazine] = useState(MAGAZINES[0]);
+function resolveInitialMagazine(name?: string): string {
+  if (!name) return MAGAZINES.filter((m) => m !== "未登録")[0];
+  const exact = MAGAZINES.find((m) => m === name);
+  if (exact) return exact;
+  const partial = MAGAZINES.find((m) => m.includes(name) || name.includes(m.split("──")[0].trim()));
+  return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
+}
+
+export default function TabGenerate({ articles, initialProposal, onSaveArticle }: Props) {
+  const [theme, setTheme] = useState(initialProposal?.theme ?? "");
+  const [magazine, setMagazine] = useState(() => resolveInitialMagazine(initialProposal?.magazine));
   const [isPaid, setIsPaid] = useState(false);
-  const [purpose, setPurpose] = useState("コンサル導線");
+  const [purpose, setPurpose] = useState(initialProposal?.purpose ?? "コンサル導線");
+  const [fullContext, setFullContext] = useState(initialProposal?.fullContext ?? "");
+  const [contextExpanded, setContextExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState("");
   const [saved, setSaved] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (initialTheme) setTheme(initialTheme);
-  }, [initialTheme]);
+    if (!initialProposal) return;
+    setTheme(initialProposal.theme ?? "");
+    setMagazine(resolveInitialMagazine(initialProposal.magazine));
+    setPurpose(initialProposal.purpose ?? "コンサル導線");
+    setFullContext(initialProposal.fullContext ?? "");
+    setGenerated("");
+    setSaved(false);
+  }, [initialProposal]);
 
   useEffect(() => {
     if (generated) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -38,7 +54,7 @@ export default function TabGenerate({ articles, initialTheme = "", onSaveArticle
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme, magazine, isPaid, purpose, articles }),
+        body: JSON.stringify({ theme, magazine, isPaid, purpose, articles, fullContext: fullContext || undefined }),
       });
 
       const reader = res.body?.getReader();
@@ -89,17 +105,36 @@ export default function TabGenerate({ articles, initialTheme = "", onSaveArticle
     }
   };
 
-  // Split body and titles
   const parts = generated.split("## タイトル案");
   const body = parts[0]?.trim() || "";
   const titlesRaw = parts[1]?.trim() || "";
 
   return (
     <div className="space-y-5">
+      {/* Proposal context card */}
+      {fullContext && (
+        <div className="bg-zinc-800/60 border border-amber-500/30 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-amber-400">相談からの提案コンテキスト</span>
+            <button
+              onClick={() => setContextExpanded((v) => !v)}
+              className="text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              {contextExpanded ? "折りたたむ" : "展開する"}
+            </button>
+          </div>
+          {contextExpanded ? (
+            <pre className="text-xs text-zinc-400 whitespace-pre-wrap leading-relaxed">{fullContext}</pre>
+          ) : (
+            <p className="text-xs text-zinc-500 truncate">{fullContext.slice(0, 120)}…</p>
+          )}
+        </div>
+      )}
+
       {/* Form */}
       <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
         <div>
-          <label className="text-xs text-zinc-400 mb-1.5 block">テーマ・キーワード *</label>
+          <label className="text-xs text-zinc-400 mb-1.5 block">タイトル案・テーマ *</label>
           <textarea
             placeholder="例：派遣工場を辞めた日のこと、Uber Eatsで気づいた自由の意味..."
             value={theme}

@@ -13,7 +13,7 @@ function buildArticlesSummary(articles: Article[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { theme, magazine, isPaid, purpose, articles } = await request.json();
+    const { theme, magazine, isPaid, purpose, articles, fullContext } = await request.json();
 
     const articlesSummary = buildArticlesSummary(articles || []);
 
@@ -54,8 +54,12 @@ ${paidInstruction}
 
 記事本文の後に、改行を2行入れてから「## タイトル案」として5個のタイトル候補を番号付きリストで提案してください。`;
 
-    const userMessage = `以下のテーマでnote記事を書いてください。
+    const contextSection = fullContext
+      ? `\n【この記事の設計コンテキスト】\n${fullContext}\n`
+      : "";
 
+    const userMessage = `以下のテーマでnote記事を書いてください。
+${contextSection}
 テーマ・キーワード：${theme}
 掲載マガジン：${magazine}
 

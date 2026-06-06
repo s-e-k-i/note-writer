@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Article, ConsultMessage, ConsultMode, PurposeForm } from "@/lib/types";
+import { Article, ConsultMessage, ConsultMode, PurposeForm, ProposalContext } from "@/lib/types";
 
 interface Props {
   articles: Article[];
-  onSelectTheme: (theme: string) => void;
+  onSelectTheme: (proposal: ProposalContext) => void;
 }
 
 const CHAT_OPENER: ConsultMessage = {
@@ -14,6 +14,55 @@ const CHAT_OPENER: ConsultMessage = {
     "今、どんな記事を書きたいと思っていますか？\nテーマがなくても、最近気になっていることや読者に伝えたいことがあれば教えてください。",
 };
 
+// ── Proposal parsing helpers ──────────────────────────────────────
+
+function splitIntoProposals(text: string): string[] {
+  const segments = text.split(/(?=## 📌 提案\d+)/g);
+  return segments
+    .filter((s) => /## 📌 提案\d+/.test(s))
+    .map((s) => s.trim());
+}
+
+function extractFirstTitle(proposal: string): string {
+  const lines = proposal.split("\n");
+  let inTitle = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.includes("タイトル案") && t.includes("：")) {
+      inTitle = true;
+      const after = t.split("：").slice(1).join("：").trim();
+      if (after && !after.startsWith("（")) return after;
+      continue;
+    }
+    if (inTitle) {
+      const numbered = t.match(/^\d+[\.．]\s*(.+)/);
+      if (numbered) return numbered[1].trim();
+      if (t.startsWith("**") && t.includes("：")) break;
+    }
+  }
+  const heading = proposal.match(/## 📌 提案(\d+)/);
+  return heading ? `提案${heading[1]}` : "記事テーマ";
+}
+
+function extractProposalMeta(text: string): { magazine?: string; purpose?: string } {
+  const match = text.match(/<!--\s*PROPOSAL_META:\s*(\{[^}]*\})\s*-->/);
+  if (!match) return {};
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return {};
+  }
+}
+
+function cleanProposalForContext(text: string): string {
+  return text
+    .replace(/<!--\s*PROPOSAL_META:[^>]+-->/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// ── Component ────────────────────────────────────────────────────
+
 export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [mode, setMode] = useState<ConsultMode | null>(null);
   const [messages, setMessages] = useState<ConsultMessage[]>([]);
@@ -21,7 +70,6 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [loading, setLoading] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [purposeForm, setPurposeForm] = useState<PurposeForm>({ goal: "", target: "", notes: "" });
-  const [themeInput, setThemeInput] = useState("");
   const [cachedMessages, setCachedMessages] = useState<Partial<Record<ConsultMode, ConsultMessage[]>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -87,7 +135,6 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     if (m === "auto") {
       await callAPI("auto", []);
     } else if (m === "chat") {
-      // 初期メッセージはAPI不要で直接セット（修正2）
       setMessages([CHAT_OPENER]);
       setCachedMessages((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
     }
@@ -106,7 +153,6 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
 
   const handlePurposeSubmit = async () => {
     if (!purposeForm.goal || !purposeForm.target) return;
-    // 再提案時はキャッシュをクリアして新規取得
     setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
     setMessages([]);
     await callAPI("purpose", []);
@@ -115,6 +161,19 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const handleBack = () => {
     setMode(null);
     setMessages([]);
+  };
+
+  const handleReset = async () => {
+    if (!mode) return;
+    setCachedMessages((prev) => ({ ...prev, [mode]: undefined }));
+    setMessages([]);
+    if (mode === "auto") {
+      await callAPI("auto", []);
+    } else if (mode === "chat") {
+      setMessages([CHAT_OPENER]);
+      setCachedMessages((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
+    }
+    // purpose: setMessages([]) will show the form
   };
 
   const handleSend = async () => {
@@ -126,7 +185,54 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     await callAPI(mode ?? "chat", newMessages);
   };
 
-  // モード選択画面
+  // ── Proposal message renderer ────────────────────────────────────
+  const renderAssistantMessage = (content: string, isLast: boolean) => {
+    const proposals = splitIntoProposals(content);
+
+    if (proposals.length > 0) {
+      return (
+        <div className="space-y-4">
+          {proposals.map((proposal, pIdx) => {
+            const title = extractFirstTitle(proposal);
+            const meta = extractProposalMeta(proposal);
+            const context = cleanProposalForContext(proposal);
+            return (
+              <div key={pIdx} className="bg-zinc-800 rounded-xl p-4 space-y-3">
+                <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">
+                  {context}
+                </pre>
+                {isLast && !loading && (
+                  <div className="pt-3 border-t border-zinc-700">
+                    <button
+                      onClick={() =>
+                        onSelectTheme({
+                          theme: title,
+                          magazine: meta.magazine,
+                          purpose: meta.purpose,
+                          fullContext: context,
+                        })
+                      }
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-lg transition-colors"
+                    >
+                      この案で書く →
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
+        {content}
+      </div>
+    );
+  };
+
+  // ── Mode selection screen ────────────────────────────────────────
   if (!mode) {
     return (
       <div className="space-y-4">
@@ -170,7 +276,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     );
   }
 
-  // purpose フォーム画面（結果表示前）
+  // ── Purpose form screen ──────────────────────────────────────────
   if (mode === "purpose" && messages.length === 0 && !loading) {
     return (
       <div className="space-y-4 max-w-lg">
@@ -221,9 +327,10 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     );
   }
 
-  // チャット・結果表示画面
+  // ── Conversation / results screen ────────────────────────────────
   return (
     <div className="flex flex-col h-full">
+      {/* Header */}
       <div className="flex items-center gap-4 mb-4">
         <button onClick={handleBack} className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1">
           ← モード選択に戻る
@@ -234,13 +341,21 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
               setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
               setMessages([]);
             }}
-            className="text-zinc-600 hover:text-zinc-400 text-xs"
+            className="text-zinc-600 hover:text-zinc-400 text-xs border border-zinc-700 rounded px-2 py-1"
           >
             条件を変えて再提案
           </button>
         )}
+        <button
+          onClick={handleReset}
+          disabled={loading}
+          className="text-zinc-600 hover:text-zinc-400 text-xs border border-zinc-700 rounded px-2 py-1 ml-auto"
+        >
+          リセット
+        </button>
       </div>
 
+      {/* Messages */}
       <div className="flex-1 space-y-4 overflow-y-auto pb-4 min-h-0" style={{ maxHeight: "60vh" }}>
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>
@@ -249,45 +364,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
                 {m.content}
               </div>
             ) : (
-              <div className="bg-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-200 whitespace-pre-wrap leading-relaxed">
-                {m.content}
-                {i === messages.length - 1 && !loading && (
-                  <div className="mt-4 pt-4 border-t border-zinc-700">
-                    {/* 修正1：問いかけではなく自然な誘導文 */}
-                    <p className="text-xs text-zinc-500 mb-3">
-                      気になったテーマがあれば、下のボタンから記事を書き始められます
-                    </p>
-                    {/* 修正3：入力必須のボタン */}
-                    <div className="flex flex-wrap gap-2 items-center">
-                      <input
-                        type="text"
-                        placeholder="テーマを入力..."
-                        value={themeInput}
-                        onChange={(e) => setThemeInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && themeInput.trim()) {
-                            onSelectTheme(themeInput.trim());
-                            setThemeInput("");
-                          }
-                        }}
-                        className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 w-52"
-                      />
-                      <button
-                        onClick={() => {
-                          if (themeInput.trim()) {
-                            onSelectTheme(themeInput.trim());
-                            setThemeInput("");
-                          }
-                        }}
-                        disabled={!themeInput.trim()}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-500 text-black text-xs font-medium rounded-lg transition-colors"
-                      >
-                        このテーマで記事を書く →
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
+              renderAssistantMessage(m.content, i === messages.length - 1)
             )}
           </div>
         ))}
@@ -300,6 +377,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Chat input */}
       {mode === "chat" && (
         <div className="mt-4 pt-4 border-t border-zinc-800 space-y-2">
           {messages.length <= 1 && !loading && (
