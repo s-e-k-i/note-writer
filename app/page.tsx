@@ -6,6 +6,7 @@ import TabDatabase from "@/components/TabDatabase";
 import TabConsult from "@/components/TabConsult";
 import TabGenerate from "@/components/TabGenerate";
 import TabRewrite from "@/components/TabRewrite";
+import PasswordGate from "@/components/PasswordGate";
 import { Article } from "@/lib/types";
 
 type Tab = "database" | "consult" | "generate" | "rewrite";
@@ -33,6 +34,7 @@ export default function Home() {
   };
 
   return (
+    <PasswordGate>
     <div className="min-h-screen bg-zinc-900">
       {/* Header */}
       <header className="border-b border-zinc-800 px-6 py-4">
@@ -91,5 +93,6 @@ export default function Home() {
         )}
       </main>
     </div>
+    </PasswordGate>
   );
 }
