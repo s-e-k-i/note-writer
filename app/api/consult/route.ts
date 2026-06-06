@@ -1,46 +1,102 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT } from "@/lib/profile";
 import { Article, ConsultMessage } from "@/lib/types";
 
 const client = new Anthropic();
 
+const MAGAZINE_SHORT: Record<string, string> = {
+  "人生、やりなおしてみる。──4度目のどん底からの旅路": "人生、やりなおしてみる。",
+  "ひとりビジネスで生きる。──自分の人生を自分で決めるために": "ひとりビジネスで生きる。",
+  "生きるために走った日々。──自由な働き方へ戻るまで": "生きるために走った日々。",
+  "自由になるための読書。──やりなおしの途中で": "自由になるための読書。",
+  "僕と娘のキャンピングカー旅。──1ヶ月のつもりが1年半に": "僕と娘のキャンピングカー旅。",
+  "陽はまた昇る。──3度のどん底から1億円と自由へ": "陽はまた昇る。",
+};
+
+function buildMagazineCounts(articles: Article[]): string {
+  const counts: Record<string, number> = {};
+  for (const a of articles) {
+    const mags = a.magazines ?? [a.magazine];
+    for (const m of mags) {
+      if (m === "未登録") continue;
+      const short = MAGAZINE_SHORT[m] ?? m.split("──")[0].trim();
+      counts[short] = (counts[short] || 0) + 1;
+    }
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => `  - ${name}（${count}本）`)
+    .join("\n");
+}
+
 function buildArticlesSummary(articles: Article[]): string {
   if (!articles || articles.length === 0) return "（記事データベースなし）";
   return articles
-    .map((a) => `- [${a.date}] ${a.title}（${a.magazine.split("──")[0].trim()}）：${a.summary}`)
+    .map((a) => {
+      const mag = MAGAZINE_SHORT[a.magazine] ?? a.magazine.split("──")[0].trim();
+      return `- [${a.date}] 【${mag}】${a.title}｜${a.summary}`;
+    })
     .join("\n");
+}
+
+function buildSystemPrompt(articles: Article[]): string {
+  const articleCount = articles.length;
+  const magazineCounts = buildMagazineCounts(articles);
+  const articlesSummary = buildArticlesSummary(articles);
+
+  return `あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。
+以下のコンテキストをすべて把握した上で、次に書くべきnote記事を提案してください。
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【関達也のプロフィール・実績】
+━━━━━━━━━━━━━━━━━━━━━━━━
+- 50代シングルパパ。娘と神奈川のワンルーム暮らし
+- 24歳で独立、ひとり起業歴31年
+- メルマガ読者10万人・累計3000名超をサポート・著書あり（サンクチュアリ出版）
+- 9年連続年収1000〜8000万円の実績あり
+- 2020年：コロナ禍でキャンピングカー旅→家・家族・収入を同時に失いホームレス状態に
+- 2021〜2022年：寮付き派遣→Uber Eats配達員で再スタート
+- 2023年：3度倒れる（うつ・めまい・救急車）
+- 2025年5月：noteで再始動
+- 一人称は「僕」
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【現在の発信フェーズ（2026年6月時点）】
+━━━━━━━━━━━━━━━━━━━━━━━━
+- noteを再始動して現在${articleCount}本を投稿済み
+- どん底・再起の記録フェーズから「ひとりビジネス・コンサル発信」フェーズへ移行中
+- 個別相談（スポットコンサル）の募集を開始したばかり
+- 読者をコンサル申込みへつなげる記事を増やしたい
+- ひとり起業・ひとりビジネスのノウハウ・哲学の発信比率を上げていく
+- 感情・体験談系の記事は書くが、必ずひとりビジネスの学びと接続させる
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【マガジン構成と投稿数】
+━━━━━━━━━━━━━━━━━━━━━━━━
+${magazineCounts}
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【提案のルール】
+━━━━━━━━━━━━━━━━━━━━━━━━
+- 既存の${articleCount}本の記事データベースを参照し、まだ書いていないテーマ・角度を提案する
+- 「ひとりビジネス・コンサル導線」になる記事を優先的に提案する
+- 体験談は必ずビジネスの学びと接続させる
+- タイトル案は関達也の文体（短文・体験談先出し・読者への問いかけ）に合わせる
+- 「〜なんですよね。」「でも、〜。」「正直、〜。」「振り返ると、〜。」「当時の僕は〜。」のトーン
+- 根拠のない断定（「必ず稼げます」等）は使わない
+- 壁打ち相手として、押しつけにならず問いかけを大切にする
+
+━━━━━━━━━━━━━━━━━━━━━━━━
+【既存記事データベース（${articleCount}本）】
+━━━━━━━━━━━━━━━━━━━━━━━━
+${articlesSummary}`;
 }
 
 export async function POST(request: Request) {
   try {
     const { mode, messages, articles, purposeForm } = await request.json();
 
-    const articleList = articles || [];
-    const articlesSummary = buildArticlesSummary(articleList);
-    const articleCount = articleList.length;
-
-    let systemPrompt = `${PROFILE_DOCUMENT}
-
-あなたは今、関達也さんが次に書くnote記事のテーマを一緒に考える壁打ち相手です。
-
-【現在の発信フェーズ】
-- noteを再開して現在${articleCount}本を投稿済み
-- どん底・再起の記録フェーズから、ひとりビジネス・コンサル発信フェーズへ移行中
-- 個別相談（スポットコンサル）の募集を開始したばかり
-- 読者をコンサル申込みへつなげる記事を増やしたい
-- ひとり起業・ひとりビジネスのノウハウ・哲学を発信する比率を上げていく
-- 感情・体験談系の記事は書くが、必ずひとりビジネスの学びと接続させる
-
-【これまでの記事一覧（${articleCount}本）】
-${articlesSummary}
-
-【あなたの役割】
-- 上記の記事と重複しないテーマを提案する
-- 現在のフェーズ（コンサル導線強化）を意識した提案を優先する
-- 関達也さんの体験・価値観・言葉を引き出すように問いかける
-- 押しつけにならず、あくまで壁打ち相手として接する
-- テーマが決まったら「このテーマで記事を書いてみませんか？」と提案する
-`;
+    const articleList: Article[] = articles || [];
+    const systemPrompt = buildSystemPrompt(articleList);
 
     let userMessages: ConsultMessage[] = messages || [];
 
@@ -48,8 +104,18 @@ ${articlesSummary}
       userMessages = [
         {
           role: "user",
-          content:
-            "全記事データベースを参考に、今の私（関達也）が書くべき記事テーマを3〜5案、提案してください。各提案に「なぜ今この記事が必要か」の根拠を添えてください。提案はカード形式で、タイトル案・狙い・根拠を含めてください。",
+          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案提案してください。
+
+各提案を以下の形式でカード形式にまとめてください：
+
+## テーマ案[番号]
+**タイトル案**：（関達也の文体に合わせた具体的なタイトルを3つ）
+**掲載マガジン**：
+**狙い**：（どんな読者に、何を届けるか）
+**コンサル導線**：（どうやってスポットコンサルへつなげるか）
+**なぜ今この記事か**：（現在のフェーズ・既存記事との文脈）
+
+「ひとりビジネス・コンサル導線」になる記事を優先し、まだ書いていない角度を提案してください。`,
         },
       ];
     } else if (mode === "purpose" && purposeForm) {
@@ -62,14 +128,22 @@ ${articlesSummary}
 届けたいターゲット：${purposeForm.target}
 方向性メモ：${purposeForm.notes || "（なし）"}
 
-各提案には「タイトル案・想定読者・記事の狙い・コンサル導線の設計」を含めてください。`,
+各提案を以下の形式でまとめてください：
+
+## テーマ案[番号]
+**タイトル案**：（関達也の文体に合わせた具体的なタイトルを3つ）
+**掲載マガジン**：
+**想定読者**：
+**記事の狙い**：
+**コンサル導線の設計**：（どうやってスポットコンサルへつなげるか）
+**既存記事との差別化**：`,
         },
       ];
     } else if (mode === "chat" && userMessages.length === 0) {
       userMessages = [
         {
           role: "user",
-          content: "次の記事について一緒に考えたいです。",
+          content: "次の記事について一緒に考えたいです。まず現状を整理するために、何か聞いてもらえますか？",
         },
       ];
     }
