@@ -233,7 +233,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             <div className="font-medium text-zinc-100 mb-1">おまかせで提案して</div>
             <div className="text-zinc-400 text-sm">AIが記事DBを分析し、今書くべきテーマを自動提案</div>
             {cachedMessages.auto && (
-              <div className="text-xs text-amber-400 mt-2">提案あり（続きを表示）</div>
+              <div className="text-xs text-amber-400 mt-2">前回の提案を表示する</div>
             )}
           </button>
           <button
@@ -244,7 +244,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             <div className="font-medium text-zinc-100 mb-1">目的から考える</div>
             <div className="text-zinc-400 text-sm">書く目的・ターゲットを入力して、戦略的な記事案を提案</div>
             {cachedMessages.purpose && (
-              <div className="text-xs text-amber-400 mt-2">提案あり（続きを表示）</div>
+              <div className="text-xs text-amber-400 mt-2">前回の提案を表示する</div>
             )}
           </button>
           <button
@@ -255,7 +255,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             <div className="font-medium text-zinc-100 mb-1">一緒に考える（壁打ち）</div>
             <div className="text-zinc-400 text-sm">チャット形式でAIと話しながらテーマを絞り込む</div>
             {cachedMessages.chat && cachedMessages.chat.length > 1 && (
-              <div className="text-xs text-amber-400 mt-2">会話あり（続きから）</div>
+              <div className="text-xs text-amber-400 mt-2">前回の提案を表示する</div>
             )}
           </button>
         </div>
