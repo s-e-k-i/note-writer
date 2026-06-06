@@ -30,6 +30,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState("");
   const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -80,6 +81,8 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   const handleCopy = () => {
     const bodyOnly = generated.split("## タイトル案")[0].trim();
     navigator.clipboard.writeText(bodyOnly);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleSave = () => {
@@ -237,9 +240,14 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             <div className="flex gap-3">
               <button
                 onClick={handleCopy}
-                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
+                disabled={copied}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  copied
+                    ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
+                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                }`}
               >
-                本文をコピー
+                {copied ? "コピー済み ✓" : "本文をコピー"}
               </button>
               <button
                 onClick={handleSave}

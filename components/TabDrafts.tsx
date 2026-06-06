@@ -16,7 +16,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
   const [editBody, setEditBody] = useState("");
   const [copied, setCopied] = useState(false);
 
-  const selected = drafts.find((d) => d.id === selectedId) ?? null;
+  const selected = selectedId !== null ? (drafts.find((d) => d.id === selectedId) ?? null) : null;
 
   const openDraft = (draft: Draft) => {
     setSelectedId(draft.id);
@@ -60,14 +60,18 @@ export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
   };
 
   // ── Detail view ───────────────────────────────────────────────────
-  if (selected) {
+  if (selectedId !== null && selected) {
     return (
       <div className="space-y-4">
         {/* Header row */}
         <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => { setSelectedId(null); setEditing(false); }}
-            className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+            onClick={() => {
+              setSelectedId(null);
+              setEditing(false);
+              setCopied(false);
+            }}
+            className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1 shrink-0"
           >
             ← 一覧に戻る
           </button>
@@ -84,6 +88,14 @@ export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
                 className="px-3 py-1.5 text-green-400 hover:text-green-300 text-xs border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
               >
                 公開済みにする
+              </button>
+            )}
+            {selected.status === "published" && !editing && (
+              <button
+                onClick={() => onUpdate(selected.id, { status: "draft" })}
+                className="px-3 py-1.5 text-zinc-400 hover:text-zinc-300 text-xs border border-zinc-600 hover:border-zinc-500 rounded-lg transition-colors"
+              >
+                下書きに戻す
               </button>
             )}
             {editing ? (
