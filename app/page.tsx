@@ -78,9 +78,10 @@ export default function Home() {
                 onUpdateSummaries={updateSummaries}
               />
             )}
-            {activeTab === "consult" && (
+            {/* Keep TabConsult mounted so cached proposals survive tab switches */}
+            <div className={activeTab === "consult" ? "" : "hidden"}>
               <TabConsult articles={articles} onSelectTheme={handleSelectTheme} />
-            )}
+            </div>
             {activeTab === "generate" && (
               <TabGenerate
                 articles={articles}
