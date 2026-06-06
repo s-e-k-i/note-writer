@@ -54,12 +54,19 @@ ${paidInstruction}
 
 記事本文の後に、改行を2行入れてから「## タイトル案」として5個のタイトル候補を番号付きリストで提案してください。`;
 
-    const contextSection = fullContext
-      ? `\n【この記事の設計コンテキスト】\n${fullContext}\n`
-      : "";
+    const userMessage = fullContext
+      ? `以下の提案内容をもとに記事を書いてください：
 
-    const userMessage = `以下のテーマでnote記事を書いてください。
-${contextSection}
+${fullContext}
+
+---
+
+タイトル案：${theme}
+掲載マガジン：${magazine}
+
+上記の「狙い・ターゲット」「構成イメージ」「コンサル導線設計」「なぜ今この記事か」をすべて反映した、関達也本人が書いたような体験談ベースの記事にしてください。`
+      : `以下のテーマでnote記事を書いてください。
+
 テーマ・キーワード：${theme}
 掲載マガジン：${magazine}
 
