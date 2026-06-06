@@ -104,6 +104,16 @@ export default function TabRewrite({ onSaveDraft }: Props) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSendToPolish = () => {
+    const body = extractFinalBody();
+    setSavedResults((prev) => ({ ...prev, rewrite: { articleText, result } }));
+    setArticleText(body);
+    setResult("");
+    setCopied(false);
+    setSaved(false);
+    setMode("polish");
+  };
+
   const handleSaveDraft = () => {
     if (!result || !mode) return;
     const body = extractFinalBody();
@@ -237,6 +247,14 @@ export default function TabRewrite({ onSaveDraft }: Props) {
               >
                 {copied ? "コピー済み ✓" : (isPolish ? "修正後の全文をコピー" : "リライト全文をコピー")}
               </button>
+              {!isPolish && (
+                <button
+                  onClick={handleSendToPolish}
+                  className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors border border-zinc-600"
+                >
+                  この結果を仕上げにかける →
+                </button>
+              )}
               <button
                 onClick={handleSaveDraft}
                 disabled={saved}

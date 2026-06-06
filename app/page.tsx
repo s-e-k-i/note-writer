@@ -42,6 +42,11 @@ export default function Home() {
     setActiveTab("drafts");
   };
 
+  // TabRewrite stays on the rewrite tab after saving
+  const handleSaveDraftFromRewrite = (draft: Omit<Draft, "id" | "createdAt" | "status">) => {
+    addDraft(draft);
+  };
+
   return (
     <PasswordGate>
     <div className="min-h-screen bg-zinc-900">
@@ -99,7 +104,7 @@ export default function Home() {
                 onBackToConsult={() => setActiveTab("consult")}
               />
             )}
-            {activeTab === "rewrite" && <TabRewrite onSaveDraft={handleSaveDraft} />}
+            {activeTab === "rewrite" && <TabRewrite onSaveDraft={handleSaveDraftFromRewrite} />}
             {activeTab === "drafts" && (
               <TabDrafts
                 drafts={drafts}
