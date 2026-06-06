@@ -29,3 +29,13 @@ export interface PurposeForm {
   target: string;
   notes: string;
 }
+
+export interface Draft {
+  id: string;
+  title: string;
+  magazine: string;
+  body: string;
+  createdAt: string;
+  status: "draft" | "published";
+  isPaid: boolean;
+}

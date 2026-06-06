@@ -6,22 +6,26 @@ import TabDatabase from "@/components/TabDatabase";
 import TabConsult from "@/components/TabConsult";
 import TabGenerate from "@/components/TabGenerate";
 import TabRewrite from "@/components/TabRewrite";
+import TabDrafts from "@/components/TabDrafts";
 import PasswordGate from "@/components/PasswordGate";
-import { Article, ProposalContext } from "@/lib/types";
+import { Article, Draft, ProposalContext } from "@/lib/types";
+import { useDraftsDB } from "@/lib/useDraftsDB";
 
-type Tab = "database" | "consult" | "generate" | "rewrite";
+type Tab = "database" | "consult" | "generate" | "rewrite" | "drafts";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "database", label: "📚 記事データベース" },
   { id: "consult", label: "💬 次の記事を相談" },
   { id: "generate", label: "✍️ 記事を書く" },
   { id: "rewrite", label: "🔁 リライト" },
+  { id: "drafts", label: "📝 下書き管理" },
 ];
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("database");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
+  const { drafts, addDraft, updateDraft, removeDraft } = useDraftsDB();
 
   const handleSelectTheme = (proposal: ProposalContext) => {
     setPendingProposal(proposal);
@@ -31,6 +35,11 @@ export default function Home() {
   const handleSaveArticle = (article: Omit<Article, "id" | "number">) => {
     const seq = articles.length + 1;
     addArticle({ ...article, id: String(seq).padStart(3, "0"), number: seq });
+  };
+
+  const handleSaveDraft = (draft: Omit<Draft, "id" | "createdAt" | "status">) => {
+    addDraft(draft);
+    setActiveTab("drafts");
   };
 
   return (
@@ -86,11 +95,18 @@ export default function Home() {
               <TabGenerate
                 articles={articles}
                 initialProposal={pendingProposal}
-                onSaveArticle={handleSaveArticle}
+                onSaveDraft={handleSaveDraft}
                 onBackToConsult={() => setActiveTab("consult")}
               />
             )}
             {activeTab === "rewrite" && <TabRewrite />}
+            {activeTab === "drafts" && (
+              <TabDrafts
+                drafts={drafts}
+                onUpdate={updateDraft}
+                onRemove={removeDraft}
+              />
+            )}
           </>
         )}
       </main>

@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Article, ProposalContext } from "@/lib/types";
+import { Article, Draft, ProposalContext } from "@/lib/types";
 import { MAGAZINES } from "@/lib/profile";
 
 interface Props {
   articles: Article[];
   initialProposal?: ProposalContext | null;
-  onSaveArticle: (article: Omit<Article, "id" | "number">) => void;
+  onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   onBackToConsult?: () => void;
 }
 
@@ -19,7 +19,7 @@ function resolveInitialMagazine(name?: string): string {
   return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
 }
 
-export default function TabGenerate({ articles, initialProposal, onSaveArticle, onBackToConsult }: Props) {
+export default function TabGenerate({ articles, initialProposal, onSaveDraft, onBackToConsult }: Props) {
   const [theme, setTheme] = useState(initialProposal?.theme ?? "");
   const [magazine, setMagazine] = useState(() => resolveInitialMagazine(initialProposal?.magazine));
   const [isPaid, setIsPaid] = useState(false);
@@ -82,29 +82,14 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle, 
     navigator.clipboard.writeText(bodyOnly);
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!generated) return;
     const bodyOnly = generated.split("## タイトル案")[0].trim();
     const titleSection = generated.split("## タイトル案")[1] || "";
-    const firstTitle = titleSection.split("\n").find((l) => l.match(/^\d+\./))?.replace(/^\d+\.\s*/, "") || theme;
-
-    try {
-      const res = await fetch("/api/summarize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: firstTitle, body: bodyOnly }),
-      });
-      const data = await res.json();
-      onSaveArticle({
-        date: data.date || new Date().toISOString().split("T")[0],
-        title: firstTitle,
-        magazine: data.magazine || magazine,
-        summary: data.summary || "",
-      });
-      setSaved(true);
-    } catch {
-      alert("保存に失敗しました");
-    }
+    const firstTitle =
+      titleSection.split("\n").find((l) => l.match(/^\d+\./))?.replace(/^\d+\.\s*/, "") || theme;
+    onSaveDraft({ title: firstTitle, magazine, body: bodyOnly, isPaid });
+    setSaved(true);
   };
 
   const parts = generated.split("## タイトル案");
@@ -261,7 +246,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle, 
                 disabled={saved}
                 className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
               >
-                {saved ? "✓ データベースに保存済み" : "この記事をデータベースに保存"}
+                {saved ? "✓ 下書きとして保存しました" : "下書きとして保存"}
               </button>
             </div>
           )}
