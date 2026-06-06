@@ -29,6 +29,20 @@ const MAGAZINE_KEYWORDS: Record<string, string[]> = {
   ],
 };
 
+const MAGAZINE_ALIAS: Record<string, string> = {
+  "人生やりなおし": "人生、やりなおしてみる。──4度目のどん底からの旅路",
+  "ひとりビジネス": "ひとりビジネスで生きる。──自分の人生を自分で決めるために",
+  "走った日々": "生きるために走った日々。──自由な働き方へ戻るまで",
+  "読書": "自由になるための読書。──やりなおしの途中で",
+  "キャンピングカー旅": "僕と娘のキャンピングカー旅。──1ヶ月のつもりが1年半に",
+  "陽はまた昇る": "陽はまた昇る。──3度のどん底から1億円と自由へ",
+  "未登録": "未登録",
+};
+
+function resolveMagazineName(tag: string): string {
+  return MAGAZINE_ALIAS[tag.trim()] ?? tag.trim();
+}
+
 function classifyMagazine(title: string, body: string): string {
   const text = (title + " " + body.slice(0, 800)).toLowerCase();
   const scores = MAGAZINES.map((magazine) => {
@@ -90,7 +104,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
         bodyLines: [],
         isPaid: !!price,
         paidPrice: price ? parseInt(price) : undefined,
-        magazines: magazineTag ? magazineTag.split(",") : [],
+        magazines: magazineTag ? magazineTag.split(",").map(resolveMagazineName) : [],
       };
     } else if (currentArticle) {
       if (!currentArticle.title) {
