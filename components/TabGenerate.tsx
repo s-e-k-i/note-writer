@@ -117,7 +117,7 @@ export default function TabGenerate({ articles, initialTheme = "", onSaveArticle
               onChange={(e) => setMagazine(e.target.value as typeof magazine)}
               className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
             >
-              {MAGAZINES.map((m) => (
+              {MAGAZINES.filter((m) => m !== "未登録").map((m) => (
                 <option key={m} value={m}>{m.split("──")[0].trim()}</option>
               ))}
             </select>

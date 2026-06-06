@@ -245,22 +245,41 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
       </div>
 
       {mode === "chat" && (
-        <div className="flex gap-2 mt-4 pt-4 border-t border-zinc-800">
-          <input
-            type="text"
-            placeholder="メッセージを入力..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-          />
-          <button
-            onClick={handleSend}
-            disabled={loading || !input.trim()}
-            className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium text-sm rounded-lg transition-colors"
-          >
-            送信
-          </button>
+        <div className="mt-4 pt-4 border-t border-zinc-800 space-y-2">
+          {messages.length <= 1 && !loading && (
+            <div className="flex flex-wrap gap-2">
+              {[
+                "最近気になっていること、書きたいこと",
+                "ひとりビジネス・コンサルに関連して伝えたいこと",
+                "読者に届けたいメッセージ",
+              ].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setInput(s)}
+                  className="text-xs bg-zinc-800 border border-zinc-700 hover:border-amber-500 text-zinc-400 hover:text-zinc-200 rounded-full px-3 py-1.5 transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="メッセージを入力..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium text-sm rounded-lg transition-colors"
+            >
+              送信
+            </button>
+          </div>
         </div>
       )}
     </div>

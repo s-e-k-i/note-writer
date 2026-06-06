@@ -15,17 +15,28 @@ export async function POST(request: Request) {
   try {
     const { mode, messages, articles, purposeForm } = await request.json();
 
-    const articlesSummary = buildArticlesSummary(articles || []);
+    const articleList = articles || [];
+    const articlesSummary = buildArticlesSummary(articleList);
+    const articleCount = articleList.length;
 
     let systemPrompt = `${PROFILE_DOCUMENT}
 
 あなたは今、関達也さんが次に書くnote記事のテーマを一緒に考える壁打ち相手です。
 
-【これまでの記事一覧】
+【現在の発信フェーズ】
+- noteを再開して現在${articleCount}本を投稿済み
+- どん底・再起の記録フェーズから、ひとりビジネス・コンサル発信フェーズへ移行中
+- 個別相談（スポットコンサル）の募集を開始したばかり
+- 読者をコンサル申込みへつなげる記事を増やしたい
+- ひとり起業・ひとりビジネスのノウハウ・哲学を発信する比率を上げていく
+- 感情・体験談系の記事は書くが、必ずひとりビジネスの学びと接続させる
+
+【これまでの記事一覧（${articleCount}本）】
 ${articlesSummary}
 
 【あなたの役割】
 - 上記の記事と重複しないテーマを提案する
+- 現在のフェーズ（コンサル導線強化）を意識した提案を優先する
 - 関達也さんの体験・価値観・言葉を引き出すように問いかける
 - 押しつけにならず、あくまで壁打ち相手として接する
 - テーマが決まったら「このテーマで記事を書いてみませんか？」と提案する
@@ -65,7 +76,7 @@ ${articlesSummary}
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
-      max_tokens: 1500,
+      max_tokens: 4000,
       system: systemPrompt,
       messages: userMessages.map((m) => ({
         role: m.role,
