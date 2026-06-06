@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Article, ConsultMessage, ConsultMode, PurposeForm, ProposalContext } from "@/lib/types";
 
 interface Props {
@@ -8,11 +8,29 @@ interface Props {
   onSelectTheme: (proposal: ProposalContext) => void;
 }
 
+const CACHE_KEY = "note_writer_consult_cache";
+
 const CHAT_OPENER: ConsultMessage = {
   role: "assistant",
   content:
     "今、どんな記事を書きたいと思っていますか？\nテーマがなくても、最近気になっていることや読者に伝えたいことがあれば教えてください。",
 };
+
+// ── localStorage helpers ──────────────────────────────────────────
+
+function loadCache(): Partial<Record<ConsultMode, ConsultMessage[]>> {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
+
+function saveCache(cache: Partial<Record<ConsultMode, ConsultMessage[]>>) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
 
 // ── Proposal parsing helpers ──────────────────────────────────────
 
@@ -73,9 +91,26 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [cachedMessages, setCachedMessages] = useState<Partial<Record<ConsultMode, ConsultMessage[]>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Load cache from localStorage on mount
+  useEffect(() => {
+    setCachedMessages(loadCache());
+  }, []);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamText]);
+
+  // Update state AND localStorage together
+  const updateCache = useCallback(
+    (updater: (prev: Partial<Record<ConsultMode, ConsultMessage[]>>) => Partial<Record<ConsultMode, ConsultMessage[]>>) => {
+      setCachedMessages((prev) => {
+        const next = updater(prev);
+        saveCache(next);
+        return next;
+      });
+    },
+    []
+  );
 
   const callAPI = async (overrideMode?: ConsultMode, overrideMessages?: ConsultMessage[]) => {
     setLoading(true);
@@ -113,7 +148,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
       ];
       setMessages(finalMessages);
       if (currentMode) {
-        setCachedMessages((prev) => ({ ...prev, [currentMode]: finalMessages }));
+        updateCache((prev) => ({ ...prev, [currentMode]: finalMessages }));
       }
       setStreamText("");
     } catch {
@@ -136,7 +171,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
       await callAPI("auto", []);
     } else if (m === "chat") {
       setMessages([CHAT_OPENER]);
-      setCachedMessages((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
+      updateCache((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
     }
   };
 
@@ -153,7 +188,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
 
   const handlePurposeSubmit = async () => {
     if (!purposeForm.goal || !purposeForm.target) return;
-    setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
+    updateCache((prev) => ({ ...prev, purpose: undefined }));
     setMessages([]);
     await callAPI("purpose", []);
   };
@@ -325,7 +360,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         {mode === "purpose" && (
           <button
             onClick={() => {
-              setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
+              updateCache((prev) => ({ ...prev, purpose: undefined }));
               setMessages([]);
             }}
             className="text-amber-500 hover:text-amber-400 text-xs border border-amber-500/50 hover:border-amber-400 rounded px-3 py-1.5 transition-colors font-medium"
@@ -363,7 +398,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
           <button
             onClick={() => {
               if (!mode) return;
-              setCachedMessages((prev) => ({ ...prev, [mode]: undefined }));
+              updateCache((prev) => ({ ...prev, [mode]: undefined }));
               setMode(null);
               setMessages([]);
             }}
@@ -394,19 +429,18 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
               ))}
             </div>
           )}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="メッセージを入力..."
+          <div className="flex gap-2 items-end">
+            <textarea
+              placeholder="メッセージを入力...（Enterで改行、送信はボタンで）"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+              rows={2}
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 resize-none"
             />
             <button
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium text-sm rounded-lg transition-colors"
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium text-sm rounded-lg transition-colors shrink-0"
             >
               送信
             </button>
