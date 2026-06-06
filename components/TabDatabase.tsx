@@ -78,9 +78,10 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const paidCount = paidArticles.length;
   const totalPaidRevenue = paidArticles.reduce((sum, a) => sum + (a.paidPrice ?? 0), 0);
 
-  const leastMagazine = magazineCounts.sort((a, b) => a.count - b.count)[0];
+  const suggestableMagazines = magazineCounts.filter((m) => m.name !== "未登録");
+  const leastMagazine = [...suggestableMagazines].sort((a, b) => a.count - b.count)[0];
   const recentMagazines = new Set(articles.slice(0, 5).map((a) => a.magazine.split("──")[0].trim()));
-  const neglectedMagazine = magazineCounts.find((m) => !recentMagazines.has(m.name));
+  const neglectedMagazine = suggestableMagazines.find((m) => !recentMagazines.has(m.name));
 
   return (
     <div className="space-y-6">
