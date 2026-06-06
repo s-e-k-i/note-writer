@@ -86,6 +86,7 @@ export default function Home() {
                 articles={articles}
                 initialProposal={pendingProposal}
                 onSaveArticle={handleSaveArticle}
+                onBackToConsult={() => setActiveTab("consult")}
               />
             )}
             {activeTab === "rewrite" && <TabRewrite />}

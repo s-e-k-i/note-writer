@@ -8,6 +8,7 @@ interface Props {
   articles: Article[];
   initialProposal?: ProposalContext | null;
   onSaveArticle: (article: Omit<Article, "id" | "number">) => void;
+  onBackToConsult?: () => void;
 }
 
 function resolveInitialMagazine(name?: string): string {
@@ -18,7 +19,7 @@ function resolveInitialMagazine(name?: string): string {
   return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
 }
 
-export default function TabGenerate({ articles, initialProposal, onSaveArticle }: Props) {
+export default function TabGenerate({ articles, initialProposal, onSaveArticle, onBackToConsult }: Props) {
   const [theme, setTheme] = useState(initialProposal?.theme ?? "");
   const [magazine, setMagazine] = useState(() => resolveInitialMagazine(initialProposal?.magazine));
   const [isPaid, setIsPaid] = useState(false);
@@ -111,6 +112,16 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle }
 
   return (
     <div className="space-y-5">
+      {/* Back to consult button */}
+      {fullContext && onBackToConsult && (
+        <button
+          onClick={onBackToConsult}
+          className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+        >
+          ← 提案に戻る
+        </button>
+      )}
+
       {/* Proposal context card */}
       {fullContext && (
         <div className="bg-zinc-800/60 border border-amber-500/30 rounded-xl p-4">

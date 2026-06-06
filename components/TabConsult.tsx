@@ -163,19 +163,6 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     setMessages([]);
   };
 
-  const handleReset = async () => {
-    if (!mode) return;
-    setCachedMessages((prev) => ({ ...prev, [mode]: undefined }));
-    setMessages([]);
-    if (mode === "auto") {
-      await callAPI("auto", []);
-    } else if (mode === "chat") {
-      setMessages([CHAT_OPENER]);
-      setCachedMessages((prev) => ({ ...prev, chat: [CHAT_OPENER] }));
-    }
-    // purpose: setMessages([]) will show the form
-  };
-
   const handleSend = async () => {
     if (!input.trim() || loading) return;
     const userMsg: ConsultMessage = { role: "user", content: input.trim() };
@@ -346,13 +333,6 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             条件を変えて再提案
           </button>
         )}
-        <button
-          onClick={handleReset}
-          disabled={loading}
-          className="text-zinc-600 hover:text-zinc-400 text-xs border border-zinc-700 rounded px-2 py-1 ml-auto"
-        >
-          リセット
-        </button>
       </div>
 
       {/* Messages */}
@@ -376,6 +356,23 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         )}
         <div ref={bottomRef} />
       </div>
+
+      {/* Reset to mode selection */}
+      {!loading && messages.length > 0 && (
+        <div className="pt-3 border-t border-zinc-800 flex justify-end">
+          <button
+            onClick={() => {
+              if (!mode) return;
+              setCachedMessages((prev) => ({ ...prev, [mode]: undefined }));
+              setMode(null);
+              setMessages([]);
+            }}
+            className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400/60 rounded px-3 py-1.5 transition-colors"
+          >
+            最初からやり直す
+          </button>
+        </div>
+      )}
 
       {/* Chat input */}
       {mode === "chat" && (
