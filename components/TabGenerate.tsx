@@ -136,19 +136,17 @@ export default function TabGenerate({ articles, initialTheme = "", onSaveArticle
           </div>
         </div>
 
-        {isPaid && (
-          <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">記事の目的</label>
-            <select
-              value={purpose}
-              onChange={(e) => setPurpose(e.target.value)}
-              className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
-            >
-              <option>コンサル導線</option>
-              <option>純粋に読まれたい</option>
-            </select>
-          </div>
-        )}
+        <div>
+          <label className="text-xs text-zinc-400 mb-1.5 block">記事の目的</label>
+          <select
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+            className="bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+          >
+            <option>コンサル導線</option>
+            <option>純粋に読まれたい</option>
+          </select>
+        </div>
 
         <button
           onClick={handleGenerate}

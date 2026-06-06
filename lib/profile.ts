@@ -79,6 +79,8 @@ export const MAGAZINES = [
   "生きるために走った日々。──自由な働き方へ戻るまで",
   "自由になるための読書。──やりなおしの途中で",
   "僕と娘のキャンピングカー旅。──1ヶ月のつもりが1年半に",
+  "陽はまた昇る。──3度のどん底から1億円と自由へ",
+  "未登録",
 ] as const;
 
 export type Magazine = (typeof MAGAZINES)[number];

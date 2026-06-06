@@ -43,9 +43,9 @@ function classifyMagazine(title: string, body: string): string {
   return best.score > 0 ? best.magazine : MAGAZINES[0];
 }
 
-function parseArticles(text: string): { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number }[] {
+function parseArticles(text: string): { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[] }[] {
   const lines = text.split("\n");
-  const articles: { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number }[] = [];
+  const articles: { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[] }[] = [];
 
   let startIdx = 0;
   for (let i = 0; i < lines.length; i++) {
@@ -55,7 +55,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
     }
   }
 
-  const articlePattern = /^▼(\d+)記事目(\d{4})年(\d{1,2})月(\d{1,2})日(?:.*\[有料[¥￥]?(\d+)\])?/;
+  const articlePattern = /^▼(\d+)記事目(\d{4})年(\d{1,2})月(\d{1,2})日(?:.*\[有料[¥￥]?(\d+)\])?(?:.*\[マガジン:([^\]]+)\])?/;
   let currentArticle: {
     number: number;
     date: string;
@@ -63,6 +63,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
     bodyLines: string[];
     isPaid: boolean;
     paidPrice?: number;
+    magazines: string[];
   } | null = null;
 
   for (let i = startIdx; i < lines.length; i++) {
@@ -78,9 +79,10 @@ function parseArticles(text: string): { number: number; date: string; title: str
           body: currentArticle.bodyLines.join("\n").trim(),
           isPaid: currentArticle.isPaid,
           paidPrice: currentArticle.paidPrice,
+          magazines: currentArticle.magazines,
         });
       }
-      const [, num, year, month, day, price] = match;
+      const [, num, year, month, day, price, magazineTag] = match;
       currentArticle = {
         number: parseInt(num),
         date: `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`,
@@ -88,6 +90,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
         bodyLines: [],
         isPaid: !!price,
         paidPrice: price ? parseInt(price) : undefined,
+        magazines: magazineTag ? magazineTag.split(",") : [],
       };
     } else if (currentArticle) {
       if (!currentArticle.title) {
@@ -106,6 +109,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
       body: currentArticle.bodyLines.join("\n").trim(),
       isPaid: currentArticle.isPaid,
       paidPrice: currentArticle.paidPrice,
+      magazines: currentArticle.magazines,
     });
   }
 
@@ -131,7 +135,7 @@ export async function POST(request: Request) {
       number: a.number,
       date: a.date,
       title: a.title,
-      magazine: classifyMagazine(a.title, a.body),
+      magazine: a.magazines.length > 0 ? a.magazines[0] : classifyMagazine(a.title, a.body),
       summary: a.body.slice(0, 150).replace(/\n/g, " ").trim(),
       isPaid: a.isPaid,
       paidPrice: a.paidPrice,
