@@ -26,6 +26,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle, 
   const [purpose, setPurpose] = useState(initialProposal?.purpose ?? "コンサル導線");
   const [fullContext, setFullContext] = useState(initialProposal?.fullContext ?? "");
   const [contextExpanded, setContextExpanded] = useState(false);
+  const [structureMemo, setStructureMemo] = useState("");
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState("");
   const [saved, setSaved] = useState(false);
@@ -55,7 +56,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle, 
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme, magazine, isPaid, purpose, articles, fullContext: fullContext || undefined }),
+        body: JSON.stringify({ theme, magazine, isPaid, purpose, articles, fullContext: fullContext || undefined, structureMemo: structureMemo.trim() || undefined }),
       });
 
       const reader = res.body?.getReader();
@@ -150,6 +151,17 @@ export default function TabGenerate({ articles, initialProposal, onSaveArticle, 
             placeholder="例：派遣工場を辞めた日のこと、Uber Eatsで気づいた自由の意味..."
             value={theme}
             onChange={(e) => setTheme(e.target.value)}
+            rows={2}
+            className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 resize-none"
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-zinc-400 mb-1.5 block">構成メモ（任意）</label>
+          <textarea
+            placeholder="箇条書きで構成を入力（例：冒頭→体験談→本論→まとめ）"
+            value={structureMemo}
+            onChange={(e) => setStructureMemo(e.target.value)}
             rows={2}
             className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 resize-none"
           />

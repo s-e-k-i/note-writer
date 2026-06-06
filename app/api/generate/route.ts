@@ -13,7 +13,7 @@ function buildArticlesSummary(articles: Article[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { theme, magazine, isPaid, purpose, articles, fullContext } = await request.json();
+    const { theme, magazine, isPaid, purpose, articles, fullContext, structureMemo } = await request.json();
 
     const articlesSummary = buildArticlesSummary(articles || []);
 
@@ -54,6 +54,10 @@ ${paidInstruction}
 
 記事本文の後に、改行を2行入れてから「## タイトル案」として5個のタイトル候補を番号付きリストで提案してください。`;
 
+    const structureMemoSection = structureMemo
+      ? `\n構成メモ：\n${structureMemo}\n`
+      : "";
+
     const userMessage = fullContext
       ? `以下の提案内容をもとに記事を書いてください：
 
@@ -63,13 +67,13 @@ ${fullContext}
 
 タイトル案：${theme}
 掲載マガジン：${magazine}
-
+${structureMemoSection}
 上記の「狙い・ターゲット」「構成イメージ」「コンサル導線設計」「なぜ今この記事か」をすべて反映した、関達也本人が書いたような体験談ベースの記事にしてください。`
       : `以下のテーマでnote記事を書いてください。
 
 テーマ・キーワード：${theme}
 掲載マガジン：${magazine}
-
+${structureMemoSection}
 関達也本人が書いたような、体験談ベースの記事にしてください。`;
 
     const stream = await client.messages.stream({
