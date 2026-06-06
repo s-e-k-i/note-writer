@@ -9,6 +9,18 @@ interface Props {
   onRemove: (id: string) => void;
 }
 
+function DraftTypeBadge({ type }: { type?: Draft["draftType"] }) {
+  if (!type || type === "generate") return null;
+  const label = type === "rewrite" ? "リライト" : "仕上げ";
+  const cls =
+    type === "rewrite"
+      ? "bg-sky-500/20 text-sky-400 border-sky-500/30"
+      : "bg-purple-500/20 text-purple-400 border-purple-500/30";
+  return (
+    <span className={`text-xs rounded px-1.5 py-0.5 border ${cls}`}>{label}</span>
+  );
+}
+
 export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -143,7 +155,8 @@ export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
             ) : (
               <h2 className="text-zinc-100 font-medium text-base flex-1">{selected.title}</h2>
             )}
-            <div className="flex gap-1.5 shrink-0">
+            <div className="flex gap-1.5 shrink-0 flex-wrap">
+              <DraftTypeBadge type={selected.draftType} />
               {selected.isPaid && (
                 <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
                   有料
@@ -217,7 +230,8 @@ export default function TabDrafts({ drafts, onUpdate, onRemove }: Props) {
           >
             <div className="flex items-start gap-2 flex-wrap">
               <span className="text-zinc-100 text-sm font-medium flex-1 leading-snug">{d.title}</span>
-              <div className="flex gap-1.5 shrink-0">
+              <div className="flex gap-1.5 shrink-0 flex-wrap">
+                <DraftTypeBadge type={d.draftType} />
                 {d.isPaid && (
                   <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
                     有料

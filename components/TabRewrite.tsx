@@ -1,24 +1,70 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { Draft } from "@/lib/types";
 
 type RewriteMode = "rewrite" | "polish";
 
-export default function TabRewrite() {
+interface SavedResult {
+  articleText: string;
+  result: string;
+}
+
+interface Props {
+  onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
+}
+
+export default function TabRewrite({ onSaveDraft }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [savedResults, setSavedResults] = useState<Partial<Record<RewriteMode, SavedResult>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (result) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [result]);
 
+  const handleSelectMode = (m: RewriteMode) => {
+    const prev = savedResults[m];
+    if (prev) {
+      setArticleText(prev.articleText);
+      setResult(prev.result);
+    } else {
+      setArticleText("");
+      setResult("");
+    }
+    setCopied(false);
+    setSaved(false);
+    setMode(m);
+  };
+
+  const handleBack = () => {
+    if (mode) {
+      setSavedResults((prev) => ({ ...prev, [mode]: { articleText, result } }));
+    }
+    setMode(null);
+    setCopied(false);
+    setSaved(false);
+  };
+
+  const handleReset = () => {
+    if (!mode) return;
+    setSavedResults((prev) => ({ ...prev, [mode]: undefined }));
+    setArticleText("");
+    setResult("");
+    setCopied(false);
+    setSaved(false);
+  };
+
   const handleSubmit = async () => {
     if (!articleText.trim() || !mode) return;
     setLoading(true);
     setResult("");
+    setSaved(false);
 
     try {
       const res = await fetch("/api/rewrite", {
@@ -45,25 +91,35 @@ export default function TabRewrite() {
     }
   };
 
-  const handleCopyResult = () => {
+  const extractFinalBody = (): string => {
     if (mode === "rewrite") {
-      const part = result.split("## リライト全文")[1]?.trim() || result;
-      navigator.clipboard.writeText(part);
-    } else {
-      const part = result.split("## 修正後の全文")[1]?.trim() || result;
-      navigator.clipboard.writeText(part);
+      return result.split("## リライト全文")[1]?.trim() || result;
     }
+    return result.split("## 修正後の全文")[1]?.trim() || result;
   };
 
-  const handleBack = () => {
-    setMode(null);
-    setResult("");
+  const handleCopyResult = () => {
+    navigator.clipboard.writeText(extractFinalBody());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSaveDraft = () => {
+    if (!result || !mode) return;
+    const body = extractFinalBody();
+    const title =
+      articleText.split("\n").find((l) => l.trim().length > 0)?.trim() ||
+      (mode === "rewrite" ? "リライト記事" : "仕上げ記事");
+    onSaveDraft({ title, magazine: "", body, isPaid: false, draftType: mode });
+    setSaved(true);
   };
 
   const hasFinalSection =
     mode === "rewrite"
       ? result.includes("## リライト全文")
       : result.includes("## 修正後の全文");
+
+  const isPolish = mode === "polish";
 
   // ── Mode selection ────────────────────────────────────────────────
   if (!mode) {
@@ -72,7 +128,7 @@ export default function TabRewrite() {
         <p className="text-zinc-400 text-sm mb-6">どのモードで使いますか？</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button
-            onClick={() => setMode("rewrite")}
+            onClick={() => handleSelectMode("rewrite")}
             className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
           >
             <div className="text-2xl mb-2">✏️</div>
@@ -80,9 +136,12 @@ export default function TabRewrite() {
             <div className="text-zinc-400 text-sm">
               文体・構成を分析し、関達也の声に合わせて全文リライトします
             </div>
+            {savedResults.rewrite?.result && (
+              <div className="text-xs text-amber-400 mt-2">前回の結果を表示する</div>
+            )}
           </button>
           <button
-            onClick={() => setMode("polish")}
+            onClick={() => handleSelectMode("polish")}
             className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
           >
             <div className="text-2xl mb-2">🔍</div>
@@ -90,6 +149,9 @@ export default function TabRewrite() {
             <div className="text-zinc-400 text-sm">
               誤字・不自然な表現・くどい箇所・流れの問題を指摘し、修正後の全文を出力します
             </div>
+            {savedResults.polish?.result && (
+              <div className="text-xs text-amber-400 mt-2">前回の結果を表示する</div>
+            )}
           </button>
         </div>
       </div>
@@ -97,16 +159,24 @@ export default function TabRewrite() {
   }
 
   // ── Rewrite / Polish screen ───────────────────────────────────────
-  const isPolish = mode === "polish";
-
   return (
     <div className="space-y-5">
-      <button
-        onClick={handleBack}
-        className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
-      >
-        ← モード選択に戻る
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleBack}
+          className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+        >
+          ← モード選択に戻る
+        </button>
+        {result && !loading && (
+          <button
+            onClick={handleReset}
+            className="text-xs text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400/60 rounded px-3 py-1.5 transition-colors ml-auto"
+          >
+            最初からやり直す
+          </button>
+        )}
+      </div>
 
       <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
         <div>
@@ -127,7 +197,7 @@ export default function TabRewrite() {
         </div>
 
         {isPolish && (
-          <div className="text-xs text-zinc-500 space-y-0.5">
+          <div className="text-xs text-zinc-500">
             <p>チェック項目：① 誤字脱字　② 不自然な表現　③ くどい箇所　④ 流れ・順番　⑤ 結論の明瞭さ　⑥ 関達也らしさ</p>
           </div>
         )}
@@ -155,12 +225,24 @@ export default function TabRewrite() {
           </div>
 
           {!loading && hasFinalSection && (
-            <div className="flex gap-3">
+            <div className="flex gap-3 flex-wrap">
               <button
                 onClick={handleCopyResult}
-                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
+                disabled={copied}
+                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                  copied
+                    ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
+                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                }`}
               >
-                {isPolish ? "修正後の全文をコピー" : "リライト全文をコピー"}
+                {copied ? "コピー済み ✓" : (isPolish ? "修正後の全文をコピー" : "リライト全文をコピー")}
+              </button>
+              <button
+                onClick={handleSaveDraft}
+                disabled={saved}
+                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
+              >
+                {saved ? "✓ 下書きとして保存しました" : "下書きとして保存"}
               </button>
             </div>
           )}

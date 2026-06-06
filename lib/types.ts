@@ -38,4 +38,5 @@ export interface Draft {
   createdAt: string;
   status: "draft" | "published";
   isPaid: boolean;
+  draftType?: "generate" | "rewrite" | "polish";
 }
