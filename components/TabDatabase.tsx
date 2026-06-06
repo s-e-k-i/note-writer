@@ -59,7 +59,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
   const magazineCounts = MAGAZINES.map((m) => ({
     name: m.split("──")[0].trim(),
-    count: articles.filter((a) => a.magazine === m).length,
+    count: articles.filter((a) => (a.magazines ?? [a.magazine]).includes(m)).length,
   }));
 
   const monthlyCounts = articles.reduce<Record<string, number>>((acc, a) => {

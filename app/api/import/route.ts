@@ -144,16 +144,20 @@ export async function POST(request: Request) {
       return Response.json({ error: "記事が見つかりませんでした" }, { status: 400 });
     }
 
-    const articles: Article[] = parsed.map((a, idx) => ({
-      id: String(idx + 1).padStart(3, "0"),
-      number: a.number,
-      date: a.date,
-      title: a.title,
-      magazine: a.magazines.length > 0 ? a.magazines[0] : classifyMagazine(a.title, a.body),
-      summary: a.body.slice(0, 150).replace(/\n/g, " ").trim(),
-      isPaid: a.isPaid,
-      paidPrice: a.paidPrice,
-    }));
+    const articles: Article[] = parsed.map((a, idx) => {
+      const resolvedMagazines = a.magazines.length > 0 ? a.magazines : [classifyMagazine(a.title, a.body)];
+      return {
+        id: String(idx + 1).padStart(3, "0"),
+        number: a.number,
+        date: a.date,
+        title: a.title,
+        magazine: resolvedMagazines[0],
+        magazines: resolvedMagazines,
+        summary: a.body.slice(0, 150).replace(/\n/g, " ").trim(),
+        isPaid: a.isPaid,
+        paidPrice: a.paidPrice,
+      };
+    });
 
     return Response.json({ articles });
   } catch (error) {

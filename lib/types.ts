@@ -7,6 +7,7 @@ export interface Article {
   summary: string;
   isPaid?: boolean;
   paidPrice?: number;
+  magazines?: string[];
 }
 
 export interface ConsultMessage {
