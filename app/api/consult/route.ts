@@ -161,10 +161,15 @@ export async function POST(request: Request) {
       ];
     }
 
+    const isChat = mode === "chat";
+    const finalSystemPrompt = isChat
+      ? `${systemPrompt}\n\n【壁打ちモードのルール】\n1回の返答は300文字以内にまとめること。続きは相手の反応を見てから返すこと。`
+      : systemPrompt;
+
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
-      max_tokens: 4000,
-      system: systemPrompt,
+      max_tokens: isChat ? 2000 : 4000,
+      system: finalSystemPrompt,
       messages: userMessages.map((m) => ({
         role: m.role,
         content: m.content,

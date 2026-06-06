@@ -328,7 +328,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
               setCachedMessages((prev) => ({ ...prev, purpose: undefined }));
               setMessages([]);
             }}
-            className="text-zinc-600 hover:text-zinc-400 text-xs border border-zinc-700 rounded px-2 py-1"
+            className="text-amber-500 hover:text-amber-400 text-xs border border-amber-500/50 hover:border-amber-400 rounded px-3 py-1.5 transition-colors font-medium"
           >
             条件を変えて再提案
           </button>
