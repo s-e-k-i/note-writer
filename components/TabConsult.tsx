@@ -16,6 +16,13 @@ const CACHE_KEY = "note_writer_consult_cache";
 const SETTINGS_KEY = "note_writer_consult_settings";
 const PRICE_OPTIONS = [500, 980, 1500, 1980] as const;
 
+const MODE_LABELS: Record<ConsultMode, string> = {
+  auto: "✨ おまかせ提案",
+  purpose: "🎯 目的から考えるモードの提案",
+  memo: "📝 メモから考えるモードの提案",
+  chat: "💬 壁打ちモードの提案",
+};
+
 const CHAT_OPENER: ConsultMessage = {
   role: "assistant",
   content:
@@ -543,21 +550,20 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   // SCREEN 3: Mode selection
   // ─────────────────────────────────────────────────────────────
   if (!mode) {
-    const paidBadge = articleType === "paid" && price !== null && (
-      <div className="text-xs text-amber-500 mb-4">
-        {price === "ai" ? "有料記事（価格はAIが提案）" : `有料記事 ${(price as number).toLocaleString()}円`}
-      </div>
-    );
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             onClick={handleBackToArticleType}
             className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
           >
-            ← 記事タイプに戻る
+            ← 記事タイプ・価格の設定に戻る
           </button>
-          {paidBadge}
+          {articleType === "paid" && price !== null && (
+            <span className="text-xs text-amber-500 ml-auto">
+              {price === "ai" ? "有料記事（価格はAIが提案）" : `有料記事 ${(price as number).toLocaleString()}円`}
+            </span>
+          )}
         </div>
         <p className="text-zinc-400 text-sm mb-2">どのような方法で次のテーマを考えますか？</p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -661,6 +667,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
 
         {(memoResult || memoLoading) && (
           <div className="space-y-4">
+            <p className="text-xs text-zinc-500 font-medium">{MODE_LABELS.memo}</p>
             {summaryPart && (
               <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
                 <p className="text-xs font-medium text-amber-400 mb-2">こういう内容として受け取りました</p>
@@ -774,6 +781,9 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         )}
       </div>
 
+      {mode && messages.length > 0 && (
+        <p className="text-xs text-zinc-500 font-medium mb-3">{MODE_LABELS[mode]}</p>
+      )}
       <div className="flex-1 space-y-4 overflow-y-auto pb-4 min-h-0" style={{ maxHeight: "60vh" }}>
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "flex justify-end" : ""}>

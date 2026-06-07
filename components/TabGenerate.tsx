@@ -39,6 +39,10 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   // Override state (for "変更する")
   const [overridingType, setOverridingType] = useState(false);
   const [overridingPrice, setOverridingPrice] = useState(false);
+  const [priceIsAI, setPriceIsAI] = useState(false);
+
+  // "別のテーマで書く" — clears proposal context without touching Tab② cache
+  const [cleared, setCleared] = useState(false);
 
   // Output state
   const [loading, setLoading] = useState(false);
@@ -59,6 +63,8 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setWordCount("ai");
     setOverridingType(false);
     setOverridingPrice(false);
+    setPriceIsAI(false);
+    setCleared(false);
     setGenerated("");
     setSaved(false);
   }, [initialProposal]);
@@ -68,12 +74,25 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   }, [generated]);
 
   const isPaid = articleType === "paid";
+  const isFromProposal = fromProposal && !cleared;
   const isOverriding =
-    fromProposal &&
+    isFromProposal &&
     (overridingType ||
       overridingPrice ||
       articleType !== (initialProposal?.articleType ?? "free") ||
-      price !== (initialProposal?.price ?? null));
+      price !== (initialProposal?.price ?? null) ||
+      priceIsAI);
+
+  const handleClearProposal = () => {
+    setCleared(true);
+    setTheme("");
+    setFullContext("");
+    setArticleType("free");
+    setPrice(null);
+    setPriceIsAI(false);
+    setGenerated("");
+    setSaved(false);
+  };
 
   const handleGenerate = async () => {
     if (!theme.trim()) return;
@@ -115,9 +134,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   };
 
   const handleCopy = () => {
-    const bodyOnly = isPaid
-      ? generated.split("## タイトル案")[0].trim()
-      : generated.split("## タイトル案")[0].trim();
+    const bodyOnly = generated.split("## タイトル案")[0].trim();
     navigator.clipboard.writeText(bodyOnly);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -137,9 +154,54 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   const body = parts[0]?.trim() || "";
   const titlesRaw = parts[1]?.trim() || "";
 
+  // ── Price edit (showAI: show "AIに任せる" option when overriding from proposal) ──
+  const renderPriceEdit = (showAI = false) => (
+    <div>
+      <label className="text-xs text-zinc-400 mb-1.5 block">価格</label>
+      <div className="flex flex-wrap gap-2 items-center">
+        {PRICE_OPTIONS.map((p) => (
+          <button
+            key={p}
+            onClick={() => { setPrice(p); setPriceIsAI(false); }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              price === p && !priceIsAI
+                ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+            }`}
+          >
+            {p.toLocaleString()}円
+          </button>
+        ))}
+        {showAI && (
+          <button
+            onClick={() => { setPrice(null); setPriceIsAI(true); }}
+            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
+              priceIsAI
+                ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+            }`}
+          >
+            AIに任せる
+          </button>
+        )}
+        <div className="flex gap-1 items-center">
+          <input
+            type="number"
+            placeholder="自由"
+            value={customPrice}
+            onChange={(e) => setCustomPrice(e.target.value)}
+            onBlur={() => { const n = parseInt(customPrice); if (n > 0) { setPrice(n); setPriceIsAI(false); } }}
+            className="w-24 bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+          />
+          <span className="text-zinc-500 text-xs">円</span>
+        </div>
+      </div>
+    </div>
+  );
+
   // ── Article type + price row (shared between from-proposal and direct) ──
   const renderTypePriceSection = () => {
-    if (fromProposal && !overridingType) {
+    if (isFromProposal && !overridingType) {
       // Read-only display with "変更する"
       return (
         <div className="space-y-2">
@@ -158,10 +220,10 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
           {isPaid && (
             <div className="flex items-center gap-3 text-sm">
               <span className="text-zinc-400 text-xs w-20">価格</span>
-              {fromProposal && !overridingPrice ? (
+              {isFromProposal && !overridingPrice ? (
                 <>
                   <span className="text-zinc-200 font-medium">
-                    {price ? `${price.toLocaleString()}円` : "未設定"}
+                    {priceIsAI ? "AIに任せる" : price ? `${price.toLocaleString()}円` : "未設定"}
                   </span>
                   <button
                     onClick={() => setOverridingPrice(true)}
@@ -171,7 +233,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
                   </button>
                 </>
               ) : (
-                renderPriceEdit()
+                renderPriceEdit(true)
               )}
             </div>
           )}
@@ -182,9 +244,15 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     // Edit mode (either overriding or direct access)
     return (
       <div className="space-y-3">
-        {fromProposal && (
+        {isFromProposal && (
           <button
-            onClick={() => { setOverridingType(false); setArticleType(initialProposal?.articleType ?? "free"); setPrice(initialProposal?.price ?? null); setOverridingPrice(false); }}
+            onClick={() => {
+              setOverridingType(false);
+              setArticleType(initialProposal?.articleType ?? "free");
+              setPrice(initialProposal?.price ?? null);
+              setOverridingPrice(false);
+              setPriceIsAI(false);
+            }}
             className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2"
           >
             ← タブ②の設定に戻す
@@ -196,7 +264,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             {(["free", "paid"] as const).map((t) => (
               <button
                 key={t}
-                onClick={() => { setArticleType(t); if (t === "free") setPrice(null); }}
+                onClick={() => { setArticleType(t); if (t === "free") { setPrice(null); setPriceIsAI(false); } }}
                 className={`px-4 py-2 rounded-lg border text-sm transition-colors ${
                   articleType === t
                     ? "border-amber-500 bg-amber-500/10 text-amber-400"
@@ -213,48 +281,26 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     );
   };
 
-  const renderPriceEdit = () => (
-    <div>
-      <label className="text-xs text-zinc-400 mb-1.5 block">価格</label>
-      <div className="flex flex-wrap gap-2 items-center">
-        {PRICE_OPTIONS.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPrice(p)}
-            className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-              price === p
-                ? "border-amber-500 bg-amber-500/10 text-amber-400"
-                : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
-            }`}
-          >
-            {p.toLocaleString()}円
-          </button>
-        ))}
-        <div className="flex gap-1 items-center">
-          <input
-            type="number"
-            placeholder="自由"
-            value={customPrice}
-            onChange={(e) => setCustomPrice(e.target.value)}
-            onBlur={() => { const n = parseInt(customPrice); if (n > 0) setPrice(n); }}
-            className="w-24 bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500"
-          />
-          <span className="text-zinc-500 text-xs">円</span>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div className="space-y-5">
-      {/* Back to consult */}
-      {fullContext && onBackToConsult && (
-        <button
-          onClick={onBackToConsult}
-          className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
-        >
-          ← 提案に戻る
-        </button>
+      {/* Back to consult / 別のテーマで書く */}
+      {fullContext && (
+        <div className="flex items-center gap-4">
+          {onBackToConsult && (
+            <button
+              onClick={onBackToConsult}
+              className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+            >
+              ← 提案に戻る
+            </button>
+          )}
+          <button
+            onClick={handleClearProposal}
+            className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+          >
+            別のテーマで書く
+          </button>
+        </div>
       )}
 
       {/* Proposal context card */}
@@ -279,8 +325,8 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
 
       {/* Form */}
       <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
-        {/* Theme (only shown for direct access) */}
-        {!fromProposal && (
+        {/* Theme (only shown for direct access or after clearing proposal) */}
+        {!isFromProposal && (
           <div>
             <label className="text-xs text-zinc-400 mb-1.5 block">タイトル案・テーマ *</label>
             <textarea
@@ -370,12 +416,12 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
 
         <button
           onClick={handleGenerate}
-          disabled={loading || !theme.trim() || (isPaid && !price)}
+          disabled={loading || !theme.trim() || (isPaid && !price && !priceIsAI)}
           className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-bold rounded-lg transition-colors"
         >
           {loading ? "生成中..." : "記事を生成する"}
         </button>
-        {isPaid && !price && (
+        {isPaid && !price && !priceIsAI && (
           <p className="text-xs text-amber-500/80 text-center">有料記事には価格の設定が必要です</p>
         )}
       </div>
