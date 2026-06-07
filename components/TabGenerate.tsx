@@ -199,8 +199,14 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             type="number"
             placeholder="自由"
             value={customPrice}
-            onChange={(e) => setCustomPrice(e.target.value)}
-            onBlur={() => { const n = parseInt(customPrice); if (n > 0) { setPrice(n); setPriceIsAI(false); setShowPriceWarning(false); } }}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCustomPrice(val);
+              if (!val.trim() && price !== null && !(PRICE_OPTIONS as readonly number[]).includes(price)) {
+                setPrice(null);
+              }
+            }}
+            onBlur={() => { const n = parseInt(customPrice.trim()); if (n > 0) { setPrice(n); setPriceIsAI(false); setShowPriceWarning(false); } }}
             className="w-24 bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500"
           />
           <span className="text-zinc-500 text-xs">円</span>
