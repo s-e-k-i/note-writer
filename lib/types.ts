@@ -10,11 +10,16 @@ export interface Article {
   magazines?: string[];
 }
 
+export type ArticleType = "free" | "paid";
+export type WordCount = "short" | "standard" | "ai";
+
 export interface ProposalContext {
   theme: string;
   magazine?: string;
   purpose?: string;
   fullContext?: string;
+  articleType?: ArticleType;
+  price?: number;
 }
 
 export interface ConsultMessage {
@@ -22,7 +27,7 @@ export interface ConsultMessage {
   content: string;
 }
 
-export type ConsultMode = "auto" | "purpose" | "chat";
+export type ConsultMode = "auto" | "purpose" | "memo" | "chat";
 
 export interface PurposeForm {
   goal: string;
@@ -39,4 +44,12 @@ export interface Draft {
   status: "draft" | "published";
   isPaid: boolean;
   draftType?: "generate" | "rewrite" | "polish";
+}
+
+export interface ConsultSettings {
+  articleType: ArticleType | null;
+  price: number | "ai" | null;
+  mode: ConsultMode | null;
+  memoText: string;
+  memoResult: string;
 }

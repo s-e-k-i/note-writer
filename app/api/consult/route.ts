@@ -38,12 +38,21 @@ function buildArticlesSummary(articles: Article[]): string {
     .join("\n");
 }
 
-function buildSystemPrompt(articles: Article[]): string {
+function buildSystemPrompt(articles: Article[], articleType?: string): string {
   const articleCount = articles.length;
   const magazineCounts = buildMagazineCounts(articles);
   const articlesSummary = buildArticlesSummary(articles);
+  const isPaid = articleType === "paid";
 
-  return `あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。
+  const paidSystemNote = isPaid
+    ? `\n━━━━━━━━━━━━━━━━━━━━━━━━\n【有料記事として提案する】\n━━━━━━━━━━━━━━━━━━━━━━━━\nこの依頼は有料記事の提案です。各提案に有料ライン位置と無料・有料の比率を必ず含めること。\n`
+    : "";
+
+  const paidProposalFields = isPaid
+    ? `\n**有料ライン位置**：（どこから有料にするか。「〇〇の見出しの後から」と具体的に）\n**無料と有料の比率**：（例：7割無料・3割有料）`
+    : "";
+
+  return `あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。${paidSystemNote}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【関達也のプロフィール・実績】
@@ -106,7 +115,7 @@ ${magazineCounts}
 **狙い・ターゲット**：
 **構成イメージ**：
 **コンサル導線設計**：
-**なぜ今この記事か**：
+**なぜ今この記事か**：${paidProposalFields}
 
 <!-- PROPOSAL_META: {"magazine":"マガジン正式名","purpose":"コンサル導線"} -->
 
@@ -127,10 +136,10 @@ ${articlesSummary}`;
 
 export async function POST(request: Request) {
   try {
-    const { mode, messages, articles, purposeForm } = await request.json();
+    const { mode, messages, articles, purposeForm, articleType } = await request.json();
 
     const articleList: Article[] = articles || [];
-    const systemPrompt = buildSystemPrompt(articleList);
+    const systemPrompt = buildSystemPrompt(articleList, articleType);
 
     let userMessages: ConsultMessage[] = messages || [];
 
@@ -138,7 +147,7 @@ export async function POST(request: Request) {
       userMessages = [
         {
           role: "user",
-          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。「ひとりビジネス・コンサル導線」になる記事を優先し、まだ書いていない角度を選んでください。`,
+          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。「ひとりビジネス・コンサル導線」になる記事を優先し、まだ書いていない角度を選んでください。${articleType === "paid" ? "有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
         },
       ];
     } else if (mode === "purpose" && purposeForm) {
@@ -149,7 +158,7 @@ export async function POST(request: Request) {
 
 書く目的：${purposeForm.goal}
 届けたいターゲット：${purposeForm.target}
-方向性メモ：${purposeForm.notes || "（なし）"}`,
+方向性メモ：${purposeForm.notes || "（なし）"}${articleType === "paid" ? "\n\n有料記事として設計すること。各提案に有料ライン位置を含めること。" : ""}`,
         },
       ];
     } else if (mode === "chat" && userMessages.length === 0) {
