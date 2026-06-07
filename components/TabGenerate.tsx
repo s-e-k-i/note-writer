@@ -44,6 +44,9 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   // "別のテーマで書く" — clears proposal context without touching Tab② cache
   const [cleared, setCleared] = useState(false);
 
+  // Validation
+  const [showPriceWarning, setShowPriceWarning] = useState(false);
+
   // Output state
   const [loading, setLoading] = useState(false);
   const [generated, setGenerated] = useState("");
@@ -65,6 +68,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setOverridingPrice(false);
     setPriceIsAI(false);
     setCleared(false);
+    setShowPriceWarning(false);
     setGenerated("");
     setSaved(false);
   }, [initialProposal]);
@@ -90,12 +94,18 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setArticleType("free");
     setPrice(null);
     setPriceIsAI(false);
+    setShowPriceWarning(false);
     setGenerated("");
     setSaved(false);
   };
 
   const handleGenerate = async () => {
     if (!theme.trim()) return;
+    if (isPaid && !price && !priceIsAI) {
+      setShowPriceWarning(true);
+      return;
+    }
+    setShowPriceWarning(false);
     setLoading(true);
     setGenerated("");
     setSaved(false);
@@ -162,7 +172,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         {PRICE_OPTIONS.map((p) => (
           <button
             key={p}
-            onClick={() => { setPrice(p); setPriceIsAI(false); }}
+            onClick={() => { setPrice(p); setPriceIsAI(false); setShowPriceWarning(false); }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
               price === p && !priceIsAI
                 ? "border-amber-500 bg-amber-500/10 text-amber-400"
@@ -174,7 +184,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         ))}
         {showAI && (
           <button
-            onClick={() => { setPrice(null); setPriceIsAI(true); }}
+            onClick={() => { setPrice(null); setPriceIsAI(true); setShowPriceWarning(false); }}
             className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
               priceIsAI
                 ? "border-amber-500 bg-amber-500/10 text-amber-400"
@@ -190,7 +200,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             placeholder="自由"
             value={customPrice}
             onChange={(e) => setCustomPrice(e.target.value)}
-            onBlur={() => { const n = parseInt(customPrice); if (n > 0) { setPrice(n); setPriceIsAI(false); } }}
+            onBlur={() => { const n = parseInt(customPrice); if (n > 0) { setPrice(n); setPriceIsAI(false); setShowPriceWarning(false); } }}
             className="w-24 bg-zinc-700 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500"
           />
           <span className="text-zinc-500 text-xs">円</span>
@@ -416,12 +426,12 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
 
         <button
           onClick={handleGenerate}
-          disabled={loading || !theme.trim() || (isPaid && !price && !priceIsAI)}
+          disabled={loading || !theme.trim()}
           className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-bold rounded-lg transition-colors"
         >
           {loading ? "生成中..." : "記事を生成する"}
         </button>
-        {isPaid && !price && !priceIsAI && (
+        {showPriceWarning && (
           <p className="text-xs text-amber-500/80 text-center">有料記事には価格の設定が必要です</p>
         )}
       </div>
