@@ -20,6 +20,7 @@ export interface ProposalContext {
   fullContext?: string;
   articleType?: ArticleType;
   price?: number;
+  sourceMemo?: string;
 }
 
 export interface ConsultMessage {
@@ -44,6 +45,8 @@ export interface Draft {
   createdAt: string;
   status: "draft" | "published";
   isPaid: boolean;
+  price?: number;
+  sourceMemo?: string;
   draftType?: "generate" | "rewrite" | "polish";
 }
 

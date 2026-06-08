@@ -106,6 +106,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [memoText, setMemoText] = useState("");
   const [memoResult, setMemoResult] = useState("");
   const [memoLoading, setMemoLoading] = useState(false);
+  const [memoExpanded, setMemoExpanded] = useState(false);
 
   // AI price flow
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
@@ -299,6 +300,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     const base: ProposalContext = {
       ...props,
       articleType: articleType ?? undefined,
+      sourceMemo: mode === "memo" ? memoText : undefined,
     };
     if (articleType === "paid") {
       if (price === "ai") {
@@ -668,6 +670,27 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         {(memoResult || memoLoading) && (
           <div className="space-y-4">
             <p className="text-xs text-zinc-500 font-medium">{MODE_LABELS.memo}</p>
+
+            {/* 元メモ（折りたたみ） */}
+            {memoText && (
+              <div className="bg-zinc-800/40 border border-zinc-700 rounded-xl p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-zinc-500">元メモ</span>
+                  <button
+                    onClick={() => setMemoExpanded((v) => !v)}
+                    className="text-xs text-zinc-500 hover:text-zinc-300"
+                  >
+                    {memoExpanded ? "閉じる" : "展開する"}
+                  </button>
+                </div>
+                {memoExpanded && (
+                  <pre className="mt-2 text-xs text-zinc-500 whitespace-pre-wrap leading-relaxed border-t border-zinc-700 pt-2">
+                    {memoText}
+                  </pre>
+                )}
+              </div>
+            )}
+
             {summaryPart && (
               <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
                 <p className="text-xs font-medium text-amber-400 mb-2">こういう内容として受け取りました</p>

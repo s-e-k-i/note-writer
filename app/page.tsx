@@ -120,6 +120,7 @@ export default function Home() {
                 onSaveDraft={handleSaveDraftFromRewrite}
                 initialText={pendingRewrite?.text}
                 initialMode={pendingRewrite?.mode}
+                onBackToGenerate={() => setActiveTab("generate")}
               />
             )}
             {activeTab === "drafts" && (

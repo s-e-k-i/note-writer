@@ -24,12 +24,19 @@ function DraftTypeBadge({ type }: { type?: Draft["draftType"] }) {
   );
 }
 
+function formatCharCount(body: string): string {
+  const n = body.replace(/\s+/g, "").length;
+  if (n >= 1000) return `約${(Math.round(n / 100) * 100).toLocaleString()}字`;
+  return `${n}字`;
+}
+
 export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [copied, setCopied] = useState(false);
+  const [memoExpanded, setMemoExpanded] = useState(false);
 
   const selected = selectedId !== null ? (drafts.find((d) => d.id === selectedId) ?? null) : null;
 
@@ -39,6 +46,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
     setEditBody(draft.body);
     setEditing(false);
     setCopied(false);
+    setMemoExpanded(false);
   };
 
   const handleSaveEdit = () => {
@@ -174,11 +182,22 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             ) : (
               <h2 className="text-zinc-100 font-medium text-base flex-1">{selected.title}</h2>
             )}
-            <div className="flex gap-1.5 shrink-0 flex-wrap">
+            <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
               <DraftTypeBadge type={selected.draftType} />
-              {selected.isPaid && (
-                <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
-                  有料
+              {selected.isPaid ? (
+                <>
+                  <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
+                    有料
+                  </span>
+                  {selected.price && (
+                    <span className="text-xs text-amber-400/70 border border-amber-500/20 rounded px-2 py-0.5">
+                      {selected.price.toLocaleString()}円
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-2 py-0.5">
+                  {formatCharCount(selected.body)}
                 </span>
               )}
               <span
@@ -193,9 +212,29 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             </div>
           </div>
           <div className="text-xs text-zinc-500">
-            {selected.magazine.split("──")[0].trim()} · {selected.createdAt}
+            {selected.magazine ? selected.magazine.split("──")[0].trim() : "（マガジン未設定）"} · {selected.createdAt}
           </div>
         </div>
+
+        {/* Source memo */}
+        {selected.sourceMemo && (
+          <div className="bg-zinc-800/40 border border-zinc-700 rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-zinc-500">元メモ</span>
+              <button
+                onClick={() => setMemoExpanded((v) => !v)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                {memoExpanded ? "閉じる" : "展開する"}
+              </button>
+            </div>
+            {memoExpanded && (
+              <pre className="mt-2 text-xs text-zinc-500 whitespace-pre-wrap leading-relaxed border-t border-zinc-700 pt-2">
+                {selected.sourceMemo}
+              </pre>
+            )}
+          </div>
+        )}
 
         {/* Title proposals */}
         {selected.titles && selected.titles.length > 1 && (
@@ -269,11 +308,22 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             >
               <div className="flex items-start gap-2 flex-wrap">
                 <span className="text-zinc-100 text-sm font-medium flex-1 leading-snug">{d.title}</span>
-                <div className="flex gap-1.5 shrink-0 flex-wrap">
+                <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
                   <DraftTypeBadge type={d.draftType} />
-                  {d.isPaid && (
-                    <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
-                      有料
+                  {d.isPaid ? (
+                    <>
+                      <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
+                        有料
+                      </span>
+                      {d.price && (
+                        <span className="text-xs text-amber-400/70 border border-amber-500/20 rounded px-1.5 py-0.5">
+                          {d.price.toLocaleString()}円
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">
+                      {formatCharCount(d.body)}
                     </span>
                   )}
                   <span
@@ -288,7 +338,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
                 </div>
               </div>
               <div className="text-xs text-zinc-500 mt-1.5">
-                {d.magazine.split("──")[0].trim()} · {d.createdAt}
+                {d.magazine ? d.magazine.split("──")[0].trim() : "（マガジン未設定）"} · {d.createdAt}
               </div>
             </button>
             {onSendToRewrite && (

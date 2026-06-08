@@ -257,6 +257,8 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
       magazine,
       body,
       isPaid,
+      price: isPaid ? (price ?? undefined) : undefined,
+      sourceMemo: initialProposal?.sourceMemo,
       draftType: "generate",
     });
     setSaved(true);

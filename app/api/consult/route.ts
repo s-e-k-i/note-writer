@@ -144,10 +144,18 @@ export async function POST(request: Request) {
     let userMessages: ConsultMessage[] = messages || [];
 
     if (mode === "auto") {
+      const existingTitles = articleList.length > 0
+        ? articleList.map((a) => `・${a.title}`).join("\n")
+        : "（記事なし）";
       userMessages = [
         {
           role: "user",
-          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。「ひとりビジネス・コンサル導線」になる記事を優先し、まだ書いていない角度を選んでください。${articleType === "paid" ? "有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
+          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。
+
+【重要】以下の既存タイトルと重複・類似するテーマは絶対に避けてください：
+${existingTitles}
+
+「ひとりビジネス・コンサル導線」になる記事を優先し、上記にない新しい角度・切り口を選んでください。${articleType === "paid" ? "\n有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
         },
       ];
     } else if (mode === "purpose" && purposeForm) {

@@ -35,9 +35,10 @@ interface Props {
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   initialText?: string;
   initialMode?: RewriteMode;
+  onBackToGenerate?: () => void;
 }
 
-export default function TabRewrite({ onSaveDraft, initialText, initialMode }: Props) {
+export default function TabRewrite({ onSaveDraft, initialText, initialMode, onBackToGenerate }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -241,13 +242,21 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode }: Pr
   // ── Rewrite / Polish screen ───────────────────────────────────────
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={handleBack}
           className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
         >
           ← モード選択に戻る
         </button>
+        {onBackToGenerate && (
+          <button
+            onClick={onBackToGenerate}
+            className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+          >
+            ← 生成した記事に戻る
+          </button>
+        )}
         {result && !loading && (
           <button
             onClick={handleReset}
