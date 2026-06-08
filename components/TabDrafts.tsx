@@ -119,6 +119,8 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
   const [editBody, setEditBody] = useState("");
   const [copied, setCopied] = useState(false);
   const [memoExpanded, setMemoExpanded] = useState(false);
+  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState("");
 
   const selected = selectedId !== null ? (drafts.find((d) => d.id === selectedId) ?? null) : null;
 
@@ -150,6 +152,22 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
     onRemove(selected.id);
     setSelectedId(null);
     setEditing(false);
+  };
+
+  const handleDeleteFromList = (id: string) => {
+    if (!window.confirm("この下書きを削除します。この操作は取り消せません。よろしいですか？")) return;
+    onRemove(id);
+  };
+
+  const startTitleEdit = (d: Draft) => {
+    setEditingTitleId(d.id);
+    setEditingTitleValue(d.title);
+  };
+
+  const saveInlineTitle = (id: string) => {
+    const val = editingTitleValue.trim();
+    if (val) onUpdate(id, { title: val });
+    setEditingTitleId(null);
   };
 
   const handlePublish = () => {
@@ -374,39 +392,68 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
 
       <div className="space-y-2">
         {drafts.map((d) => (
-          <div key={d.id} className="bg-zinc-800 rounded-xl p-4">
-            <button
-              onClick={() => openDraft(d)}
-              className="w-full text-left"
-            >
-              <div className="flex items-start gap-2 flex-wrap">
-                <span className="text-zinc-100 text-sm font-medium flex-1 leading-snug">{d.title}</span>
-                <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
-                  <DraftTypeBadge type={d.draftType} />
-                  {d.isPaid ? (
-                    <PaidCharBadges draft={d} compact />
-                  ) : (
-                    <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">
-                      {formatCharCount(d.body)}
-                    </span>
-                  )}
-                  <span
-                    className={`text-xs rounded px-1.5 py-0.5 border ${
-                      d.status === "published"
-                        ? "bg-green-500/20 text-green-400 border-green-500/30"
-                        : "bg-zinc-700 text-zinc-400 border-zinc-600"
-                    }`}
-                  >
-                    {d.status === "published" ? "公開済み" : "下書き"}
+          <div
+            key={d.id}
+            className="bg-zinc-800 rounded-xl p-4"
+            onClick={() => editingTitleId !== d.id && openDraft(d)}
+            style={{ cursor: editingTitleId === d.id ? "default" : "pointer" }}
+          >
+            {/* Title row */}
+            <div className="flex items-start gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              {editingTitleId === d.id ? (
+                <input
+                  autoFocus
+                  type="text"
+                  value={editingTitleValue}
+                  onChange={(e) => setEditingTitleValue(e.target.value)}
+                  onBlur={() => saveInlineTitle(d.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setEditingTitleId(null);
+                  }}
+                  className="flex-1 bg-zinc-700 border border-amber-500 rounded px-2 py-0.5 text-sm text-zinc-200 focus:outline-none min-w-0"
+                />
+              ) : (
+                <span
+                  onClick={() => startTitleEdit(d)}
+                  className="text-zinc-100 text-sm font-medium flex-1 leading-snug cursor-text hover:text-amber-200/80 transition-colors"
+                  title="クリックでタイトルを編集"
+                >
+                  {d.title}
+                </span>
+              )}
+              <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
+                <DraftTypeBadge type={d.draftType} />
+                {d.isPaid ? (
+                  <PaidCharBadges draft={d} compact />
+                ) : (
+                  <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">
+                    {formatCharCount(d.body)}
                   </span>
-                </div>
+                )}
+                <span
+                  className={`text-xs rounded px-1.5 py-0.5 border ${
+                    d.status === "published"
+                      ? "bg-green-500/20 text-green-400 border-green-500/30"
+                      : "bg-zinc-700 text-zinc-400 border-zinc-600"
+                  }`}
+                >
+                  {d.status === "published" ? "公開済み" : "下書き"}
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteFromList(d.id); }}
+                  className="text-xs text-red-400 hover:text-red-300 border border-red-400/20 hover:border-red-400/50 rounded px-1.5 py-0.5 transition-colors"
+                >
+                  削除
+                </button>
               </div>
-              <div className="text-xs text-zinc-500 mt-1.5">
-                {d.magazine ? d.magazine.split("──")[0].trim() : "（マガジン未設定）"} · {d.createdAt}
-              </div>
-            </button>
+            </div>
+            {/* Metadata */}
+            <div className="text-xs text-zinc-500 mt-1.5">
+              {d.magazine ? d.magazine.split("──")[0].trim() : "（マガジン未設定）"} · {d.createdAt}
+            </div>
             {onSendToRewrite && (
-              <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-zinc-700">
+              <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-zinc-700" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price)}
                   className="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"

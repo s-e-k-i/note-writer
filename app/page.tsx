@@ -139,7 +139,7 @@ export default function Home() {
     </div>
       {/* Scroll to top — fixed, all tabs */}
       <button
-        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        onClick={() => window.scrollTo({ top: 0 })}
         aria-label="ページ上部へ"
         className="fixed bottom-6 right-6 w-10 h-10 bg-zinc-700 hover:bg-zinc-500 text-zinc-300 rounded-full flex items-center justify-center text-lg shadow-lg transition-colors z-50"
       >

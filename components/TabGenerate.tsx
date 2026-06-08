@@ -245,6 +245,15 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     }
   };
 
+  const handleClearGenerated = () => {
+    if (!window.confirm("記事をクリアします。よろしいですか？")) return;
+    setGenerated("");
+    setImprovedTitlesRaw("");
+    setSaved(false);
+    setCopied(false);
+    try { localStorage.removeItem(GENERATE_CACHE_KEY); } catch {}
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(body);
     setCopied(true);
@@ -626,6 +635,12 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
           {/* Action buttons */}
           {!loading && generated && (
             <div className="flex gap-3 flex-wrap">
+              <button
+                onClick={handleClearGenerated}
+                className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
+              >
+                記事をクリア
+              </button>
               <button
                 onClick={handleCopy}
                 disabled={copied}
