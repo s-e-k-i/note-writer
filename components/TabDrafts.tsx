@@ -9,7 +9,7 @@ interface Props {
   drafts: Draft[];
   onUpdate: (id: string, updates: Partial<Draft>) => void;
   onRemove: (id: string) => void;
-  onSendToRewrite?: (text: string, mode: RewriteMode) => void;
+  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
 }
 
 function DraftTypeBadge({ type }: { type?: Draft["draftType"] }) {
@@ -157,13 +157,13 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             {onSendToRewrite && (
               <>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "rewrite")}
+                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price)}
                   className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                 >
                   リライトへ →
                 </button>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "polish")}
+                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price)}
                   className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                 >
                   仕上げへ →
@@ -385,13 +385,13 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             {onSendToRewrite && (
               <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-zinc-700">
                 <button
-                  onClick={() => onSendToRewrite(d.body, "rewrite")}
+                  onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price)}
                   className="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                 >
                   リライトへ →
                 </button>
                 <button
-                  onClick={() => onSendToRewrite(d.body, "polish")}
+                  onClick={() => onSendToRewrite(d.body, "polish", d.isPaid, d.price)}
                   className="px-2.5 py-1 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                 >
                   仕上げへ →

@@ -35,10 +35,12 @@ interface Props {
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   initialText?: string;
   initialMode?: RewriteMode;
+  initialIsPaid?: boolean;
+  initialPrice?: number;
   onBackToGenerate?: () => void;
 }
 
-export default function TabRewrite({ onSaveDraft, initialText, initialMode, onBackToGenerate }: Props) {
+export default function TabRewrite({ onSaveDraft, initialText, initialMode, initialIsPaid, initialPrice, onBackToGenerate }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -191,7 +193,14 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, onBa
     const title =
       articleText.split("\n").find((l) => l.trim().length > 0)?.trim() ||
       (mode === "rewrite" ? "リライト記事" : "仕上げ記事");
-    onSaveDraft({ title, magazine: "", body, isPaid: false, draftType: mode });
+    onSaveDraft({
+      title,
+      magazine: "",
+      body,
+      isPaid: initialIsPaid ?? false,
+      price: initialIsPaid ? initialPrice : undefined,
+      draftType: mode,
+    });
     setSaved(true);
   };
 

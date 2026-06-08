@@ -25,7 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("database");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
-  const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode } | null>(null);
+  const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number } | null>(null);
   const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft } = useDraftsDB();
 
@@ -49,8 +49,8 @@ export default function Home() {
     addDraft(draft);
   };
 
-  const handleSendToRewrite = (text: string, mode: RewriteMode) => {
-    setPendingRewrite({ text, mode });
+  const handleSendToRewrite = (text: string, mode: RewriteMode, isPaid?: boolean, price?: number) => {
+    setPendingRewrite({ text, mode, isPaid, price });
     setActiveTab("rewrite");
   };
 
@@ -120,6 +120,8 @@ export default function Home() {
                 onSaveDraft={handleSaveDraftFromRewrite}
                 initialText={pendingRewrite?.text}
                 initialMode={pendingRewrite?.mode}
+                initialIsPaid={pendingRewrite?.isPaid}
+                initialPrice={pendingRewrite?.price}
                 onBackToGenerate={() => setActiveTab("generate")}
               />
             )}

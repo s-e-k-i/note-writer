@@ -11,7 +11,7 @@ interface Props {
   initialProposal?: ProposalContext | null;
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   onBackToConsult?: () => void;
-  onSendToRewrite?: (text: string, mode: RewriteMode) => void;
+  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
 }
 
 const PRICE_OPTIONS = [500, 980, 1500, 1980] as const;
@@ -21,6 +21,8 @@ interface GenerateCache {
   theme: string;
   generated: string;
   improvedTitlesRaw: string;
+  articleType?: ArticleType;
+  price?: number | null;
 }
 
 function loadGenerateCache(): GenerateCache | null {
@@ -134,6 +136,8 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
       setTheme(cached.theme);
       setGenerated(cached.generated);
       setImprovedTitlesRaw(cached.improvedTitlesRaw);
+      if (cached.articleType) setArticleType(cached.articleType);
+      if (cached.price !== undefined) setPrice(cached.price);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -204,7 +208,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         full += decoder.decode(value);
         setGenerated(full);
       }
-      saveGenerateCache({ theme, generated: full, improvedTitlesRaw: "" });
+      saveGenerateCache({ theme, generated: full, improvedTitlesRaw: "", articleType, price });
     } catch {
       setGenerated("エラーが発生しました。");
     } finally {
@@ -233,7 +237,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         full += decoder.decode(value);
         setImprovedTitlesRaw(full);
       }
-      saveGenerateCache({ theme, generated, improvedTitlesRaw: full });
+      saveGenerateCache({ theme, generated, improvedTitlesRaw: full, articleType, price });
     } catch {
       setImprovedTitlesRaw("エラーが発生しました。");
     } finally {
@@ -643,13 +647,13 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
               {onSendToRewrite && (
                 <>
                   <button
-                    onClick={() => onSendToRewrite(body, "rewrite")}
+                    onClick={() => onSendToRewrite(body, "rewrite", isPaid, price ?? undefined)}
                     className="px-4 py-2 text-sky-400 hover:text-sky-300 text-sm border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                   >
                     リライトへ →
                   </button>
                   <button
-                    onClick={() => onSendToRewrite(body, "polish")}
+                    onClick={() => onSendToRewrite(body, "polish", isPaid, price ?? undefined)}
                     className="px-4 py-2 text-purple-400 hover:text-purple-300 text-sm border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                   >
                     仕上げへ →
