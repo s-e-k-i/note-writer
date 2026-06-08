@@ -71,7 +71,10 @@ export default function Home() {
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                if (tab.id === "generate") setPendingProposal(null);
+                setActiveTab(tab.id);
+              }}
               className={`px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
                 activeTab === tab.id
                   ? "border-amber-400 text-amber-400"

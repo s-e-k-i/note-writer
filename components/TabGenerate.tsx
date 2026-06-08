@@ -84,7 +84,18 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!initialProposal) return;
+    if (!initialProposal) {
+      // Direct Tab③ access — reset article type/price to free defaults
+      setArticleType("free");
+      setPrice(null);
+      setCustomPrice("");
+      setPriceIsAI(false);
+      setOverridingType(false);
+      setOverridingPrice(false);
+      setCleared(false);
+      setShowPriceWarning(false);
+      return;
+    }
     const newTheme = initialProposal.theme ?? "";
 
     // Restore from cache if same proposal
@@ -115,6 +126,18 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     }
   }, [initialProposal]);
 
+  // Restore latest generation from cache when no proposal (direct Tab③ access)
+  useEffect(() => {
+    if (initialProposal) return; // proposal case handled by the other effect
+    const cached = loadGenerateCache();
+    if (cached?.generated) {
+      setTheme(cached.theme);
+      setGenerated(cached.generated);
+      setImprovedTitlesRaw(cached.improvedTitlesRaw);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (generated) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [generated]);
@@ -140,6 +163,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setGenerated("");
     setImprovedTitlesRaw("");
     setSaved(false);
+    try { localStorage.removeItem(GENERATE_CACHE_KEY); } catch {}
   };
 
   const handleGenerate = async () => {
