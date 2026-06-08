@@ -24,10 +24,59 @@ function DraftTypeBadge({ type }: { type?: Draft["draftType"] }) {
   );
 }
 
-function formatCharCount(body: string): string {
-  const n = body.replace(/\s+/g, "").length;
+function countChars(text: string): number {
+  return text.replace(/\s+/g, "").length;
+}
+
+function formatCount(n: number): string {
   if (n >= 1000) return `約${(Math.round(n / 100) * 100).toLocaleString()}字`;
   return `${n}字`;
+}
+
+function formatCharCount(body: string): string {
+  return formatCount(countChars(body));
+}
+
+function splitPaidBody(body: string): { freePart: string; paidPart: string; hasSplit: boolean } {
+  const sepIndex = body.search(/^---\s*$/m);
+  if (sepIndex === -1) return { freePart: body, paidPart: "", hasSplit: false };
+  const freePart = body.slice(0, sepIndex);
+  const paidPart = body.slice(sepIndex).replace(/^---\s*\n?/, "");
+  return { freePart, paidPart, hasSplit: true };
+}
+
+function PaidCharBadges({ draft, compact }: { draft: Draft; compact?: boolean }) {
+  const px = compact ? "px-1.5" : "px-2";
+  const { freePart, paidPart, hasSplit } = splitPaidBody(draft.body);
+  const freeCount = countChars(freePart);
+  const paidCount = countChars(paidPart);
+  const total = freeCount + paidCount;
+  return (
+    <>
+      {draft.price && (
+        <span className={`text-xs text-amber-400 border border-amber-500/30 rounded ${px} py-0.5`}>
+          {draft.price.toLocaleString()}円
+        </span>
+      )}
+      {hasSplit ? (
+        <>
+          <span className={`text-xs text-zinc-400 border border-zinc-700 rounded ${px} py-0.5`}>
+            無料 {formatCount(freeCount)}
+          </span>
+          <span className={`text-xs text-amber-400/60 border border-amber-500/20 rounded ${px} py-0.5`}>
+            有料 {formatCount(paidCount)}
+          </span>
+          <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
+            計 {formatCount(total)}
+          </span>
+        </>
+      ) : (
+        <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
+          計 {formatCount(total)}
+        </span>
+      )}
+    </>
+  );
 }
 
 export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite }: Props) {
@@ -189,11 +238,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
                   <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
                     有料
                   </span>
-                  {selected.price && (
-                    <span className="text-xs text-amber-400/70 border border-amber-500/20 rounded px-2 py-0.5">
-                      {selected.price.toLocaleString()}円
-                    </span>
-                  )}
+                  <PaidCharBadges draft={selected} />
                 </>
               ) : (
                 <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-2 py-0.5">
@@ -315,11 +360,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
                       <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
                         有料
                       </span>
-                      {d.price && (
-                        <span className="text-xs text-amber-400/70 border border-amber-500/20 rounded px-1.5 py-0.5">
-                          {d.price.toLocaleString()}円
-                        </span>
-                      )}
+                      <PaidCharBadges draft={d} compact />
                     </>
                   ) : (
                     <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">
