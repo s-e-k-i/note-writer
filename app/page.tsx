@@ -12,6 +12,7 @@ import { Article, Draft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 
 type Tab = "database" | "consult" | "generate" | "rewrite" | "drafts";
+type RewriteMode = "rewrite" | "polish";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "database", label: "📚 記事データベース" },
@@ -24,6 +25,7 @@ const TABS: { id: Tab; label: string }[] = [
 export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("database");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
+  const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode } | null>(null);
   const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft } = useDraftsDB();
 
@@ -45,6 +47,11 @@ export default function Home() {
   // TabRewrite stays on the rewrite tab after saving
   const handleSaveDraftFromRewrite = (draft: Omit<Draft, "id" | "createdAt" | "status">) => {
     addDraft(draft);
+  };
+
+  const handleSendToRewrite = (text: string, mode: RewriteMode) => {
+    setPendingRewrite({ text, mode });
+    setActiveTab("rewrite");
   };
 
   return (
@@ -102,14 +109,22 @@ export default function Home() {
                 initialProposal={pendingProposal}
                 onSaveDraft={handleSaveDraft}
                 onBackToConsult={() => setActiveTab("consult")}
+                onSendToRewrite={handleSendToRewrite}
               />
             )}
-            {activeTab === "rewrite" && <TabRewrite onSaveDraft={handleSaveDraftFromRewrite} />}
+            {activeTab === "rewrite" && (
+              <TabRewrite
+                onSaveDraft={handleSaveDraftFromRewrite}
+                initialText={pendingRewrite?.text}
+                initialMode={pendingRewrite?.mode}
+              />
+            )}
             {activeTab === "drafts" && (
               <TabDrafts
                 drafts={drafts}
                 onUpdate={updateDraft}
                 onRemove={removeDraft}
+                onSendToRewrite={handleSendToRewrite}
               />
             )}
           </>

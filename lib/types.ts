@@ -38,6 +38,7 @@ export interface PurposeForm {
 export interface Draft {
   id: string;
   title: string;
+  titles?: string[];
   magazine: string;
   body: string;
   createdAt: string;

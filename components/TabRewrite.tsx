@@ -33,9 +33,11 @@ function saveCache(cache: RewriteCache) {
 
 interface Props {
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
+  initialText?: string;
+  initialMode?: RewriteMode;
 }
 
-export default function TabRewrite({ onSaveDraft }: Props) {
+export default function TabRewrite({ onSaveDraft, initialText, initialMode }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -45,11 +47,16 @@ export default function TabRewrite({ onSaveDraft }: Props) {
   const [savedResults, setSavedResults] = useState<Partial<Record<RewriteMode, SavedResult>>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Restore from localStorage on mount
+  // Restore from localStorage on mount; external initial props take priority
   useEffect(() => {
     const cache = loadCache();
     setSavedResults(cache.savedResults);
-    if (cache.mode) {
+    if (initialText && initialMode) {
+      setMode(initialMode);
+      setArticleText(initialText);
+      setResult("");
+      saveCache({ mode: initialMode, savedResults: { ...cache.savedResults, [initialMode]: undefined } });
+    } else if (cache.mode) {
       const sr = cache.savedResults[cache.mode];
       if (sr) {
         setMode(cache.mode);
@@ -57,6 +64,7 @@ export default function TabRewrite({ onSaveDraft }: Props) {
         setResult(sr.result);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
