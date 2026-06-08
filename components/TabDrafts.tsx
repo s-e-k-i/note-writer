@@ -38,43 +38,76 @@ function formatCharCount(body: string): string {
 }
 
 function splitPaidBody(body: string): { freePart: string; paidPart: string; hasSplit: boolean } {
-  const sepIndex = body.search(/^---\s*$/m);
-  if (sepIndex === -1) return { freePart: body, paidPart: "", hasSplit: false };
-  const freePart = body.slice(0, sepIndex);
-  const paidPart = body.slice(sepIndex).replace(/^---\s*\n?/, "");
+  // Paid content starts after "## 有料部分" header
+  const paidSectionIdx = body.indexOf("## 有料部分");
+  if (paidSectionIdx === -1) return { freePart: body, paidPart: "", hasSplit: false };
+
+  const paidStart = body.indexOf("\n", paidSectionIdx) + 1;
+  const paidPart = body.slice(paidStart).replace(/\n?---\s*$/, "").trim();
+
+  // Free content: between the 1st "---" (after balance section) and
+  // the "---" just before "## 有料ラインの設定" (or "## 有料部分")
+  const paidLineIdx = body.indexOf("## 有料ラインの設定");
+  const beforeFreeEnd = paidLineIdx !== -1
+    ? body.slice(0, paidLineIdx)
+    : body.slice(0, paidSectionIdx);
+
+  const lastSep = beforeFreeEnd.lastIndexOf("---");
+  const firstSep = body.indexOf("---");
+
+  let freePart: string;
+  if (firstSep !== -1 && lastSep !== -1 && lastSep > firstSep) {
+    freePart = body.slice(firstSep + 3, lastSep).trim();
+  } else if (firstSep !== -1) {
+    freePart = body.slice(firstSep + 3, paidSectionIdx).trim();
+  } else {
+    freePart = "";
+  }
+
   return { freePart, paidPart, hasSplit: true };
 }
 
+// compact=true → list view: shows "有料 ¥price" + "計XXX字" only
+// compact=false → detail view: shows full breakdown with free/paid split
 function PaidCharBadges({ draft, compact }: { draft: Draft; compact?: boolean }) {
   const px = compact ? "px-1.5" : "px-2";
   const { freePart, paidPart, hasSplit } = splitPaidBody(draft.body);
   const freeCount = countChars(freePart);
   const paidCount = countChars(paidPart);
   const total = freeCount + paidCount;
+  const priceLabel = draft.price ? ` ¥${draft.price.toLocaleString()}` : "";
+
+  if (compact) {
+    return (
+      <>
+        <span className={`text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded ${px} py-0.5`}>
+          有料{priceLabel}
+        </span>
+        <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
+          計{formatCount(total)}
+        </span>
+      </>
+    );
+  }
+
   return (
     <>
-      {draft.price && (
-        <span className={`text-xs text-amber-400 border border-amber-500/30 rounded ${px} py-0.5`}>
-          {draft.price.toLocaleString()}円
-        </span>
-      )}
-      {hasSplit ? (
+      <span className={`text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded ${px} py-0.5`}>
+        有料{priceLabel}
+      </span>
+      {hasSplit && (
         <>
           <span className={`text-xs text-zinc-400 border border-zinc-700 rounded ${px} py-0.5`}>
-            無料 {formatCount(freeCount)}
+            無料{formatCount(freeCount)}
           </span>
           <span className={`text-xs text-amber-400/60 border border-amber-500/20 rounded ${px} py-0.5`}>
-            有料 {formatCount(paidCount)}
-          </span>
-          <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
-            計 {formatCount(total)}
+            有料{formatCount(paidCount)}
           </span>
         </>
-      ) : (
-        <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
-          計 {formatCount(total)}
-        </span>
       )}
+      <span className={`text-xs text-zinc-500 border border-zinc-700 rounded ${px} py-0.5`}>
+        計{formatCount(total)}
+      </span>
     </>
   );
 }
@@ -234,12 +267,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
               <DraftTypeBadge type={selected.draftType} />
               {selected.isPaid ? (
-                <>
-                  <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-2 py-0.5">
-                    有料
-                  </span>
-                  <PaidCharBadges draft={selected} />
-                </>
+                <PaidCharBadges draft={selected} />
               ) : (
                 <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-2 py-0.5">
                   {formatCharCount(selected.body)}
@@ -356,12 +384,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
                 <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
                   <DraftTypeBadge type={d.draftType} />
                   {d.isPaid ? (
-                    <>
-                      <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded px-1.5 py-0.5">
-                        有料
-                      </span>
-                      <PaidCharBadges draft={d} compact />
-                    </>
+                    <PaidCharBadges draft={d} compact />
                   ) : (
                     <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">
                       {formatCharCount(d.body)}
