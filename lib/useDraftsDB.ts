@@ -61,5 +61,17 @@ export function useDraftsDB() {
     []
   );
 
-  return { drafts, loaded, addDraft, updateDraft, removeDraft };
+  const restoreDraft = useCallback(
+    (draft: Draft) => {
+      setDrafts((prev) => {
+        if (prev.some((d) => d.id === draft.id)) return prev;
+        const updated = [draft, ...prev];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    []
+  );
+
+  return { drafts, loaded, addDraft, updateDraft, removeDraft, restoreDraft };
 }

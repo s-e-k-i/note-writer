@@ -27,7 +27,7 @@ export default function Home() {
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number } | null>(null);
   const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
-  const { drafts, addDraft, updateDraft, removeDraft } = useDraftsDB();
+  const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
 
   const handleSelectTheme = (proposal: ProposalContext) => {
     setPendingProposal(proposal);
@@ -131,6 +131,7 @@ export default function Home() {
                 drafts={drafts}
                 onUpdate={updateDraft}
                 onRemove={removeDraft}
+                onRestore={restoreDraft}
                 onSendToRewrite={handleSendToRewrite}
               />
             )}

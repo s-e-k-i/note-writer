@@ -8,6 +8,26 @@ type SortBy = "newest" | "oldest" | "title" | "manual";
 const DRAFT_ORDER_KEY = "note_writer_draft_order";
 const DRAFT_SORT_KEY = "note_writer_draft_sort";
 
+// ── Trash ─────────────────────────────────────────────────────────
+const TRASH_KEY = "note_writer_trash";
+
+interface TrashedDraft extends Draft {
+  trashedAt: string;
+}
+
+function loadTrash(): TrashedDraft[] {
+  try { const r = localStorage.getItem(TRASH_KEY); if (r) return JSON.parse(r); } catch {}
+  return [];
+}
+function saveTrash(items: TrashedDraft[]) {
+  try { localStorage.setItem(TRASH_KEY, JSON.stringify(items)); } catch {}
+}
+function formatTrashedAt(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function loadDraftOrder(): string[] {
   try { const r = localStorage.getItem(DRAFT_ORDER_KEY); if (r) return JSON.parse(r); } catch {}
   return [];
@@ -32,6 +52,7 @@ interface Props {
   drafts: Draft[];
   onUpdate: (id: string, updates: Partial<Draft>) => void;
   onRemove: (id: string) => void;
+  onRestore: (draft: Draft) => void;
   onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
 }
 
@@ -136,7 +157,7 @@ function PaidCharBadges({ draft, compact }: { draft: Draft; compact?: boolean })
   );
 }
 
-export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite }: Props) {
+export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSendToRewrite }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -152,9 +173,14 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
 
+  // Trash
+  const [showTrash, setShowTrash] = useState(false);
+  const [trash, setTrash] = useState<TrashedDraft[]>([]);
+
   useEffect(() => {
     setDraftOrder(loadDraftOrder());
     setSortBy(loadSortPref());
+    setTrash(loadTrash());
   }, []);
 
   const sortedDrafts = useMemo(() => {
@@ -217,17 +243,49 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
     setEditing(false);
   };
 
+  const moveToTrash = (draft: Draft) => {
+    const trashed: TrashedDraft = { ...draft, trashedAt: new Date().toISOString() };
+    const next = [trashed, ...trash];
+    setTrash(next);
+    saveTrash(next);
+  };
+
   const handleDelete = () => {
     if (!selected) return;
-    if (!window.confirm(`「${selected.title}」を削除しますか？この操作は元に戻せません。`)) return;
+    if (!window.confirm(`「${selected.title}」をゴミ箱に移動しますか？`)) return;
+    moveToTrash(selected);
     onRemove(selected.id);
     setSelectedId(null);
     setEditing(false);
   };
 
   const handleDeleteFromList = (id: string) => {
-    if (!window.confirm("この下書きを削除します。この操作は取り消せません。よろしいですか？")) return;
+    const draft = drafts.find((d) => d.id === id);
+    if (!draft) return;
+    if (!window.confirm("この下書きをゴミ箱に移動しますか？")) return;
+    moveToTrash(draft);
     onRemove(id);
+  };
+
+  const handleRestore = (item: TrashedDraft) => {
+    const { trashedAt, ...draft } = item;
+    const next = trash.filter((t) => t.id !== item.id);
+    setTrash(next);
+    saveTrash(next);
+    onRestore(draft as Draft);
+  };
+
+  const handlePermanentDelete = (item: TrashedDraft) => {
+    if (!window.confirm(`「${item.title}」を完全に削除しますか？この操作は元に戻せません。`)) return;
+    const next = trash.filter((t) => t.id !== item.id);
+    setTrash(next);
+    saveTrash(next);
+  };
+
+  const handleEmptyTrash = () => {
+    if (!window.confirm(`ゴミ箱内の${trash.length}件をすべて完全削除しますか？この操作は元に戻せません。`)) return;
+    setTrash([]);
+    saveTrash([]);
   };
 
   const startTitleEdit = (d: Draft) => {
@@ -252,6 +310,67 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  // ── Trash view ────────────────────────────────────────────────────
+  if (showTrash) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowTrash(false)}
+            className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+          >
+            ← 一覧に戻る
+          </button>
+          <h2 className="text-zinc-300 font-medium text-sm">ゴミ箱（{trash.length}件）</h2>
+          {trash.length > 0 && (
+            <button
+              onClick={handleEmptyTrash}
+              className="ml-auto text-xs text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400/60 rounded-lg px-2.5 py-1 transition-colors"
+            >
+              すべて完全削除
+            </button>
+          )}
+        </div>
+        {trash.length === 0 ? (
+          <div className="text-center py-20 text-zinc-500 text-sm">
+            <div className="text-5xl mb-4">🗑️</div>
+            <p>ゴミ箱は空です</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {trash.map((item) => (
+              <div key={item.id} className="bg-zinc-800 rounded-xl p-4">
+                <div className="flex items-start gap-2 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-zinc-200 text-sm font-medium leading-snug">{item.title}</p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                      {item.magazine ? item.magazine.split("──")[0].trim() : "（マガジン未設定）"} · 作成: {item.createdAt}
+                    </p>
+                    <p className="text-xs text-zinc-600 mt-0.5">ゴミ箱に移動: {formatTrashedAt(item.trashedAt)}</p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => handleRestore(item)}
+                      className="text-xs px-2.5 py-1 text-green-400 hover:text-green-300 border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
+                    >
+                      復元
+                    </button>
+                    <button
+                      onClick={() => handlePermanentDelete(item)}
+                      className="text-xs px-2.5 py-1 text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
+                    >
+                      完全削除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // ── Detail view ───────────────────────────────────────────────────
   if (selectedId !== null && selected) {
@@ -561,7 +680,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
           <span>下書き {draftCount}件</span>
           <span>公開済み {publishedCount}件</span>
         </div>
-        <div className="ml-auto flex gap-1 flex-wrap">
+        <div className="ml-auto flex gap-1 flex-wrap items-center">
           {(["newest", "oldest", "title", "manual"] as const).map((s) => (
             <button
               key={s}
@@ -575,6 +694,16 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
               {SORT_LABELS[s]}
             </button>
           ))}
+          <button
+            onClick={() => setShowTrash(true)}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ml-2 ${
+              trash.length > 0
+                ? "border-zinc-600 text-zinc-400 hover:text-zinc-200"
+                : "border-zinc-700 text-zinc-600 hover:text-zinc-400"
+            }`}
+          >
+            🗑️ ゴミ箱{trash.length > 0 ? `（${trash.length}）` : ""}
+          </button>
         </div>
       </div>
 
