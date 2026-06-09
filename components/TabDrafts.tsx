@@ -1,7 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Draft } from "@/lib/types";
+
+// ── Sort / DnD persistence ────────────────────────────────────────
+type SortBy = "newest" | "oldest" | "title" | "manual";
+const DRAFT_ORDER_KEY = "note_writer_draft_order";
+const DRAFT_SORT_KEY = "note_writer_draft_sort";
+
+function loadDraftOrder(): string[] {
+  try { const r = localStorage.getItem(DRAFT_ORDER_KEY); if (r) return JSON.parse(r); } catch {}
+  return [];
+}
+function saveDraftOrder(ids: string[]) {
+  try { localStorage.setItem(DRAFT_ORDER_KEY, JSON.stringify(ids)); } catch {}
+}
+function loadSortPref(): SortBy {
+  try {
+    const r = localStorage.getItem(DRAFT_SORT_KEY) as SortBy;
+    if (["newest","oldest","title","manual"].includes(r)) return r;
+  } catch {}
+  return "newest";
+}
+function saveSortPref(s: SortBy) {
+  try { localStorage.setItem(DRAFT_SORT_KEY, s); } catch {}
+}
 
 type RewriteMode = "rewrite" | "polish";
 
@@ -122,6 +145,52 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
   const [memoExpanded, setMemoExpanded] = useState(false);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState("");
+
+  // Sort & DnD
+  const [sortBy, setSortBy] = useState<SortBy>("newest");
+  const [draftOrder, setDraftOrder] = useState<string[]>([]);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraftOrder(loadDraftOrder());
+    setSortBy(loadSortPref());
+  }, []);
+
+  const sortedDrafts = useMemo(() => {
+    if (sortBy === "newest") return [...drafts].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    if (sortBy === "oldest") return [...drafts].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    if (sortBy === "title") return [...drafts].sort((a, b) => a.title.localeCompare(b.title, "ja"));
+    const idSet = new Set(drafts.map((d) => d.id));
+    const ordered = draftOrder.filter((id) => idSet.has(id)).map((id) => drafts.find((d) => d.id === id)!);
+    const unordered = drafts.filter((d) => !draftOrder.includes(d.id));
+    return [...unordered, ...ordered];
+  }, [drafts, sortBy, draftOrder]);
+
+  const handleDrop = (targetId: string) => {
+    if (!draggingId || draggingId === targetId) return;
+    const ids = sortedDrafts.map((d) => d.id);
+    const from = ids.indexOf(draggingId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) return;
+    const next = [...ids];
+    next.splice(from, 1);
+    next.splice(to, 0, draggingId);
+    setDraftOrder(next);
+    saveDraftOrder(next);
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  const handleSortChange = (s: SortBy) => {
+    if (s === "manual" && sortBy !== "manual") {
+      const cur = sortedDrafts.map((d) => d.id);
+      setDraftOrder(cur);
+      saveDraftOrder(cur);
+    }
+    setSortBy(s);
+    saveSortPref(s);
+  };
 
   const selected = selectedId !== null ? (drafts.find((d) => d.id === selectedId) ?? null) : null;
 
@@ -475,24 +544,60 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
   const draftCount = drafts.filter((d) => d.status === "draft").length;
   const publishedCount = drafts.filter((d) => d.status === "published").length;
 
+  const SORT_LABELS: Record<SortBy, string> = {
+    newest: "新しい順",
+    oldest: "古い順",
+    title: "タイトル順",
+    manual: "手動",
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4 text-xs text-zinc-500">
-        <span>全{drafts.length}件</span>
-        <span>下書き {draftCount}件</span>
-        <span>公開済み {publishedCount}件</span>
+      {/* Stats + Sort */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 text-xs text-zinc-500">
+          <span>全{drafts.length}件</span>
+          <span>下書き {draftCount}件</span>
+          <span>公開済み {publishedCount}件</span>
+        </div>
+        <div className="ml-auto flex gap-1 flex-wrap">
+          {(["newest", "oldest", "title", "manual"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSortChange(s)}
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                sortBy === s
+                  ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                  : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {SORT_LABELS[s]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="space-y-2">
-        {drafts.map((d) => (
+        {sortedDrafts.map((d) => (
           <div
             key={d.id}
-            className="bg-zinc-800 rounded-xl p-4"
+            className={`bg-zinc-800 rounded-xl p-4 transition-all ${
+              draggingId === d.id ? "opacity-40" : ""
+            } ${dragOverId === d.id && draggingId !== d.id ? "ring-2 ring-amber-500/40" : ""}`}
+            draggable={sortBy === "manual"}
+            onDragStart={() => setDraggingId(d.id)}
+            onDragOver={(e) => { e.preventDefault(); setDragOverId(d.id); }}
+            onDragLeave={() => setDragOverId((prev) => prev === d.id ? null : prev)}
+            onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+            onDrop={(e) => { e.preventDefault(); handleDrop(d.id); }}
             onClick={() => editingTitleId !== d.id && openDraft(d)}
-            style={{ cursor: editingTitleId === d.id ? "default" : "pointer" }}
+            style={{ cursor: editingTitleId === d.id ? "default" : sortBy === "manual" ? "grab" : "pointer" }}
           >
             {/* Title row */}
             <div className="flex items-start gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              {sortBy === "manual" && (
+                <span className="text-zinc-600 text-base mt-0.5 cursor-grab shrink-0 select-none" title="ドラッグして並び替え">⠿</span>
+              )}
               {editingTitleId === d.id ? (
                 <input
                   autoFocus
@@ -550,22 +655,31 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             <div className="text-xs text-zinc-500 mt-1.5">
               {d.magazine ? d.magazine.split("──")[0].trim() : "（マガジン未設定）"} · {d.createdAt}
             </div>
-            {onSendToRewrite && (
-              <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-zinc-700" onClick={(e) => e.stopPropagation()}>
-                <button
-                  onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price)}
-                  className="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
-                >
-                  リライトへ →
-                </button>
-                <button
-                  onClick={() => onSendToRewrite(d.body, "polish", d.isPaid, d.price)}
-                  className="px-2.5 py-1 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
-                >
-                  仕上げへ →
-                </button>
-              </div>
-            )}
+            {/* Action row */}
+            <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-zinc-700 flex-wrap" onClick={(e) => e.stopPropagation()}>
+              {onSendToRewrite && (
+                <>
+                  <button
+                    onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price)}
+                    className="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
+                  >
+                    リライトへ →
+                  </button>
+                  <button
+                    onClick={() => onSendToRewrite(d.body, "polish", d.isPaid, d.price)}
+                    className="px-2.5 py-1 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
+                  >
+                    仕上げへ →
+                  </button>
+                </>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); openDraft(d); }}
+                className="ml-auto px-2.5 py-1 text-zinc-400 hover:text-zinc-200 text-xs border border-zinc-600 hover:border-zinc-400 rounded-lg transition-colors"
+              >
+                ▼ 詳細を見る
+              </button>
+            </div>
           </div>
         ))}
       </div>

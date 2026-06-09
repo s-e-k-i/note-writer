@@ -93,7 +93,7 @@ function extractAllTitles(proposal: string): string[] {
     if (!inTitles) continue;
     const m = t.match(/^\d+[\.．]\s*(.+)/);
     if (m) {
-      titles.push(m[1].trim());
+      titles.push(m[1].trim().replace(/^【[^】]*】\s*/, ""));
     } else if (t.startsWith("**") || t.startsWith("##")) {
       break;
     }
@@ -109,12 +109,12 @@ function extractFirstTitle(proposal: string): string {
     if (t.includes("タイトル案") && t.includes("：")) {
       inTitle = true;
       const after = t.split("：").slice(1).join("：").trim();
-      if (after && !after.startsWith("（")) return after;
+      if (after && !after.startsWith("（")) return after.replace(/^【[^】]*】\s*/, "");
       continue;
     }
     if (inTitle) {
       const numbered = t.match(/^\d+[\.．]\s*(.+)/);
-      if (numbered) return numbered[1].trim();
+      if (numbered) return numbered[1].trim().replace(/^【[^】]*】\s*/, "");
       if (t.startsWith("**") && t.includes("：")) break;
     }
   }

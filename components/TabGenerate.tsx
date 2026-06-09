@@ -297,7 +297,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
   const parsedTitles = titlesRaw
     .split("\n")
     .filter((l) => l.match(/^\d+\./))
-    .map((l) => l.replace(/^\d+\.\s*/, ""));
+    .map((l) => l.replace(/^\d+\.\s*/, "").replace(/^【[^】]*】\s*/, "").trim());
 
   const handleCopy = () => {
     navigator.clipboard.writeText(body);
@@ -317,7 +317,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     if (!generated) return;
     if (!checkBeforeSave()) return;
     const allTitles = parsedTitles;
-    const firstTitle = selectedTitle || allTitles[0] || theme;
+    const firstTitle = selectedTitle || theme || allTitles[0];
     onSaveDraft({
       title: firstTitle,
       titles: allTitles.length > 0 ? allTitles : undefined,
@@ -338,7 +338,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     const existingVersions = drafts.filter((d) => d.versionGroup === versionGroup);
     const nextVersion = existingVersions.length + 1;
     const allTitles = parsedTitles;
-    const firstTitle = selectedTitle || allTitles[0] || theme;
+    const firstTitle = selectedTitle || theme || allTitles[0];
     onSaveDraft({
       title: firstTitle,
       titles: allTitles.length > 0 ? allTitles : undefined,
