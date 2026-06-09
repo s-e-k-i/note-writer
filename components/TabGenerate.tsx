@@ -319,6 +319,9 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
   const handleSave = () => {
     if (!generated) return;
     if (!checkBeforeSave()) return;
+    const versionGroup = theme.trim().slice(0, 60);
+    const existingVersions = drafts.filter((d) => d.versionGroup === versionGroup);
+    const version = existingVersions.length + 1;
     const allTitles = parsedTitles;
     const firstTitle = selectedTitle || theme || allTitles[0];
     onSaveDraft({
@@ -330,6 +333,8 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
       price: isPaid ? (price ?? undefined) : undefined,
       sourceMemo: initialProposal?.sourceMemo,
       draftType: "generate",
+      version,
+      versionGroup,
     });
     setSaved(true);
   };
