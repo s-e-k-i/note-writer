@@ -129,6 +129,10 @@ function extractProposalMeta(text: string): { magazine?: string; purpose?: strin
 function cleanProposalForContext(text: string): string {
   return text.replace(/<!--\s*PROPOSAL_META:[^>]+-->/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
+function displayContext(context: string): string {
+  // Strip 【マガジン名】 from numbered list items for display only
+  return context.replace(/^(\d+[\.．]\s*)【[^】]*】\s*/gm, "$1");
+}
 
 // ── Component ────────────────────────────────────────────────────
 export default function TabConsult({ articles, onSelectTheme }: Props) {
@@ -423,7 +427,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             const chosenTitle = selectedTitles[titleKey] || allTitles[0] || firstTitle;
             return (
               <div key={pIdx} className="bg-zinc-800 rounded-xl p-4 space-y-3">
-                <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{context}</pre>
+                <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{displayContext(context)}</pre>
                 {isLast && !loading && (
                   <div className="pt-3 border-t border-zinc-700 space-y-3">
                     {allTitles.length > 1 && (
@@ -837,7 +841,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
               const chosenTitle = selectedTitles[titleKey] || allTitles[0] || firstTitle;
               return (
                 <div key={pIdx} className="bg-zinc-800 rounded-xl p-4 space-y-3">
-                  <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{context}</pre>
+                  <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{displayContext(context)}</pre>
                   {!memoLoading && (
                     <div className="pt-3 border-t border-zinc-700 space-y-3">
                       {allTitles.length > 1 && (

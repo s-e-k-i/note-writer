@@ -183,7 +183,8 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
   };
 
   const handleSortChange = (s: SortBy) => {
-    if (s === "manual" && sortBy !== "manual") {
+    if (s === "manual" && sortBy !== "manual" && draftOrder.length === 0) {
+      // Only seed the order from the current view if no manual order has been saved yet
       const cur = sortedDrafts.map((d) => d.id);
       setDraftOrder(cur);
       saveDraftOrder(cur);
