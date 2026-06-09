@@ -13,7 +13,7 @@ function buildArticlesSummary(articles: Article[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo } =
+    const { theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle } =
       await request.json();
 
     const isPaid = articleType === "paid";
@@ -34,6 +34,13 @@ export async function POST(request: Request) {
         : isPaid
         ? "\n- 見出し（##）の数：無料部分は2〜3個、有料部分は3〜4個にする"
         : "";
+
+    const writingStyleNote =
+      writingStyle === "de-aru"
+        ? "\n- 文体：である調で統一すること（「です」「ます」は使わない）"
+        : writingStyle === "ai"
+        ? ""
+        : "\n- 文体：ですます調で統一すること（「である」調は使わない）";
 
     const paidPriceNote = isPaid && price ? `\n- 価格：${price}円の有料記事として設計する` : "";
 
@@ -90,7 +97,8 @@ ${articlesSummary}
 - 文体・構成・締め方は必ずプロフィールドキュメントの指示に従う
 - 一人称は「僕」のみ
 - 短文リズム（1〜2行で改行）
-- 締めは必ず以下の文章を一字一句そのまま最後に出力すること（省略・改変・要約は絶対禁止）：\n  最後まで読んでくださり、本当にありがとうございます。\n  もしこの記事が、あなたの心に少しでも何かを残せたなら、スキやフォローで応援してもらえると励みになります。${wordCountNote}${headingCountNote}
+- 見出しには必ず ## 形式（Markdown）を使うこと。■・【】・◆ などの記号で見出しを作らないこと。
+- 締めは必ず以下の文章を一字一句そのまま最後に出力すること（省略・改変・要約は絶対禁止）：\n  最後まで読んでくださり、本当にありがとうございます。\n  もしこの記事が、あなたの心に少しでも何かを残せたなら、スキやフォローで応援してもらえると励みになります。${wordCountNote}${headingCountNote}${writingStyleNote}
 ${paidPrinciples}${paidOutputFormat}`;
 
     const freeSuffix = isPaid

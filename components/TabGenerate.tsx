@@ -60,6 +60,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
   const [price, setPrice] = useState<number | null>(initialProposal?.price ?? null);
   const [customPrice, setCustomPrice] = useState("");
   const [wordCount, setWordCount] = useState<WordCount>("ai");
+  const [writingStyle, setWritingStyle] = useState<"desu" | "de-aru" | "ai">("desu");
   const [purpose, setPurpose] = useState(initialProposal?.purpose ?? "コンサル導線");
   const [fullContext, setFullContext] = useState(initialProposal?.fullContext ?? "");
   const [contextExpanded, setContextExpanded] = useState(false);
@@ -211,6 +212,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
           articles,
           fullContext: fullContext || undefined,
           structureMemo: structureMemo.trim() || undefined,
+          writingStyle,
         }),
         signal: controller.signal,
       });
@@ -281,6 +283,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     setSelectedTitle(null);
     setTheme("");
     setStructureMemo("");
+    setWritingStyle("desu");
     setCleared(true);
     setFullContext("");
     setArticleType("free");
@@ -577,6 +580,30 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
         {isPaid && (
           <p className="text-xs text-zinc-500">有料記事の文字数はAIが内容に合わせて判断します</p>
         )}
+
+        {/* Writing style */}
+        <div>
+          <label className="text-xs text-zinc-400 mb-1.5 block">文体</label>
+          <div className="flex gap-2">
+            {([
+              { value: "desu", label: "ですます調" },
+              { value: "de-aru", label: "である調" },
+              { value: "ai", label: "AIに任せる" },
+            ] as const).map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setWritingStyle(value)}
+                className={`px-3 py-1.5 rounded-lg border text-xs transition-colors ${
+                  writingStyle === value
+                    ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                    : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600 text-zinc-400"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Structure memo */}
         <div>
