@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Article, Draft, ProposalContext, ArticleType, WordCount } from "@/lib/types";
 import { MAGAZINES } from "@/lib/profile";
 
@@ -8,11 +8,14 @@ type RewriteMode = "rewrite" | "polish";
 
 interface Props {
   articles: Article[];
+  drafts: Draft[];
   initialProposal?: ProposalContext | null;
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   onBackToConsult?: () => void;
   onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
 }
+
+const CLOSING_TEXT = "最後まで読んでくださり、本当にありがとうございます。";
 
 const PRICE_OPTIONS = [500, 980, 1500, 1980] as const;
 const GENERATE_CACHE_KEY = "note_writer_generate_cache";
@@ -47,7 +50,7 @@ function resolveInitialMagazine(name?: string): string {
   return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
 }
 
-export default function TabGenerate({ articles, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
+export default function TabGenerate({ articles, drafts, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
   const fromProposal = !!(initialProposal?.articleType);
 
   // Form state
@@ -82,6 +85,13 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
   // Improved titles state
   const [improvedTitlesRaw, setImprovedTitlesRaw] = useState("");
   const [improvingTitles, setImprovingTitles] = useState(false);
+
+  // Title selection (④)
+  const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
+
+  // Cancel streaming (③)
+  const abortRef = useRef<AbortController | null>(null);
+  const [cancelMessage, setCancelMessage] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -181,6 +191,11 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setGenerated("");
     setImprovedTitlesRaw("");
     setSaved(false);
+    setSelectedTitle(null);
+    setCancelMessage("");
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const res = await fetch("/api/generate", {
@@ -197,6 +212,7 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
           fullContext: fullContext || undefined,
           structureMemo: structureMemo.trim() || undefined,
         }),
+        signal: controller.signal,
       });
 
       const reader = res.body?.getReader();
@@ -209,11 +225,22 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         setGenerated(full);
       }
       saveGenerateCache({ theme, generated: full, improvedTitlesRaw: "", articleType, price });
-    } catch {
-      setGenerated("エラーが発生しました。");
+    } catch (e) {
+      if (e instanceof Error && e.name === "AbortError") {
+        setGenerated("");
+        setCancelMessage("生成を中断しました");
+        setTimeout(() => setCancelMessage(""), 3000);
+      } else {
+        setGenerated("エラーが発生しました。");
+      }
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
+  };
+
+  const handleCancelGenerate = () => {
+    abortRef.current?.abort();
   };
 
   const handleImproveTitles = async () => {
@@ -251,8 +278,26 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setImprovedTitlesRaw("");
     setSaved(false);
     setCopied(false);
+    setSelectedTitle(null);
+    setTheme("");
+    setStructureMemo("");
+    setCleared(true);
+    setFullContext("");
+    setArticleType("free");
+    setPrice(null);
+    setPriceIsAI(false);
+    setCancelMessage("");
     try { localStorage.removeItem(GENERATE_CACHE_KEY); } catch {}
   };
+
+  // Derived from generated — declared early so checkBeforeSave can reference body
+  const parts = generated.split("## タイトル案");
+  const body = parts[0]?.trim() || "";
+  const titlesRaw = parts[1]?.trim() || "";
+  const parsedTitles = titlesRaw
+    .split("\n")
+    .filter((l) => l.match(/^\d+\./))
+    .map((l) => l.replace(/^\d+\.\s*/, ""));
 
   const handleCopy = () => {
     navigator.clipboard.writeText(body);
@@ -260,10 +305,19 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const checkBeforeSave = useCallback((): boolean => {
+    const issues: string[] = [];
+    if (!body.includes(CLOSING_TEXT)) issues.push("末尾の定型文が見つかりません");
+    if (body.replace(/\s+/g, "").length < 500) issues.push("本文が500字未満です");
+    if (issues.length === 0) return true;
+    return window.confirm(`${issues.join("。")}。\nこのまま保存しますか？`);
+  }, [body]);
+
   const handleSave = () => {
     if (!generated) return;
+    if (!checkBeforeSave()) return;
     const allTitles = parsedTitles;
-    const firstTitle = allTitles[0] || theme;
+    const firstTitle = selectedTitle || allTitles[0] || theme;
     onSaveDraft({
       title: firstTitle,
       titles: allTitles.length > 0 ? allTitles : undefined,
@@ -277,13 +331,28 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
     setSaved(true);
   };
 
-  const parts = generated.split("## タイトル案");
-  const body = parts[0]?.trim() || "";
-  const titlesRaw = parts[1]?.trim() || "";
-  const parsedTitles = titlesRaw
-    .split("\n")
-    .filter((l) => l.match(/^\d+\./))
-    .map((l) => l.replace(/^\d+\.\s*/, ""));
+  const handleSaveVersion = () => {
+    if (!generated) return;
+    if (!checkBeforeSave()) return;
+    const versionGroup = theme.trim().slice(0, 60);
+    const existingVersions = drafts.filter((d) => d.versionGroup === versionGroup);
+    const nextVersion = existingVersions.length + 1;
+    const allTitles = parsedTitles;
+    const firstTitle = selectedTitle || allTitles[0] || theme;
+    onSaveDraft({
+      title: firstTitle,
+      titles: allTitles.length > 0 ? allTitles : undefined,
+      magazine,
+      body,
+      isPaid,
+      price: isPaid ? (price ?? undefined) : undefined,
+      sourceMemo: initialProposal?.sourceMemo,
+      draftType: "generate",
+      version: nextVersion,
+      versionGroup,
+    });
+    setSaved(true);
+  };
 
   // ── Price edit (showAI: show "AIに任せる" option when overriding from proposal) ──
   const renderPriceEdit = (showAI = false) => (
@@ -460,19 +529,17 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
 
       {/* Form */}
       <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
-        {/* Theme (only shown for direct access or after clearing proposal) */}
-        {!isFromProposal && (
-          <div>
-            <label className="text-xs text-zinc-400 mb-1.5 block">タイトル案・テーマ *</label>
-            <textarea
-              placeholder="例：派遣工場を辞めた日のこと、Uber Eatsで気づいた自由の意味..."
-              value={theme}
-              onChange={(e) => setTheme(e.target.value)}
-              rows={2}
-              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 resize-none"
-            />
-          </div>
-        )}
+        {/* Theme — always visible so clear always empties the field */}
+        <div>
+          <label className="text-xs text-zinc-400 mb-1.5 block">タイトル案・テーマ *</label>
+          <textarea
+            placeholder="例：派遣工場を辞めた日のこと、Uber Eatsで気づいた自由の意味..."
+            value={theme}
+            onChange={(e) => setTheme(e.target.value)}
+            rows={2}
+            className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500 resize-none"
+          />
+        </div>
 
         {/* Article type + price */}
         {renderTypePriceSection()}
@@ -561,9 +628,27 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
         )}
       </div>
 
+      {cancelMessage && (
+        <p className="text-xs text-zinc-400 text-center py-1">{cancelMessage}</p>
+      )}
+
       {/* Output */}
       {(generated || loading) && (
         <div className="space-y-4">
+          {/* Top action bar */}
+          {loading ? (
+            <div className="flex justify-center">
+              <button
+                onClick={handleCancelGenerate}
+                className="px-4 py-2 text-sm text-red-400 hover:text-red-300 border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
+              >
+                生成をキャンセル
+              </button>
+            </div>
+          ) : generated ? (
+            <ActionButtons />
+          ) : null}
+
           <div className="bg-zinc-800 rounded-xl p-5">
             <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-200 leading-relaxed">
               {body}
@@ -571,23 +656,53 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             </pre>
           </div>
 
-          {/* Title proposals */}
+          {/* Title proposals with "これを使う" selection (④) */}
           {titlesRaw && (
             <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-5 space-y-4">
               <div>
-                <h3 className="text-xs font-medium text-amber-400 mb-3">タイトル案</h3>
+                <div className="flex items-center gap-2 mb-3">
+                  <h3 className="text-xs font-medium text-amber-400">タイトル案</h3>
+                  {selectedTitle && (
+                    <span className="text-xs text-amber-400/70">（選択中：使用します）</span>
+                  )}
+                </div>
                 <div className="space-y-2">
-                  {parsedTitles.map((t, i) => (
-                    <div
-                      key={i}
-                      onClick={() => navigator.clipboard.writeText(t)}
-                      className="text-sm text-zinc-200 py-2 px-3 rounded-lg hover:bg-zinc-700 cursor-pointer transition-colors flex items-start gap-2"
-                      title="クリックでコピー"
-                    >
-                      <span className="text-zinc-500 text-xs shrink-0 mt-0.5">{i + 1}.</span>
-                      <span>{t}</span>
-                    </div>
-                  ))}
+                  {parsedTitles.map((t, i) => {
+                    const isSelected = selectedTitle === t;
+                    return (
+                      <div
+                        key={i}
+                        className={`rounded-lg transition-colors flex items-center gap-2 px-3 py-2 ${
+                          isSelected
+                            ? "bg-amber-500/10 border border-amber-500/30"
+                            : "hover:bg-zinc-700"
+                        }`}
+                      >
+                        <span className="text-zinc-500 text-xs shrink-0">{i + 1}.</span>
+                        <span
+                          className="text-sm text-zinc-200 flex-1 cursor-pointer"
+                          onClick={() => navigator.clipboard.writeText(t)}
+                          title="クリックでコピー"
+                        >
+                          {t}
+                        </span>
+                        <button
+                          onClick={() => {
+                            const next = isSelected ? null : t;
+                            setSelectedTitle(next);
+                            if (next) setTheme(next);
+                          }}
+                          className={`text-xs px-2 py-0.5 rounded border transition-colors shrink-0 ${
+                            isSelected
+                              ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                              : "border-zinc-600 text-zinc-400 hover:border-amber-500/50 hover:text-amber-400/70"
+                          }`}
+                        >
+                          {isSelected ? "選択中" : "これを使う"}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -632,54 +747,67 @@ export default function TabGenerate({ articles, initialProposal, onSaveDraft, on
             </div>
           )}
 
-          {/* Action buttons */}
-          {!loading && generated && (
-            <div className="flex gap-3 flex-wrap">
-              <button
-                onClick={handleClearGenerated}
-                className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
-              >
-                記事をクリア
-              </button>
-              <button
-                onClick={handleCopy}
-                disabled={copied}
-                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                  copied
-                    ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
-                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
-                }`}
-              >
-                {copied ? "コピー済み ✓" : "本文をコピー"}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saved}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
-              >
-                {saved ? "✓ 下書きとして保存しました" : "下書きとして保存"}
-              </button>
-              {onSendToRewrite && (
-                <>
-                  <button
-                    onClick={() => onSendToRewrite(body, "rewrite", isPaid, price ?? undefined)}
-                    className="px-4 py-2 text-sky-400 hover:text-sky-300 text-sm border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
-                  >
-                    リライトへ →
-                  </button>
-                  <button
-                    onClick={() => onSendToRewrite(body, "polish", isPaid, price ?? undefined)}
-                    className="px-4 py-2 text-purple-400 hover:text-purple-300 text-sm border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
-                  >
-                    仕上げへ →
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+          {/* Bottom action buttons */}
+          {!loading && generated && <ActionButtons />}
           <div ref={bottomRef} />
         </div>
       )}
     </div>
   );
+
+  // ── Action buttons component (shared top + bottom) ─────────────
+  function ActionButtons() {
+    return (
+      <div className="flex gap-3 flex-wrap">
+        <button
+          onClick={handleClearGenerated}
+          className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
+        >
+          記事をクリア
+        </button>
+        <button
+          onClick={handleCopy}
+          disabled={copied}
+          className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+            copied
+              ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
+              : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+          }`}
+        >
+          {copied ? "コピー済み ✓" : "本文をコピー"}
+        </button>
+        <button
+          onClick={handleSave}
+          disabled={saved}
+          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
+        >
+          {saved ? "✓ 保存しました" : "下書きとして保存"}
+        </button>
+        <button
+          onClick={handleSaveVersion}
+          disabled={saved}
+          className="px-4 py-2 text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-600 hover:border-zinc-400 rounded-lg transition-colors disabled:opacity-40"
+          title="同じテーマの別バージョンとして保存"
+        >
+          バージョンとして保存
+        </button>
+        {onSendToRewrite && (
+          <>
+            <button
+              onClick={() => onSendToRewrite(body, "rewrite", isPaid, price ?? undefined)}
+              className="px-4 py-2 text-sky-400 hover:text-sky-300 text-sm border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
+            >
+              リライトへ →
+            </button>
+            <button
+              onClick={() => onSendToRewrite(body, "polish", isPaid, price ?? undefined)}
+              className="px-4 py-2 text-purple-400 hover:text-purple-300 text-sm border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
+            >
+              仕上げへ →
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
 }

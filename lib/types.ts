@@ -48,6 +48,15 @@ export interface Draft {
   price?: number;
   sourceMemo?: string;
   draftType?: "generate" | "rewrite" | "polish";
+  version?: number;
+  versionGroup?: string;
+}
+
+export interface ProposalHistoryEntry {
+  id: string;
+  date: string;
+  mode: ConsultMode;
+  proposal: ProposalContext;
 }
 
 export interface ConsultSettings {

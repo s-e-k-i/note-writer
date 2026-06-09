@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Article, ConsultMessage, ConsultMode, PurposeForm,
-  ProposalContext, ConsultSettings, ArticleType,
+  ProposalContext, ConsultSettings, ArticleType, ProposalHistoryEntry,
 } from "@/lib/types";
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
 // ── Constants ────────────────────────────────────────────────────
 const CACHE_KEY = "note_writer_consult_cache";
 const SETTINGS_KEY = "note_writer_consult_settings";
+const HISTORY_KEY = "note_writer_proposal_history";
+const MAX_HISTORY = 20;
 const PRICE_OPTIONS = [500, 980, 1500, 1980] as const;
 
 const MODE_LABELS: Record<ConsultMode, string> = {
@@ -21,6 +23,13 @@ const MODE_LABELS: Record<ConsultMode, string> = {
   purpose: "🎯 目的から考えるモードの提案",
   memo: "📝 メモから考えるモードの提案",
   chat: "💬 壁打ちモードの提案",
+};
+
+const MODE_SHORT: Record<ConsultMode, string> = {
+  auto: "おまかせ",
+  purpose: "目的から",
+  memo: "メモから",
+  chat: "壁打ち",
 };
 
 const CHAT_OPENER: ConsultMessage = {
@@ -50,6 +59,20 @@ function loadSettings(): ConsultSettings {
 function saveSettings(s: ConsultSettings) {
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch {}
 }
+function loadHistory(): ProposalHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return [];
+}
+function addToHistory(entry: ProposalHistoryEntry) {
+  try {
+    const existing = loadHistory();
+    const updated = [entry, ...existing].slice(0, MAX_HISTORY);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+  } catch {}
+}
 
 // ── Proposal parsing helpers ─────────────────────────────────────
 function splitIntoProposals(text: string): string[] {
@@ -57,6 +80,27 @@ function splitIntoProposals(text: string): string[] {
     .filter((s) => /## 📌 提案\d+/.test(s))
     .map((s) => s.trim());
 }
+function extractAllTitles(proposal: string): string[] {
+  const titles: string[] = [];
+  const lines = proposal.split("\n");
+  let inTitles = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.includes("タイトル案") && t.match(/[：:]/)) {
+      inTitles = true;
+      continue;
+    }
+    if (!inTitles) continue;
+    const m = t.match(/^\d+[\.．]\s*(.+)/);
+    if (m) {
+      titles.push(m[1].trim());
+    } else if (t.startsWith("**") || t.startsWith("##")) {
+      break;
+    }
+  }
+  return titles;
+}
+
 function extractFirstTitle(proposal: string): string {
   const lines = proposal.split("\n");
   let inTitle = false;
@@ -115,6 +159,13 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   const [priceChangeMode, setPriceChangeMode] = useState(false);
   const [priceChangeCustom, setPriceChangeCustom] = useState("");
 
+  // Proposal history (⑥)
+  const [historyEntries, setHistoryEntries] = useState<ProposalHistoryEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Title selection per proposal (④)
+  const [selectedTitles, setSelectedTitles] = useState<Record<string, string>>({});
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // ── Mount: restore from localStorage ──────────────────────────
@@ -134,6 +185,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         setMessages(cache.chat);
       }
     }
+    setHistoryEntries(loadHistory());
   }, []);
 
   useEffect(() => {
@@ -295,6 +347,18 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
     await callAPI(mode ?? "chat", newMessages);
   };
 
+  // ── Proposal history helpers ──────────────────────────────────
+  const saveHistory = (proposal: ProposalContext) => {
+    const entry: ProposalHistoryEntry = {
+      id: Date.now().toString(),
+      date: new Date().toISOString().split("T")[0],
+      mode: mode ?? "auto",
+      proposal,
+    };
+    addToHistory(entry);
+    setHistoryEntries(loadHistory());
+  };
+
   // ── Proposal selection → Tab③ ────────────────────────────────
   const handleSelectProposal = (props: { theme: string; magazine?: string; purpose?: string; fullContext: string }) => {
     const base: ProposalContext = {
@@ -307,9 +371,12 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         setPendingProposal(base);
         fetchAIPrice(base.theme, base.fullContext);
       } else {
-        onSelectTheme({ ...base, price: price as number });
+        const proposal = { ...base, price: price as number };
+        saveHistory(proposal);
+        onSelectTheme(proposal);
       }
     } else {
+      saveHistory(base);
       onSelectTheme(base);
     }
   };
@@ -342,22 +409,43 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
   };
 
   // ── Proposal message renderer ────────────────────────────────
-  const renderAssistantMessage = (content: string, isLast: boolean) => {
+  const renderAssistantMessage = (content: string, isLast: boolean, msgIdx: number) => {
     const proposals = splitIntoProposals(content);
     if (proposals.length > 0) {
       return (
         <div className="space-y-4">
           {proposals.map((proposal, pIdx) => {
-            const title = extractFirstTitle(proposal);
+            const firstTitle = extractFirstTitle(proposal);
+            const allTitles = extractAllTitles(proposal);
             const meta = extractProposalMeta(proposal);
             const context = cleanProposalForContext(proposal);
+            const titleKey = `msg_${msgIdx}_${pIdx}`;
+            const chosenTitle = selectedTitles[titleKey] || allTitles[0] || firstTitle;
             return (
               <div key={pIdx} className="bg-zinc-800 rounded-xl p-4 space-y-3">
                 <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{context}</pre>
                 {isLast && !loading && (
-                  <div className="pt-3 border-t border-zinc-700">
+                  <div className="pt-3 border-t border-zinc-700 space-y-3">
+                    {allTitles.length > 1 && (
+                      <div className="space-y-1.5">
+                        <p className="text-xs text-zinc-500">タイトルを選んでください</p>
+                        {allTitles.map((t, ti) => (
+                          <button
+                            key={ti}
+                            onClick={() => setSelectedTitles((prev) => ({ ...prev, [titleKey]: t }))}
+                            className={`w-full text-left text-xs px-3 py-2 rounded-lg border transition-colors ${
+                              chosenTitle === t
+                                ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                                : "border-zinc-600 bg-zinc-700/50 hover:bg-zinc-700 text-zinc-300"
+                            }`}
+                          >
+                            <span className="text-zinc-500 mr-2">{ti + 1}.</span>{t}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     <button
-                      onClick={() => handleSelectProposal({ theme: title, magazine: meta.magazine, purpose: meta.purpose, fullContext: context })}
+                      onClick={() => handleSelectProposal({ theme: chosenTitle, magazine: meta.magazine, purpose: meta.purpose, fullContext: context })}
                       className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-lg transition-colors"
                     >
                       この案で書く →
@@ -608,6 +696,44 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
             )}
           </button>
         </div>
+
+        {/* Proposal history (⑥) */}
+        {historyEntries.length > 0 && (
+          <div className="border-t border-zinc-800 pt-4">
+            <button
+              onClick={() => setShowHistory((v) => !v)}
+              className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5 transition-colors"
+            >
+              <span>{showHistory ? "▲" : "▼"}</span>
+              提案履歴を見る（{historyEntries.length}件）
+            </button>
+            {showHistory && (
+              <div className="mt-3 space-y-2 max-h-96 overflow-y-auto">
+                {historyEntries.map((entry) => (
+                  <div key={entry.id} className="bg-zinc-800 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
+                      <span>{entry.date}</span>
+                      <span className="text-zinc-700">·</span>
+                      <span>{MODE_SHORT[entry.mode]}</span>
+                      {entry.proposal.articleType === "paid" && (
+                        <span className="text-amber-400">
+                          有料{entry.proposal.price ? ` ¥${(entry.proposal.price as number).toLocaleString()}` : ""}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-zinc-200 leading-snug">{entry.proposal.theme}</p>
+                    <button
+                      onClick={() => onSelectTheme(entry.proposal)}
+                      className="text-xs px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors"
+                    >
+                      この案で書く →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -703,16 +829,37 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
               </div>
             )}
             {proposals.map((proposal, pIdx) => {
-              const title = extractFirstTitle(proposal);
+              const firstTitle = extractFirstTitle(proposal);
+              const allTitles = extractAllTitles(proposal);
               const meta = extractProposalMeta(proposal);
               const context = cleanProposalForContext(proposal);
+              const titleKey = `memo_${pIdx}`;
+              const chosenTitle = selectedTitles[titleKey] || allTitles[0] || firstTitle;
               return (
                 <div key={pIdx} className="bg-zinc-800 rounded-xl p-4 space-y-3">
                   <pre className="whitespace-pre-wrap text-sm text-zinc-200 leading-relaxed font-sans">{context}</pre>
                   {!memoLoading && (
-                    <div className="pt-3 border-t border-zinc-700">
+                    <div className="pt-3 border-t border-zinc-700 space-y-3">
+                      {allTitles.length > 1 && (
+                        <div className="space-y-1.5">
+                          <p className="text-xs text-zinc-500">タイトルを選んでください</p>
+                          {allTitles.map((t, ti) => (
+                            <button
+                              key={ti}
+                              onClick={() => setSelectedTitles((prev) => ({ ...prev, [titleKey]: t }))}
+                              className={`w-full text-left text-xs px-3 py-2 rounded-lg border transition-colors ${
+                                chosenTitle === t
+                                  ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                                  : "border-zinc-600 bg-zinc-700/50 hover:bg-zinc-700 text-zinc-300"
+                              }`}
+                            >
+                              <span className="text-zinc-500 mr-2">{ti + 1}.</span>{t}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <button
-                        onClick={() => handleSelectProposal({ theme: title, magazine: meta.magazine, purpose: meta.purpose, fullContext: context })}
+                        onClick={() => handleSelectProposal({ theme: chosenTitle, magazine: meta.magazine, purpose: meta.purpose, fullContext: context })}
                         className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-bold rounded-lg transition-colors"
                       >
                         この案で書く →
@@ -815,7 +962,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
                 {m.content}
               </div>
             ) : (
-              renderAssistantMessage(m.content, i === messages.length - 1)
+              renderAssistantMessage(m.content, i === messages.length - 1, i)
             )}
           </div>
         ))}

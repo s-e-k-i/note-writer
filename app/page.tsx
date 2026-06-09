@@ -109,6 +109,7 @@ export default function Home() {
             {activeTab === "generate" && (
               <TabGenerate
                 articles={articles}
+                drafts={drafts}
                 initialProposal={pendingProposal}
                 onSaveDraft={handleSaveDraft}
                 onBackToConsult={() => setActiveTab("consult")}

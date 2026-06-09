@@ -21,9 +21,9 @@ export async function POST(request: Request) {
 
     const wordCountNote =
       !isPaid && wordCount === "short"
-        ? "\n- 文字数の目安：1,500字程度（短め・読みやすく）"
+        ? "\n- 文字数：必ず1,200〜1,500字程度に収めること。1,500字を超えないよう強く注意する"
         : !isPaid && wordCount === "standard"
-        ? "\n- 文字数の目安：2,500字程度（しっかりした読み応え）"
+        ? "\n- 文字数：必ず2,000〜2,500字程度に収めること。2,500字を超えないよう強く注意する"
         : "";
 
     const paidPriceNote = isPaid && price ? `\n- 価格：${price}円の有料記事として設計する` : "";

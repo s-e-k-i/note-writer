@@ -38,15 +38,18 @@ function formatCharCount(body: string): string {
 }
 
 function splitPaidBody(body: string): { freePart: string; paidPart: string; hasSplit: boolean } {
-  // Paid content starts after "## 有料部分" header
   const paidSectionIdx = body.indexOf("## 有料部分");
   if (paidSectionIdx === -1) return { freePart: body, paidPart: "", hasSplit: false };
 
-  const paidStart = body.indexOf("\n", paidSectionIdx) + 1;
-  const paidPart = body.slice(paidStart).replace(/\n?---\s*$/, "").trim();
+  const afterHeader = body.indexOf("\n", paidSectionIdx) + 1;
+  const afterPaidSection = body.slice(afterHeader);
+  // Stop before the next "---" separator (which precedes ## タイトル案)
+  const nextSepIdx = afterPaidSection.search(/\n---/);
+  const paidPart = nextSepIdx !== -1
+    ? afterPaidSection.slice(0, nextSepIdx).trim()
+    : afterPaidSection.trim();
 
-  // Free content: between the 1st "---" (after balance section) and
-  // the "---" just before "## 有料ラインの設定" (or "## 有料部分")
+  // Free part: between first "---" and last "---" before ## 有料ラインの設定
   const paidLineIdx = body.indexOf("## 有料ラインの設定");
   const beforeFreeEnd = paidLineIdx !== -1
     ? body.slice(0, paidLineIdx)
@@ -55,13 +58,11 @@ function splitPaidBody(body: string): { freePart: string; paidPart: string; hasS
   const lastSep = beforeFreeEnd.lastIndexOf("---");
   const firstSep = body.indexOf("---");
 
-  let freePart: string;
+  let freePart = "";
   if (firstSep !== -1 && lastSep !== -1 && lastSep > firstSep) {
     freePart = body.slice(firstSep + 3, lastSep).trim();
   } else if (firstSep !== -1) {
     freePart = body.slice(firstSep + 3, paidSectionIdx).trim();
-  } else {
-    freePart = "";
   }
 
   return { freePart, paidPart, hasSplit: true };
@@ -284,6 +285,11 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             )}
             <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
               <DraftTypeBadge type={selected.draftType} />
+              {selected.version != null && (
+                <span className="text-xs bg-zinc-700 text-zinc-400 border border-zinc-600 rounded px-2 py-0.5">
+                  v{selected.version}
+                </span>
+              )}
               {selected.isPaid ? (
                 <PaidCharBadges draft={selected} />
               ) : (
@@ -327,6 +333,37 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
           </div>
         )}
 
+        {/* Version siblings */}
+        {selected.versionGroup && (() => {
+          const siblings = drafts.filter((d) => d.versionGroup === selected.versionGroup);
+          if (siblings.length <= 1) return null;
+          return (
+            <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
+              <h3 className="text-xs font-medium text-zinc-400 mb-3">このテーマの別バージョン</h3>
+              <div className="flex flex-wrap gap-2">
+                {siblings
+                  .sort((a, b) => (a.version ?? 1) - (b.version ?? 1))
+                  .map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => openDraft(d)}
+                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                        d.id === selectedId
+                          ? "border-amber-500 bg-amber-500/10 text-amber-400"
+                          : "border-zinc-600 bg-zinc-700 hover:bg-zinc-600 text-zinc-300"
+                      }`}
+                    >
+                      v{d.version ?? 1}
+                      {d.title && d.title !== selected.title && (
+                        <span className="ml-1 text-zinc-500">{d.title.slice(0, 15)}{d.title.length > 15 ? "…" : ""}</span>
+                      )}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Title proposals */}
         {selected.titles && selected.titles.length > 1 && (
           <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
@@ -362,6 +399,62 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
             </pre>
           )}
         </div>
+
+        {/* Bottom action row — mirrors the top header row */}
+        {!editing && (
+          <div className="flex gap-2 flex-wrap border-t border-zinc-800 pt-4">
+            <button
+              onClick={handleCopy}
+              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
+            >
+              {copied ? "✓ コピー済み" : "本文をコピー"}
+            </button>
+            {onSendToRewrite && (
+              <>
+                <button
+                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price)}
+                  className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
+                >
+                  リライトへ →
+                </button>
+                <button
+                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price)}
+                  className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
+                >
+                  仕上げへ →
+                </button>
+              </>
+            )}
+            {selected.status === "draft" && (
+              <button
+                onClick={handlePublish}
+                className="px-3 py-1.5 text-green-400 hover:text-green-300 text-xs border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
+              >
+                公開済みにする
+              </button>
+            )}
+            {selected.status === "published" && (
+              <button
+                onClick={() => onUpdate(selected.id, { status: "draft" })}
+                className="px-3 py-1.5 text-zinc-400 hover:text-zinc-300 text-xs border border-zinc-600 hover:border-zinc-500 rounded-lg transition-colors"
+              >
+                下書きに戻す
+              </button>
+            )}
+            <button
+              onClick={() => setEditing(true)}
+              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
+            >
+              編集
+            </button>
+            <button
+              onClick={handleDelete}
+              className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
+            >
+              削除
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -424,6 +517,11 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onSendToRewrite 
               )}
               <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
                 <DraftTypeBadge type={d.draftType} />
+                {d.version != null && (
+                  <span className="text-xs bg-zinc-700 text-zinc-400 border border-zinc-600 rounded px-1.5 py-0.5">
+                    v{d.version}
+                  </span>
+                )}
                 {d.isPaid ? (
                   <PaidCharBadges draft={d} compact />
                 ) : (
