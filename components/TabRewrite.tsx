@@ -37,10 +37,11 @@ interface Props {
   initialMode?: RewriteMode;
   initialIsPaid?: boolean;
   initialPrice?: number;
+  initialTitle?: string;
   onBackToGenerate?: () => void;
 }
 
-export default function TabRewrite({ onSaveDraft, initialText, initialMode, initialIsPaid, initialPrice, onBackToGenerate }: Props) {
+export default function TabRewrite({ onSaveDraft, initialText, initialMode, initialIsPaid, initialPrice, initialTitle, onBackToGenerate }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,6 +49,9 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedResults, setSavedResults] = useState<Partial<Record<RewriteMode, SavedResult>>>({});
+  const [draftTitle, setDraftTitle] = useState("");
+  const [titleInputShown, setTitleInputShown] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // Restore from localStorage on mount; external initial props take priority
@@ -57,6 +61,7 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
     if (initialText && initialMode) {
       setMode(initialMode);
       setArticleText(initialText);
+      setDraftTitle(initialTitle ?? "");
       setResult("");
       saveCache({ mode: initialMode, savedResults: { ...cache.savedResults, [initialMode]: undefined } });
     } else if (cache.mode) {
@@ -116,13 +121,15 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
 
   const handleReset = () => {
     if (!mode) return;
-    // Delete this mode's saved result and return to mode selection
     persistSavedResults((prev) => ({ ...prev, [mode]: undefined }), null);
     setMode(null);
     setArticleText("");
     setResult("");
     setCopied(false);
     setSaved(false);
+    setDraftTitle("");
+    setTitleInputShown(false);
+    setTitleInput("");
   };
 
   const handleSubmit = async () => {
@@ -187,12 +194,9 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
     setMode("polish");
   };
 
-  const handleSaveDraft = () => {
-    if (!result || !mode) return;
+  const commitSave = (title: string) => {
+    if (!mode) return;
     const body = extractFinalBody();
-    const title =
-      articleText.split("\n").find((l) => l.trim().length > 0)?.trim() ||
-      (mode === "rewrite" ? "リライト記事" : "仕上げ記事");
     onSaveDraft({
       title,
       magazine: "",
@@ -202,6 +206,24 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
       draftType: mode,
     });
     setSaved(true);
+    setTitleInputShown(false);
+  };
+
+  const handleSaveDraft = () => {
+    if (!result || !mode) return;
+    if (draftTitle) {
+      commitSave(draftTitle);
+    } else {
+      setTitleInputShown(true);
+      setTitleInput("");
+    }
+  };
+
+  const handleTitleSubmit = () => {
+    const title = titleInput.trim();
+    if (!title) return;
+    setDraftTitle(title);
+    commitSave(title);
   };
 
   const hasFinalSection =
@@ -323,33 +345,64 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
           </div>
 
           {!loading && hasFinalSection && (
-            <div className="flex gap-3 flex-wrap">
-              <button
-                onClick={handleCopyResult}
-                disabled={copied}
-                className={`px-4 py-2 text-sm rounded-lg transition-colors ${
-                  copied
-                    ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
-                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
-                }`}
-              >
-                {copied ? "コピー済み ✓" : (isPolish ? "修正後の全文をコピー" : "リライト全文をコピー")}
-              </button>
-              {!isPolish && (
+            <div className="space-y-3">
+              <div className="flex gap-3 flex-wrap">
                 <button
-                  onClick={handleSendToPolish}
-                  className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors border border-zinc-600"
+                  onClick={handleCopyResult}
+                  disabled={copied}
+                  className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+                    copied
+                      ? "bg-zinc-600 text-zinc-400 cursor-not-allowed"
+                      : "bg-zinc-700 hover:bg-zinc-600 text-zinc-200"
+                  }`}
                 >
-                  この結果を仕上げにかける →
+                  {copied ? "コピー済み ✓" : (isPolish ? "修正後の全文をコピー" : "リライト全文をコピー")}
                 </button>
+                {!isPolish && (
+                  <button
+                    onClick={handleSendToPolish}
+                    className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors border border-zinc-600"
+                  >
+                    この結果を仕上げにかける →
+                  </button>
+                )}
+                <button
+                  onClick={handleSaveDraft}
+                  disabled={saved}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
+                >
+                  {saved ? "✓ 下書きとして保存しました" : "下書きとして保存"}
+                </button>
+              </div>
+              {titleInputShown && !saved && (
+                <div className="bg-zinc-800 border border-zinc-600 rounded-xl p-4 space-y-3">
+                  <label className="text-xs text-zinc-400 block">タイトルを入力してください</label>
+                  <input
+                    autoFocus
+                    type="text"
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleTitleSubmit(); if (e.key === "Escape") setTitleInputShown(false); }}
+                    placeholder="記事タイトルを入力..."
+                    className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleTitleSubmit}
+                      disabled={!titleInput.trim()}
+                      className="px-4 py-1.5 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
+                    >
+                      保存
+                    </button>
+                    <button
+                      onClick={() => setTitleInputShown(false)}
+                      className="px-4 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm rounded-lg transition-colors"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
               )}
-              <button
-                onClick={handleSaveDraft}
-                disabled={saved}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black font-medium text-sm rounded-lg transition-colors"
-              >
-                {saved ? "✓ 下書きとして保存しました" : "下書きとして保存"}
-              </button>
             </div>
           )}
           <div ref={bottomRef} />

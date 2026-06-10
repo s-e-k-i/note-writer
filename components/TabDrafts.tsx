@@ -53,7 +53,7 @@ interface Props {
   onUpdate: (id: string, updates: Partial<Draft>) => void;
   onRemove: (id: string) => void;
   onRestore: (draft: Draft) => void;
-  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
+  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number, title?: string) => void;
 }
 
 function DraftTypeBadge({ type }: { type?: Draft["draftType"] }) {
@@ -398,13 +398,13 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
             {onSendToRewrite && (
               <>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price)}
+                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price, selected.title)}
                   className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                 >
                   リライトへ →
                 </button>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price)}
+                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price, selected.title)}
                   className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                 >
                   仕上げへ →
@@ -601,13 +601,13 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
             {onSendToRewrite && (
               <>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price)}
+                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price, selected.title)}
                   className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                 >
                   リライトへ →
                 </button>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price)}
+                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price, selected.title)}
                   className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                 >
                   仕上げへ →
@@ -790,13 +790,13 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
               {onSendToRewrite && (
                 <>
                   <button
-                    onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price)}
+                    onClick={() => onSendToRewrite(d.body, "rewrite", d.isPaid, d.price, d.title)}
                     className="px-2.5 py-1 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                   >
                     リライトへ →
                   </button>
                   <button
-                    onClick={() => onSendToRewrite(d.body, "polish", d.isPaid, d.price)}
+                    onClick={() => onSendToRewrite(d.body, "polish", d.isPaid, d.price, d.title)}
                     className="px-2.5 py-1 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                   >
                     仕上げへ →

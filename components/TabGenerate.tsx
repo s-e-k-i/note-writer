@@ -12,7 +12,7 @@ interface Props {
   initialProposal?: ProposalContext | null;
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   onBackToConsult?: () => void;
-  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number) => void;
+  onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number, title?: string) => void;
 }
 
 const CLOSING_TEXT = "最後まで読んでくださり、本当にありがとうございます。";
@@ -826,13 +826,13 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
         {onSendToRewrite && (
           <>
             <button
-              onClick={() => onSendToRewrite(body, "rewrite", isPaid, price ?? undefined)}
+              onClick={() => onSendToRewrite(body, "rewrite", isPaid, price ?? undefined, selectedTitle || theme || undefined)}
               className="px-4 py-2 text-sky-400 hover:text-sky-300 text-sm border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
             >
               リライトへ →
             </button>
             <button
-              onClick={() => onSendToRewrite(body, "polish", isPaid, price ?? undefined)}
+              onClick={() => onSendToRewrite(body, "polish", isPaid, price ?? undefined, selectedTitle || theme || undefined)}
               className="px-4 py-2 text-purple-400 hover:text-purple-300 text-sm border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
             >
               仕上げへ →
