@@ -11,6 +11,16 @@ interface Props {
   onImportJSON: (file: File) => Promise<void>;
   onUpdateSummaries: (updates: { id: string; summary: string }[]) => void;
   onAddArticle: (article: Omit<Article, "id" | "number">) => void;
+  onUpdateArticle: (id: string, updates: Partial<Article>) => void;
+}
+
+interface EditFields {
+  title: string;
+  date: string;
+  body: string;
+  magazines: string[];
+  isPaid: boolean;
+  paidPrice: string;
 }
 
 // ── Parse helpers ─────────────────────────────────────────────────
@@ -44,7 +54,7 @@ interface PastePreview {
   body: string;
 }
 
-export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle }: Props) {
+export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -53,6 +63,11 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+
+  // Article edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<EditFields>({ title: "", date: "", body: "", magazines: [], isPaid: false, paidPrice: "" });
+  const [editSaved, setEditSaved] = useState(false);
 
   // Paste-to-add state
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -95,6 +110,55 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     },
     [handleTextFile]
   );
+
+  const openEdit = (a: Article) => {
+    setEditingId(a.id);
+    setEditSaved(false);
+    setEditFields({
+      title: a.title,
+      date: a.date,
+      body: a.body ?? "",
+      magazines: a.magazines ?? [a.magazine],
+      isPaid: a.isPaid ?? false,
+      paidPrice: a.paidPrice != null ? String(a.paidPrice) : "",
+    });
+  };
+
+  const toggleEditMag = (mag: string) => {
+    setEditFields((prev) => ({
+      ...prev,
+      magazines: prev.magazines.includes(mag)
+        ? prev.magazines.filter((m) => m !== mag)
+        : [...prev.magazines, mag],
+    }));
+  };
+
+  const handleEditSave = (id: string) => {
+    if (editFields.magazines.length === 0) return;
+    const price = parseInt(editFields.paidPrice, 10);
+    onUpdateArticle(id, {
+      title: editFields.title.trim() || "（タイトル未設定）",
+      date: editFields.date,
+      body: editFields.body,
+      magazine: editFields.magazines[0],
+      magazines: editFields.magazines,
+      isPaid: editFields.isPaid || undefined,
+      paidPrice: editFields.isPaid && !isNaN(price) ? price : undefined,
+    });
+    setEditSaved(true);
+    setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
+  };
+
+  const handleDownload = () => {
+    const date = new Date().toISOString().split("T")[0];
+    const blob = new Blob([JSON.stringify(articles, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `note-database-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const handlePasteParse = () => {
     if (!pasteText.trim()) { setPasteMsg("テキストを貼り付けてください"); return; }
@@ -406,24 +470,162 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
       {/* Article list */}
       {articles.length > 0 && (
         <div>
-          <h3 className="text-sm font-medium text-zinc-400 mb-3">記事一覧（{articles.length}本）</h3>
-          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-zinc-400">記事一覧（{articles.length}本）</h3>
+            <button
+              onClick={handleDownload}
+              className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+            >
+              ↓ データベースをダウンロード
+            </button>
+          </div>
+          <div className="space-y-2">
             {articles.map((a) => (
-              <div key={a.id} className="bg-zinc-800 rounded-lg p-3 flex items-start gap-3">
-                <div className="text-xs text-zinc-500 shrink-0 pt-0.5 w-20">
-                  <span className="text-zinc-600">#{a.number}</span><br />{a.date}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-zinc-200 text-sm font-medium truncate">{a.title}</p>
-                    {a.isPaid && (
-                      <span className="text-xs bg-amber-500/20 text-amber-400 rounded px-1.5 py-0.5 shrink-0">
-                        有料
-                      </span>
-                    )}
+              <div key={a.id} className="bg-zinc-800 rounded-lg overflow-hidden">
+                {/* Card header row */}
+                <div className="p-3 flex items-start gap-3">
+                  <div className="text-xs text-zinc-500 shrink-0 pt-0.5 w-20">
+                    <span className="text-zinc-600">#{a.number}</span><br />{a.date}
                   </div>
-                  <p className="text-zinc-500 text-xs mt-0.5 truncate">{a.magazine.split("──")[0].trim()}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-zinc-200 text-sm font-medium truncate">{a.title}</p>
+                      {a.isPaid && (
+                        <span className="text-xs bg-amber-500/20 text-amber-400 rounded px-1.5 py-0.5 shrink-0">
+                          有料{a.paidPrice ? ` ¥${a.paidPrice.toLocaleString()}` : ""}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-zinc-500 text-xs mt-0.5 truncate">
+                      {(a.magazines ?? [a.magazine]).map((m) => m.split("──")[0].trim()).join("・")}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => editingId === a.id ? setEditingId(null) : openEdit(a)}
+                    className={`shrink-0 text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                      editingId === a.id
+                        ? "border-zinc-500 text-zinc-400 hover:text-zinc-200"
+                        : "border-zinc-600 text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {editingId === a.id ? "閉じる" : "編集"}
+                  </button>
                 </div>
+
+                {/* Inline edit area */}
+                {editingId === a.id && (
+                  <div className="border-t border-zinc-700 p-4 space-y-3 bg-zinc-800/60">
+                    {/* Title */}
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1 block">タイトル</label>
+                      <input
+                        type="text"
+                        value={editFields.title}
+                        onChange={(e) => setEditFields((p) => ({ ...p, title: e.target.value }))}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    {/* Date */}
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1 block">日付（YYYY-MM-DD）</label>
+                      <input
+                        type="text"
+                        value={editFields.date}
+                        onChange={(e) => setEditFields((p) => ({ ...p, date: e.target.value }))}
+                        className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    {/* Magazine checkboxes */}
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1.5 block">マガジン（複数可）</label>
+                      <div className="flex flex-wrap gap-2">
+                        {MAGAZINES.map((mag) => {
+                          const shortName = mag.includes("──") ? mag.split("──")[0].trim() : mag;
+                          const checked = editFields.magazines.includes(mag);
+                          return (
+                            <button
+                              key={mag}
+                              type="button"
+                              onClick={() => toggleEditMag(mag)}
+                              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                                checked
+                                  ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                                  : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                              }`}
+                            >
+                              {shortName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {editFields.magazines.length === 0 && (
+                        <p className="text-xs text-red-400 mt-1">1つ以上選択してください</p>
+                      )}
+                    </div>
+
+                    {/* isPaid toggle */}
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs text-zinc-400">有料フラグ</label>
+                      <button
+                        type="button"
+                        onClick={() => setEditFields((p) => ({ ...p, isPaid: !p.isPaid }))}
+                        className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
+                          editFields.isPaid
+                            ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                            : "border-zinc-700 text-zinc-400 hover:border-zinc-500"
+                        }`}
+                      >
+                        {editFields.isPaid ? "有料" : "無料"}
+                      </button>
+                      {editFields.isPaid && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-zinc-400">¥</span>
+                          <input
+                            type="number"
+                            value={editFields.paidPrice}
+                            onChange={(e) => setEditFields((p) => ({ ...p, paidPrice: e.target.value }))}
+                            placeholder="500"
+                            className="w-24 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Body */}
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1 block">本文</label>
+                      <textarea
+                        value={editFields.body}
+                        onChange={(e) => setEditFields((p) => ({ ...p, body: e.target.value }))}
+                        rows={8}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+                      />
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => handleEditSave(a.id)}
+                        disabled={editFields.magazines.length === 0}
+                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                          editSaved
+                            ? "bg-green-600 text-white"
+                            : "bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black"
+                        }`}
+                      >
+                        {editSaved ? "✓ 保存しました" : "保存"}
+                      </button>
+                      <button
+                        onClick={() => { setEditingId(null); setEditSaved(false); }}
+                        className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                      >
+                        キャンセル
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

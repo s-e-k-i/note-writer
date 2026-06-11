@@ -68,6 +68,17 @@ export function useArticlesDB() {
     [save]
   );
 
+  const updateArticle = useCallback(
+    (id: string, updates: Partial<Article>) => {
+      setArticles((prev) => {
+        const updated = prev.map((a) => (a.id === id ? { ...a, ...updates } : a));
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    []
+  );
+
   const updateSummaries = useCallback(
     (updates: { id: string; summary: string }[]) => {
       setArticles((prev) => {
@@ -82,5 +93,5 @@ export function useArticlesDB() {
     []
   );
 
-  return { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries };
+  return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries };
 }

@@ -26,7 +26,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<Tab>("database");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number; title?: string } | null>(null);
-  const { articles, loaded, save, addArticle, exportJSON, importJSON, updateSummaries } = useArticlesDB();
+  const { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
 
   const handleSelectTheme = (proposal: ProposalContext) => {
@@ -101,6 +101,7 @@ export default function Home() {
                 onImportJSON={importJSON}
                 onUpdateSummaries={updateSummaries}
                 onAddArticle={handleSaveArticle}
+                onUpdateArticle={updateArticle}
               />
             )}
             {/* Keep TabConsult mounted so cached proposals survive tab switches */}
