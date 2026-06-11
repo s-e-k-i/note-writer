@@ -10,9 +10,41 @@ interface Props {
   onExportJSON: () => void;
   onImportJSON: (file: File) => Promise<void>;
   onUpdateSummaries: (updates: { id: string; summary: string }[]) => void;
+  onAddArticle: (article: Omit<Article, "id" | "number">) => void;
 }
 
-export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries }: Props) {
+// ── Parse helpers ─────────────────────────────────────────────────
+function parsePasteTitle(text: string): string {
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+  return lines[0] || "（タイトル未設定）";
+}
+
+function parsePasteDate(text: string): string {
+  const m = text.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (m) {
+    return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  }
+  return new Date().toISOString().split("T")[0];
+}
+
+function parsePastePrice(text: string): { isPaid: boolean; price?: number } {
+  const m = text.match(/[¥￥]\s*(\d[\d,]*)/);
+  if (m) {
+    const price = parseInt(m[1].replace(/,/g, ""), 10);
+    if (price > 0) return { isPaid: true, price };
+  }
+  return { isPaid: false };
+}
+
+interface PastePreview {
+  title: string;
+  date: string;
+  isPaid: boolean;
+  price?: number;
+  body: string;
+}
+
+export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle }: Props) {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -21,6 +53,13 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+
+  // Paste-to-add state
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteSelectedMags, setPasteSelectedMags] = useState<string[]>([]);
+  const [pastePreview, setPastePreview] = useState<PastePreview | null>(null);
+  const [pasteMsg, setPasteMsg] = useState("");
 
   const handleTextFile = useCallback(
     async (file: File) => {
@@ -56,6 +95,41 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     },
     [handleTextFile]
   );
+
+  const handlePasteParse = () => {
+    if (!pasteText.trim()) { setPasteMsg("テキストを貼り付けてください"); return; }
+    const title = parsePasteTitle(pasteText);
+    const date = parsePasteDate(pasteText);
+    const { isPaid, price } = parsePastePrice(pasteText);
+    setPastePreview({ title, date, isPaid, price, body: pasteText.trim() });
+    setPasteMsg("");
+  };
+
+  const handlePasteAdd = () => {
+    if (!pastePreview) return;
+    if (pasteSelectedMags.length === 0) { setPasteMsg("マガジンを1つ以上選択してください"); return; }
+    onAddArticle({
+      title: pastePreview.title,
+      date: pastePreview.date,
+      magazine: pasteSelectedMags[0],
+      magazines: pasteSelectedMags,
+      summary: "",
+      isPaid: pastePreview.isPaid || undefined,
+      paidPrice: pastePreview.isPaid ? pastePreview.price : undefined,
+      body: pastePreview.body,
+    });
+    const addedTitle = pastePreview.title;
+    setPasteText("");
+    setPastePreview(null);
+    setPasteSelectedMags([]);
+    setPasteMsg(`✓ 追加しました：「${addedTitle}」`);
+  };
+
+  const toggleMag = (mag: string) => {
+    setPasteSelectedMags((prev) =>
+      prev.includes(mag) ? prev.filter((m) => m !== mag) : [...prev, mag]
+    );
+  };
 
   const magazineCounts = MAGAZINES.map((m) => ({
     name: m.split("──")[0].trim(),
@@ -127,6 +201,125 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
           {importProgress}
         </div>
       )}
+
+      {/* Paste-to-add section */}
+      <div className="border border-zinc-700 rounded-xl overflow-hidden">
+        <button
+          onClick={() => { setPasteOpen((v) => !v); setPasteMsg(""); setPastePreview(null); }}
+          className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800 hover:bg-zinc-750 text-left transition-colors"
+        >
+          <span className="text-sm font-medium text-zinc-300">📋 記事を貼り付けて追加</span>
+          <span className="text-zinc-500 text-xs">{pasteOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+        </button>
+
+        {pasteOpen && (
+          <div className="p-5 space-y-4 bg-zinc-800/40">
+            {/* Textarea */}
+            <div>
+              <label className="text-xs text-zinc-400 mb-1.5 block">記事の全文を貼り付け</label>
+              <textarea
+                value={pasteText}
+                onChange={(e) => { setPasteText(e.target.value); setPastePreview(null); setPasteMsg(""); }}
+                placeholder="noteの記事全文をここに貼り付けてください（タイトル・日付・価格を自動解析します）..."
+                rows={10}
+                className="w-full bg-zinc-900 text-zinc-200 text-sm rounded-lg p-3 border border-zinc-700 focus:border-amber-500 focus:outline-none resize-y font-sans leading-relaxed"
+              />
+            </div>
+
+            {/* Magazine checkboxes */}
+            <div>
+              <p className="text-xs text-zinc-400 mb-2">マガジンを選択（複数可）：</p>
+              <div className="flex flex-wrap gap-2">
+                {MAGAZINES.map((mag) => {
+                  const shortName = mag.includes("──") ? mag.split("──")[0].trim() : mag;
+                  const checked = pasteSelectedMags.includes(mag);
+                  return (
+                    <button
+                      key={mag}
+                      type="button"
+                      onClick={() => toggleMag(mag)}
+                      className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                        checked
+                          ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                          : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      {shortName}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <button
+              onClick={handlePasteParse}
+              disabled={!pasteText.trim()}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-500 text-black font-medium text-sm rounded-lg transition-colors"
+            >
+              データベースに追加
+            </button>
+
+            {pasteMsg && (
+              <p className={`text-sm ${pasteMsg.startsWith("✓") ? "text-green-400" : "text-zinc-300"}`}>
+                {pasteMsg}
+              </p>
+            )}
+
+            {/* Preview */}
+            {pastePreview && (
+              <div className="bg-zinc-900 border border-zinc-600 rounded-xl p-4 space-y-3">
+                <p className="text-xs text-zinc-500 font-medium">解析結果プレビュー</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex gap-3">
+                    <span className="text-zinc-500 w-16 shrink-0 text-xs">タイトル</span>
+                    <span className="text-zinc-200">{pastePreview.title}</span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-zinc-500 w-16 shrink-0 text-xs">日付</span>
+                    <span className="text-zinc-200">{pastePreview.date}</span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-zinc-500 w-16 shrink-0 text-xs">有料</span>
+                    <span>
+                      {pastePreview.isPaid ? (
+                        <span className="text-amber-400">有料 ¥{pastePreview.price?.toLocaleString()}</span>
+                      ) : (
+                        <span className="text-zinc-400">無料</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex gap-3">
+                    <span className="text-zinc-500 w-16 shrink-0 text-xs">マガジン</span>
+                    <span>
+                      {pasteSelectedMags.length > 0 ? (
+                        <span className="text-zinc-200">
+                          {pasteSelectedMags.map((m) => m.includes("──") ? m.split("──")[0].trim() : m).join("、")}
+                        </span>
+                      ) : (
+                        <span className="text-red-400 text-xs">未選択（必須）</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handlePasteAdd}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-medium text-sm rounded-lg transition-colors"
+                  >
+                    確認して追加
+                  </button>
+                  <button
+                    onClick={() => { setPastePreview(null); setPasteMsg(""); }}
+                    className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm rounded-lg transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Dashboard */}
       {articles.length > 0 && (

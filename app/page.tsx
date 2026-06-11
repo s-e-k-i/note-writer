@@ -100,6 +100,7 @@ export default function Home() {
                 onExportJSON={exportJSON}
                 onImportJSON={importJSON}
                 onUpdateSummaries={updateSummaries}
+                onAddArticle={handleSaveArticle}
               />
             )}
             {/* Keep TabConsult mounted so cached proposals survive tab switches */}

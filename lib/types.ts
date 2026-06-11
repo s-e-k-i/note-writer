@@ -8,6 +8,7 @@ export interface Article {
   isPaid?: boolean;
   paidPrice?: number;
   magazines?: string[];
+  body?: string;
 }
 
 export type ArticleType = "free" | "paid";
