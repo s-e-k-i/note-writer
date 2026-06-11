@@ -64,6 +64,16 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
 
+  // Pagination
+  const PAGE_SIZE = 10;
+  const [listPage, setListPage] = useState(1);
+  const listTopRef = useRef<HTMLDivElement>(null);
+
+  const goToPage = (p: number) => {
+    setListPage(p);
+    listTopRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
   // Article edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<EditFields>({ title: "", date: "", body: "", magazines: [], isPaid: false, paidPrice: "" });
@@ -468,9 +478,13 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
       )}
 
       {/* Article list */}
-      {articles.length > 0 && (
+      {articles.length > 0 && (() => {
+        const totalPages = Math.max(1, Math.ceil(articles.length / PAGE_SIZE));
+        const page = Math.min(listPage, totalPages);
+        const pagedArticles = articles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+        return (
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div ref={listTopRef} className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-medium text-zinc-400">記事一覧（{articles.length}本）</h3>
             <button
               onClick={handleDownload}
@@ -480,7 +494,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             </button>
           </div>
           <div className="space-y-2">
-            {articles.map((a) => (
+            {pagedArticles.map((a) => (
               <div key={a.id} className="bg-zinc-800 rounded-lg overflow-hidden">
                 {/* Card header row */}
                 <div className="p-3 flex items-start gap-3">
@@ -629,8 +643,30 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
               </div>
             ))}
           </div>
+
+          {/* Pagination controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-zinc-700">
+              <button
+                onClick={() => goToPage(page - 1)}
+                disabled={page <= 1}
+                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                ← 前へ
+              </button>
+              <span className="text-xs text-zinc-500">{page} / {totalPages}</span>
+              <button
+                onClick={() => goToPage(page + 1)}
+                disabled={page >= totalPages}
+                className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                次へ →
+              </button>
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Export/Import JSON */}
       <div className="flex flex-wrap gap-3 pt-2">
