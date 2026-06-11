@@ -12,7 +12,6 @@ interface Props {
   onUpdateSummaries: (updates: { id: string; summary: string }[]) => void;
   onAddArticle: (article: Omit<Article, "id" | "number">) => void;
   onUpdateArticle: (id: string, updates: Partial<Article>) => void;
-  onBulkUpdateBodies: (updates: { id: string; body: string }[]) => void;
 }
 
 interface EditFields {
@@ -86,20 +85,14 @@ interface PastePreview {
   body: string;
 }
 
-export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle, onBulkUpdateBodies }: Props) {
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState("");
-  const [dragging, setDragging] = useState(false);
+export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
   const [summaryImportOpen, setSummaryImportOpen] = useState(false);
   const [summaryJSON, setSummaryJSON] = useState("");
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const bulkBodyInputRef = useRef<HTMLInputElement>(null);
   const completeImportInputRef = useRef<HTMLInputElement>(null);
-  const [bulkBodyMsg, setBulkBodyMsg] = useState("");
   const [completeImportMsg, setCompleteImportMsg] = useState("");
-  const [setupOpen, setSetupOpen] = useState(false);
+  const [selectingFile, setSelectingFile] = useState(false);
   const autoSummarized = useRef(false);
 
   // Pagination
@@ -145,41 +138,6 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleTextFile = useCallback(
-    async (file: File) => {
-      setImporting(true);
-      setImportProgress("ファイルを読み込み中...");
-      try {
-        const text = await file.text();
-        setImportProgress("AIで解析・分類中... (しばらくかかります)");
-        const res = await fetch("/api/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: text }),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
-        onImport(data.articles);
-        setImportProgress(`完了：${data.articles.length}本の記事をインポートしました`);
-      } catch (err) {
-        setImportProgress(`エラー：${err instanceof Error ? err.message : "不明なエラー"}`);
-      } finally {
-        setImporting(false);
-      }
-    },
-    [onImport]
-  );
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer.files[0];
-      if (file?.name.endsWith(".txt")) handleTextFile(file);
-    },
-    [handleTextFile]
-  );
 
   const openEdit = (a: Article) => {
     setEditingId(a.id);
@@ -230,37 +188,6 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const handleBulkBodyFile = useCallback(
-    async (file: File) => {
-      setBulkBodyMsg("解析中...");
-      try {
-        const text = await file.text();
-        const parsed = parseTxtBodies(text);
-
-        // Build title → body map (normalize whitespace for matching)
-        const bodyMap = new Map(parsed.map((p) => [p.title.replace(/\s+/g, " ").trim(), p.body]));
-
-        const updates: { id: string; body: string }[] = [];
-        for (const article of articles) {
-          const key = article.title.replace(/\s+/g, " ").trim();
-          const body = bodyMap.get(key);
-          if (body) updates.push({ id: article.id, body });
-        }
-
-        if (updates.length === 0) {
-          setBulkBodyMsg("マッチした記事が見つかりませんでした（タイトルを確認してください）");
-          return;
-        }
-
-        onBulkUpdateBodies(updates);
-        setBulkBodyMsg(`✓ ${updates.length}本の記事に本文を追加しました`);
-      } catch {
-        setBulkBodyMsg("エラー：ファイルの読み込みに失敗しました");
-      }
-    },
-    [articles, onBulkUpdateBodies]
-  );
 
   const handleCompleteImport = useCallback(
     async (file: File) => {
@@ -408,10 +335,17 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             <p className="text-xs text-zinc-500">タイトル・日付・マガジン・本文を一括登録し、Claude APIで要約を自動生成します</p>
           </div>
           <button
-            onClick={() => { setCompleteImportMsg(""); completeImportInputRef.current?.click(); }}
-            className="shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-medium text-sm rounded-lg transition-colors"
+            onClick={() => {
+              setCompleteImportMsg("");
+              setSelectingFile(true);
+              const onFocus = () => { setSelectingFile(false); window.removeEventListener("focus", onFocus); };
+              window.addEventListener("focus", onFocus);
+              completeImportInputRef.current?.click();
+            }}
+            disabled={selectingFile}
+            className="shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 active:scale-95 disabled:bg-amber-600 text-black font-medium text-sm rounded-lg transition-all"
           >
-            ファイルを選択
+            {selectingFile ? "ファイルを選択中..." : "ファイルを選択"}
           </button>
           <input
             ref={completeImportInputRef}
@@ -419,6 +353,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             accept=".txt"
             className="hidden"
             onChange={(e) => {
+              setSelectingFile(false);
               const file = e.target.files?.[0];
               if (file) handleCompleteImport(file);
               e.target.value = "";
@@ -429,87 +364,6 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
           <p className={`text-sm ${completeImportMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
             {completeImportMsg}
           </p>
-        )}
-      </div>
-
-      {/* 🔧 初期セットアップ（上級者向け） */}
-      <div className="border border-zinc-700 rounded-xl overflow-hidden">
-        <button
-          onClick={() => setSetupOpen((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800 hover:bg-zinc-750 text-left transition-colors"
-        >
-          <span className="text-sm font-medium text-zinc-400">🔧 初期セットアップ（上級者向け）</span>
-          <span className="text-zinc-500 text-xs">{setupOpen ? "▲ 閉じる" : "▼ 開く"}</span>
-        </button>
-        {setupOpen && (
-          <div className="p-5 space-y-5 bg-zinc-800/40">
-            {/* Old drag-drop import area */}
-            <div>
-              <p className="text-xs text-zinc-500 mb-3">メタデータのみインポート（本文・要約なし）</p>
-              <div
-                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-                  dragging ? "border-amber-400 bg-amber-400/10" : "border-zinc-700 hover:border-zinc-500"
-                }`}
-                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={handleDrop}
-              >
-                <div className="text-4xl mb-3">📄</div>
-                <p className="text-zinc-300 mb-2">.txtファイルをドラッグ＆ドロップ、またはクリックして選択</p>
-                <p className="text-zinc-500 text-sm mb-4">▼N記事目YYYY年MM月DD日 形式のファイルに対応</p>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={importing}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium rounded-lg text-sm transition-colors"
-                >
-                  ファイルを選択
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".txt"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleTextFile(file);
-                    e.target.value = "";
-                  }}
-                />
-              </div>
-              {importProgress && (
-                <div className={`mt-3 p-4 rounded-lg text-sm ${importing ? "bg-zinc-800 text-zinc-300" : "bg-zinc-800 text-zinc-200"}`}>
-                  {importing && <span className="inline-block animate-spin mr-2">⏳</span>}
-                  {importProgress}
-                </div>
-              )}
-            </div>
-
-            {/* Bulk body import */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={() => { setBulkBodyMsg(""); bulkBodyInputRef.current?.click(); }}
-                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
-              >
-                📥 既存記事に本文を一括追加
-              </button>
-              {bulkBodyMsg && (
-                <span className={`text-sm ${bulkBodyMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
-                  {bulkBodyMsg}
-                </span>
-              )}
-              <input
-                ref={bulkBodyInputRef}
-                type="file"
-                accept=".txt"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleBulkBodyFile(file);
-                  e.target.value = "";
-                }}
-              />
-            </div>
-          </div>
         )}
       </div>
 
@@ -938,9 +792,9 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             if (file) {
               try {
                 await onImportJSON(file);
-                setImportProgress("JSONから復元しました");
+                setCompleteImportMsg("JSONから復元しました");
               } catch {
-                setImportProgress("JSONの読み込みに失敗しました");
+                setCompleteImportMsg("JSONの読み込みに失敗しました");
               }
             }
             e.target.value = "";
