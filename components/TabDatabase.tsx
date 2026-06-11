@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Article } from "@/lib/types";
 import { MAGAZINES } from "@/lib/profile";
 
@@ -96,7 +96,11 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   const bulkBodyInputRef = useRef<HTMLInputElement>(null);
+  const completeImportInputRef = useRef<HTMLInputElement>(null);
   const [bulkBodyMsg, setBulkBodyMsg] = useState("");
+  const [completeImportMsg, setCompleteImportMsg] = useState("");
+  const [setupOpen, setSetupOpen] = useState(false);
+  const autoSummarized = useRef(false);
 
   // Pagination
   const PAGE_SIZE = 10;
@@ -119,6 +123,28 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const [pasteSelectedMags, setPasteSelectedMags] = useState<string[]>([]);
   const [pastePreview, setPastePreview] = useState<PastePreview | null>(null);
   const [pasteMsg, setPasteMsg] = useState("");
+
+  // Auto-generate summaries for articles that have body but no summary (runs once on mount)
+  useEffect(() => {
+    if (autoSummarized.current || !articles.length) return;
+    const missing = articles.filter((a) => !a.summary?.trim() && a.body?.trim());
+    if (!missing.length) return;
+    autoSummarized.current = true;
+    (async () => {
+      for (const article of missing) {
+        try {
+          const res = await fetch("/api/summarize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: article.title, body: article.body }),
+          });
+          const data = await res.json();
+          if (data.summary) onUpdateArticle(article.id, { summary: data.summary });
+        } catch {}
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleTextFile = useCallback(
     async (file: File) => {
@@ -236,6 +262,65 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     [articles, onBulkUpdateBodies]
   );
 
+  const handleCompleteImport = useCallback(
+    async (file: File) => {
+      if (articles.length > 0) {
+        const ok = window.confirm("既存データを上書きします。よろしいですか？");
+        if (!ok) return;
+      }
+      setCompleteImportMsg("ファイルを読み込み中...");
+      try {
+        const text = await file.text();
+
+        // Step 1: parse metadata via import API
+        setCompleteImportMsg("記事情報を解析中...");
+        const importRes = await fetch("/api/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: text }),
+        });
+        const importData = await importRes.json();
+        if (importData.error) throw new Error(importData.error);
+        const importedArticles: Article[] = importData.articles;
+
+        // Step 2: parse bodies client-side and merge
+        const parsedBodies = parseTxtBodies(text);
+        const bodyMap = new Map(parsedBodies.map((p) => [p.title.replace(/\s+/g, " ").trim(), p.body]));
+        const articlesWithBodies: Article[] = importedArticles.map((a) => ({
+          ...a,
+          body: bodyMap.get(a.title.replace(/\s+/g, " ").trim()),
+        }));
+
+        // Step 3: save all articles immediately (with basic summary from import)
+        onImport(articlesWithBodies);
+
+        // Step 4: generate AI summaries sequentially
+        const total = articlesWithBodies.length;
+        const summaryUpdates: { id: string; summary: string }[] = [];
+        for (let i = 0; i < articlesWithBodies.length; i++) {
+          const a = articlesWithBodies[i];
+          setCompleteImportMsg(`要約を生成中...（${i + 1} / ${total}本）`);
+          if (!a.body) continue;
+          try {
+            const res = await fetch("/api/summarize", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: a.title, body: a.body }),
+            });
+            const data = await res.json();
+            if (data.summary) summaryUpdates.push({ id: a.id, summary: data.summary });
+          } catch {}
+        }
+        if (summaryUpdates.length > 0) onUpdateSummaries(summaryUpdates);
+
+        setCompleteImportMsg(`✓ ${total}本をインポート・要約${summaryUpdates.length}件を生成しました`);
+      } catch (err) {
+        setCompleteImportMsg(`エラー：${err instanceof Error ? err.message : "不明なエラー"}`);
+      }
+    },
+    [articles.length, onImport, onUpdateSummaries]
+  );
+
   const handlePasteParse = () => {
     if (!pasteText.trim()) { setPasteMsg("テキストを貼り付けてください"); return; }
     const title = parsePasteTitle(pasteText);
@@ -248,21 +333,37 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const handlePasteAdd = () => {
     if (!pastePreview) return;
     if (pasteSelectedMags.length === 0) { setPasteMsg("マガジンを1つ以上選択してください"); return; }
+    const expectedId = String(articles.length + 1).padStart(3, "0");
+    const addedTitle = pastePreview.title;
+    const bodyForSummary = pastePreview.body;
     onAddArticle({
-      title: pastePreview.title,
+      title: addedTitle,
       date: pastePreview.date,
       magazine: pasteSelectedMags[0],
       magazines: pasteSelectedMags,
       summary: "",
       isPaid: pastePreview.isPaid || undefined,
       paidPrice: pastePreview.isPaid ? pastePreview.price : undefined,
-      body: pastePreview.body,
+      body: bodyForSummary,
     });
-    const addedTitle = pastePreview.title;
     setPasteText("");
     setPastePreview(null);
     setPasteSelectedMags([]);
-    setPasteMsg(`✓ 追加しました：「${addedTitle}」`);
+    setPasteMsg(`✓ 追加しました：「${addedTitle}」（要約を生成中...）`);
+    // Auto-generate summary in background
+    fetch("/api/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: addedTitle, body: bodyForSummary }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.summary) {
+          onUpdateArticle(expectedId, { summary: data.summary });
+          setPasteMsg(`✓ 追加しました：「${addedTitle}」（要約生成完了）`);
+        }
+      })
+      .catch(() => {});
   };
 
   const toggleMag = (mag: string) => {
@@ -299,73 +400,117 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
   return (
     <div className="space-y-6">
-      {/* Import Area */}
-      <div
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-          dragging ? "border-amber-400 bg-amber-400/10" : "border-zinc-700 hover:border-zinc-500"
-        }`}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
-      >
-        <div className="text-4xl mb-3">📄</div>
-        <p className="text-zinc-300 mb-2">
-          .txtファイルをドラッグ＆ドロップ、またはクリックして選択
-        </p>
-        <p className="text-zinc-500 text-sm mb-4">
-          ▼N記事目YYYY年MM月DD日 形式のファイルに対応
-        </p>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={importing}
-          className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium rounded-lg text-sm transition-colors"
-        >
-          ファイルを選択
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleTextFile(file);
-            e.target.value = "";
-          }}
-        />
+      {/* Complete import (prominent) */}
+      <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-medium text-zinc-200 mb-1">📥 txtから完全インポート</p>
+            <p className="text-xs text-zinc-500">タイトル・日付・マガジン・本文を一括登録し、Claude APIで要約を自動生成します</p>
+          </div>
+          <button
+            onClick={() => { setCompleteImportMsg(""); completeImportInputRef.current?.click(); }}
+            className="shrink-0 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-medium text-sm rounded-lg transition-colors"
+          >
+            ファイルを選択
+          </button>
+          <input
+            ref={completeImportInputRef}
+            type="file"
+            accept=".txt"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleCompleteImport(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {completeImportMsg && (
+          <p className={`text-sm ${completeImportMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
+            {completeImportMsg}
+          </p>
+        )}
       </div>
 
-      {importProgress && (
-        <div className={`p-4 rounded-lg text-sm ${importing ? "bg-zinc-800 text-zinc-300" : "bg-zinc-800 text-zinc-200"}`}>
-          {importing && <span className="inline-block animate-spin mr-2">⏳</span>}
-          {importProgress}
-        </div>
-      )}
-
-      {/* Bulk body import */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* 🔧 初期セットアップ（上級者向け） */}
+      <div className="border border-zinc-700 rounded-xl overflow-hidden">
         <button
-          onClick={() => { setBulkBodyMsg(""); bulkBodyInputRef.current?.click(); }}
-          className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
+          onClick={() => setSetupOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800 hover:bg-zinc-750 text-left transition-colors"
         >
-          📥 既存記事に本文を一括追加
+          <span className="text-sm font-medium text-zinc-400">🔧 初期セットアップ（上級者向け）</span>
+          <span className="text-zinc-500 text-xs">{setupOpen ? "▲ 閉じる" : "▼ 開く"}</span>
         </button>
-        {bulkBodyMsg && (
-          <span className={`text-sm ${bulkBodyMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
-            {bulkBodyMsg}
-          </span>
+        {setupOpen && (
+          <div className="p-5 space-y-5 bg-zinc-800/40">
+            {/* Old drag-drop import area */}
+            <div>
+              <p className="text-xs text-zinc-500 mb-3">メタデータのみインポート（本文・要約なし）</p>
+              <div
+                className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+                  dragging ? "border-amber-400 bg-amber-400/10" : "border-zinc-700 hover:border-zinc-500"
+                }`}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={handleDrop}
+              >
+                <div className="text-4xl mb-3">📄</div>
+                <p className="text-zinc-300 mb-2">.txtファイルをドラッグ＆ドロップ、またはクリックして選択</p>
+                <p className="text-zinc-500 text-sm mb-4">▼N記事目YYYY年MM月DD日 形式のファイルに対応</p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={importing}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 text-black font-medium rounded-lg text-sm transition-colors"
+                >
+                  ファイルを選択
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleTextFile(file);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+              {importProgress && (
+                <div className={`mt-3 p-4 rounded-lg text-sm ${importing ? "bg-zinc-800 text-zinc-300" : "bg-zinc-800 text-zinc-200"}`}>
+                  {importing && <span className="inline-block animate-spin mr-2">⏳</span>}
+                  {importProgress}
+                </div>
+              )}
+            </div>
+
+            {/* Bulk body import */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={() => { setBulkBodyMsg(""); bulkBodyInputRef.current?.click(); }}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
+              >
+                📥 既存記事に本文を一括追加
+              </button>
+              {bulkBodyMsg && (
+                <span className={`text-sm ${bulkBodyMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
+                  {bulkBodyMsg}
+                </span>
+              )}
+              <input
+                ref={bulkBodyInputRef}
+                type="file"
+                accept=".txt"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleBulkBodyFile(file);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          </div>
         )}
-        <input
-          ref={bulkBodyInputRef}
-          type="file"
-          accept=".txt"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleBulkBodyFile(file);
-            e.target.value = "";
-          }}
-        />
       </div>
 
       {/* Paste-to-add section */}
