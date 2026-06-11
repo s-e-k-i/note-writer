@@ -154,8 +154,8 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
   }, []);
 
   useEffect(() => {
-    if (generated) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [generated]);
+    if (loading && generated) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [generated, loading]);
 
   const isPaid = articleType === "paid";
   const isFromProposal = fromProposal && !cleared;
