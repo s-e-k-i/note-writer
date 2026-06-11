@@ -622,7 +622,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
         <div className="text-5xl mb-4">📝</div>
         <p className="text-zinc-400">下書きはまだありません</p>
         <p className="text-xs mt-2 text-zinc-600">
-          タブ③「記事を書く」で記事を生成し、「下書きとして保存」すると表示されます
+          「記事を書く」タブで記事を生成し、「下書きとして保存」すると表示されます
         </p>
       </div>
     );

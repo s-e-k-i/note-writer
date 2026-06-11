@@ -73,6 +73,14 @@ function addToHistory(entry: ProposalHistoryEntry) {
     localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
   } catch {}
 }
+function deleteFromHistory(id: string): ProposalHistoryEntry[] {
+  const updated = loadHistory().filter((e) => e.id !== id);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(updated)); } catch {}
+  return updated;
+}
+function clearHistory(): void {
+  try { localStorage.removeItem(HISTORY_KEY); } catch {}
+}
 
 // ── Proposal parsing helpers ─────────────────────────────────────
 function splitIntoProposals(text: string): string[] {
@@ -704,34 +712,59 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
         {/* Proposal history (⑥) */}
         {historyEntries.length > 0 && (
           <div className="border-t border-zinc-800 pt-4">
-            <button
-              onClick={() => setShowHistory((v) => !v)}
-              className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5 transition-colors"
-            >
-              <span>{showHistory ? "▲" : "▼"}</span>
-              提案履歴を見る（{historyEntries.length}件）
-            </button>
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setShowHistory((v) => !v)}
+                className="text-xs text-zinc-500 hover:text-zinc-300 flex items-center gap-1.5 transition-colors"
+              >
+                <span>{showHistory ? "▲" : "▼"}</span>
+                提案履歴を見る（{historyEntries.length}件）
+              </button>
+              {showHistory && (
+                <button
+                  onClick={() => {
+                    if (!window.confirm("提案履歴をすべて削除しますか？")) return;
+                    clearHistory();
+                    setHistoryEntries([]);
+                  }}
+                  className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                >
+                  すべて削除
+                </button>
+              )}
+            </div>
             {showHistory && (
               <div className="mt-3 space-y-2 max-h-96 overflow-y-auto">
                 {historyEntries.map((entry) => (
                   <div key={entry.id} className="bg-zinc-800 rounded-xl p-3 space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
-                      <span>{entry.date}</span>
-                      <span className="text-zinc-700">·</span>
-                      <span>{MODE_SHORT[entry.mode]}</span>
-                      {entry.proposal.articleType === "paid" && (
-                        <span className="text-amber-400">
-                          有料{entry.proposal.price ? ` ¥${(entry.proposal.price as number).toLocaleString()}` : ""}
-                        </span>
-                      )}
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
+                          <span>{entry.date}</span>
+                          <span className="text-zinc-700">·</span>
+                          <span>{MODE_SHORT[entry.mode]}</span>
+                          {entry.proposal.articleType === "paid" && (
+                            <span className="text-amber-400">
+                              有料{entry.proposal.price ? ` ¥${(entry.proposal.price as number).toLocaleString()}` : ""}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-zinc-200 leading-snug">{entry.proposal.theme}</p>
+                        <button
+                          onClick={() => onSelectTheme(entry.proposal)}
+                          className="text-xs px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors"
+                        >
+                          この案で書く →
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setHistoryEntries(deleteFromHistory(entry.id))}
+                        className="shrink-0 text-zinc-600 hover:text-red-400 text-base leading-none transition-colors pt-0.5"
+                        aria-label="削除"
+                      >
+                        ✕
+                      </button>
                     </div>
-                    <p className="text-sm text-zinc-200 leading-snug">{entry.proposal.theme}</p>
-                    <button
-                      onClick={() => onSelectTheme(entry.proposal)}
-                      className="text-xs px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 transition-colors"
-                    >
-                      この案で書く →
-                    </button>
                   </div>
                 ))}
               </div>
