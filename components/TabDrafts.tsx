@@ -159,10 +159,10 @@ function PaidCharBadges({ draft, compact }: { draft: Draft; compact?: boolean })
 
 export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSendToRewrite }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [copied, setCopied] = useState(false);
+  const [savedFeedback, setSavedFeedback] = useState(false);
   const [memoExpanded, setMemoExpanded] = useState(false);
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState("");
@@ -225,22 +225,16 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
     setSelectedId(draft.id);
     setEditTitle(draft.title);
     setEditBody(draft.body);
-    setEditing(false);
     setCopied(false);
+    setSavedFeedback(false);
     setMemoExpanded(false);
   };
 
-  const handleSaveEdit = () => {
+  const handleSave = () => {
     if (!selectedId) return;
     onUpdate(selectedId, { title: editTitle, body: editBody });
-    setEditing(false);
-  };
-
-  const handleCancelEdit = () => {
-    if (!selected) return;
-    setEditTitle(selected.title);
-    setEditBody(selected.body);
-    setEditing(false);
+    setSavedFeedback(true);
+    setTimeout(() => setSavedFeedback(false), 2000);
   };
 
   const moveToTrash = (draft: Draft) => {
@@ -256,7 +250,6 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
     moveToTrash(selected);
     onRemove(selected.id);
     setSelectedId(null);
-    setEditing(false);
   };
 
   const handleDeleteFromList = (id: string) => {
@@ -305,8 +298,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
   };
 
   const handleCopy = () => {
-    const text = editing ? editBody : (selected?.body ?? "");
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(editBody);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -379,11 +371,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
         {/* Header row */}
         <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => {
-              setSelectedId(null);
-              setEditing(false);
-              setCopied(false);
-            }}
+            onClick={() => { setSelectedId(null); setCopied(false); }}
             className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1 shrink-0"
           >
             ← 一覧に戻る
@@ -398,20 +386,20 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
             {onSendToRewrite && (
               <>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price, selected.title)}
+                  onClick={() => onSendToRewrite(editBody, "rewrite", selected.isPaid, selected.price, editTitle)}
                   className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
                 >
                   リライトへ →
                 </button>
                 <button
-                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price, selected.title)}
+                  onClick={() => onSendToRewrite(editBody, "polish", selected.isPaid, selected.price, editTitle)}
                   className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
                 >
                   仕上げへ →
                 </button>
               </>
             )}
-            {selected.status === "draft" && !editing && (
+            {selected.status === "draft" && (
               <button
                 onClick={handlePublish}
                 className="px-3 py-1.5 text-green-400 hover:text-green-300 text-xs border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
@@ -419,7 +407,7 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
                 公開済みにする
               </button>
             )}
-            {selected.status === "published" && !editing && (
+            {selected.status === "published" && (
               <button
                 onClick={() => onUpdate(selected.id, { status: "draft" })}
                 className="px-3 py-1.5 text-zinc-400 hover:text-zinc-300 text-xs border border-zinc-600 hover:border-zinc-500 rounded-lg transition-colors"
@@ -427,29 +415,16 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
                 下書きに戻す
               </button>
             )}
-            {editing ? (
-              <>
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-medium rounded-lg transition-colors"
-                >
-                  上書き保存
-                </button>
-                <button
-                  onClick={handleCancelEdit}
-                  className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
-                >
-                  キャンセル
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setEditing(true)}
-                className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
-              >
-                編集
-              </button>
-            )}
+            <button
+              onClick={handleSave}
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                savedFeedback
+                  ? "bg-green-600 text-white"
+                  : "bg-amber-500 hover:bg-amber-400 text-black"
+              }`}
+            >
+              {savedFeedback ? "✓ 保存しました" : "保存"}
+            </button>
             <button
               onClick={handleDelete}
               className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
@@ -462,16 +437,12 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
         {/* Metadata card */}
         <div className="bg-zinc-800 rounded-xl p-4 space-y-2">
           <div className="flex items-start gap-2 flex-wrap">
-            {editing ? (
-              <input
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 min-w-0"
-              />
-            ) : (
-              <h2 className="text-zinc-100 font-medium text-base flex-1">{selected.title}</h2>
-            )}
+            <input
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 min-w-0 font-medium"
+            />
             <div className="flex gap-1.5 shrink-0 flex-wrap items-center">
               <DraftTypeBadge type={selected.draftType} />
               {selected.version != null && (
@@ -575,75 +546,71 @@ export default function TabDrafts({ drafts, onUpdate, onRemove, onRestore, onSen
 
         {/* Body */}
         <div className="bg-zinc-800 rounded-xl p-5">
-          {editing ? (
-            <textarea
-              value={editBody}
-              onChange={(e) => setEditBody(e.target.value)}
-              rows={28}
-              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
-            />
-          ) : (
-            <pre className="whitespace-pre-wrap font-sans text-sm text-zinc-200 leading-relaxed">
-              {selected.body}
-            </pre>
-          )}
+          <textarea
+            value={editBody}
+            onChange={(e) => setEditBody(e.target.value)}
+            rows={28}
+            className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+          />
         </div>
 
-        {/* Bottom action row — mirrors the top header row */}
-        {!editing && (
-          <div className="flex gap-2 flex-wrap border-t border-zinc-800 pt-4">
-            <button
-              onClick={handleCopy}
-              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
-            >
-              {copied ? "✓ コピー済み" : "本文をコピー"}
-            </button>
-            {onSendToRewrite && (
-              <>
-                <button
-                  onClick={() => onSendToRewrite(selected.body, "rewrite", selected.isPaid, selected.price, selected.title)}
-                  className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
-                >
-                  リライトへ →
-                </button>
-                <button
-                  onClick={() => onSendToRewrite(selected.body, "polish", selected.isPaid, selected.price, selected.title)}
-                  className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
-                >
-                  仕上げへ →
-                </button>
-              </>
-            )}
-            {selected.status === "draft" && (
+        {/* Bottom action row */}
+        <div className="flex gap-2 flex-wrap border-t border-zinc-800 pt-4">
+          <button
+            onClick={handleCopy}
+            className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
+          >
+            {copied ? "✓ コピー済み" : "本文をコピー"}
+          </button>
+          {onSendToRewrite && (
+            <>
               <button
-                onClick={handlePublish}
-                className="px-3 py-1.5 text-green-400 hover:text-green-300 text-xs border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
+                onClick={() => onSendToRewrite(editBody, "rewrite", selected.isPaid, selected.price, editTitle)}
+                className="px-3 py-1.5 text-sky-400 hover:text-sky-300 text-xs border border-sky-400/30 hover:border-sky-400/60 rounded-lg transition-colors"
               >
-                公開済みにする
+                リライトへ →
               </button>
-            )}
-            {selected.status === "published" && (
               <button
-                onClick={() => onUpdate(selected.id, { status: "draft" })}
-                className="px-3 py-1.5 text-zinc-400 hover:text-zinc-300 text-xs border border-zinc-600 hover:border-zinc-500 rounded-lg transition-colors"
+                onClick={() => onSendToRewrite(editBody, "polish", selected.isPaid, selected.price, editTitle)}
+                className="px-3 py-1.5 text-purple-400 hover:text-purple-300 text-xs border border-purple-400/30 hover:border-purple-400/60 rounded-lg transition-colors"
               >
-                下書きに戻す
+                仕上げへ →
               </button>
-            )}
+            </>
+          )}
+          {selected.status === "draft" && (
             <button
-              onClick={() => setEditing(true)}
-              className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded-lg transition-colors"
+              onClick={handlePublish}
+              className="px-3 py-1.5 text-green-400 hover:text-green-300 text-xs border border-green-400/30 hover:border-green-400/60 rounded-lg transition-colors"
             >
-              編集
+              公開済みにする
             </button>
+          )}
+          {selected.status === "published" && (
             <button
-              onClick={handleDelete}
-              className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
+              onClick={() => onUpdate(selected.id, { status: "draft" })}
+              className="px-3 py-1.5 text-zinc-400 hover:text-zinc-300 text-xs border border-zinc-600 hover:border-zinc-500 rounded-lg transition-colors"
             >
-              削除
+              下書きに戻す
             </button>
-          </div>
-        )}
+          )}
+          <button
+            onClick={handleSave}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              savedFeedback
+                ? "bg-green-600 text-white"
+                : "bg-amber-500 hover:bg-amber-400 text-black"
+            }`}
+          >
+            {savedFeedback ? "✓ 保存しました" : "保存"}
+          </button>
+          <button
+            onClick={handleDelete}
+            className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs border border-red-400/30 hover:border-red-400/60 rounded-lg transition-colors"
+          >
+            削除
+          </button>
+        </div>
       </div>
     );
   }
