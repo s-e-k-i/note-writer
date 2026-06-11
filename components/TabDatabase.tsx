@@ -146,15 +146,16 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const handleEditSave = (id: string) => {
     if (editFields.magazines.length === 0) return;
     const price = parseInt(editFields.paidPrice, 10);
-    onUpdateArticle(id, {
+    const updates: Partial<Article> = {
       title: editFields.title.trim() || "（タイトル未設定）",
       date: editFields.date,
-      body: editFields.body,
       magazine: editFields.magazines[0],
       magazines: editFields.magazines,
       isPaid: editFields.isPaid || undefined,
       paidPrice: editFields.isPaid && !isNaN(price) ? price : undefined,
-    });
+    };
+    if (editFields.body.trim()) updates.body = editFields.body;
+    onUpdateArticle(id, updates);
     setEditSaved(true);
     setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
   };
@@ -613,8 +614,9 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                       <textarea
                         value={editFields.body}
                         onChange={(e) => setEditFields((p) => ({ ...p, body: e.target.value }))}
+                        placeholder="本文データなし（txtファイルからインポートされた記事）"
                         rows={8}
-                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
                       />
                     </div>
 
