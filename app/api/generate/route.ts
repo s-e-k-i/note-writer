@@ -16,6 +16,8 @@ export async function POST(request: Request) {
     const { theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle } =
       await request.json();
 
+    console.log("[generate] writingStyle:", writingStyle);
+
     const isPaid = articleType === "paid";
     const articlesSummary = buildArticlesSummary(articles || []);
 
@@ -37,10 +39,10 @@ export async function POST(request: Request) {
 
     const writingStyleNote =
       writingStyle === "de-aru"
-        ? "\n- 文体：である調で統一すること（「です」「ます」は使わない）"
+        ? "\n- 【文体指定・厳守】文体はである調で統一すること。文末は「〜だ。」「〜である。」「〜した。」のみ使用すること。「〜です。」「〜ます。」「〜ました。」など、ですます調の語尾は一切使わないこと。"
         : writingStyle === "ai"
         ? ""
-        : "\n- 文体：ですます調で統一すること（「である」調は使わない）";
+        : "\n- 【文体指定・厳守】文体はですます調で統一すること。文末は「〜です。」「〜ます。」「〜ました。」「〜ません。」のみ使用すること。「〜だ。」「〜である。」「〜した。」「〜だった。」「〜てきた。」「〜しよう。」「〜ある。」などの辞書形・命令形・過去形（だった）は絶対に使わないこと。";
 
     const paidPriceNote = isPaid && price ? `\n- 価格：${price}円の有料記事として設計する` : "";
 
@@ -91,10 +93,10 @@ export async function POST(request: Request) {
 
 【これまでの記事一覧（重複回避のため参照）】
 ${articlesSummary}
-
+${writingStyleNote ? `\n【文体の絶対ルール（プロフィールより優先・厳守）】${writingStyleNote.replace(/^\n- 【文体指定・厳守】/, "")}\n` : ""}
 【記事生成の指示】
 - 上記の記事と内容が重複しないようにする
-- 文体・構成・締め方は必ずプロフィールドキュメントの指示に従う
+- 構成・締め方は必ずプロフィールドキュメントの指示に従う
 - 一人称は「僕」のみ
 - 短文リズム（1〜2行で改行）
 - 見出しには必ず ## 形式（Markdown）を使うこと。■・【】・◆ などの記号で見出しを作らないこと。
