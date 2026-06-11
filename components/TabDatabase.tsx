@@ -12,6 +12,7 @@ interface Props {
   onUpdateSummaries: (updates: { id: string; summary: string }[]) => void;
   onAddArticle: (article: Omit<Article, "id" | "number">) => void;
   onUpdateArticle: (id: string, updates: Partial<Article>) => void;
+  onBulkUpdateBodies: (updates: { id: string; body: string }[]) => void;
 }
 
 interface EditFields {
@@ -46,6 +47,37 @@ function parsePastePrice(text: string): { isPaid: boolean; price?: number } {
   return { isPaid: false };
 }
 
+// ── Bulk body parser ──────────────────────────────────────────────
+interface ParsedBody {
+  title: string;
+  body: string;
+}
+
+function parseTxtBodies(text: string): ParsedBody[] {
+  // Split on each ▼N記事目 marker
+  const chunks = text.split(/(?=▼\d+記事目)/);
+  const results: ParsedBody[] = [];
+
+  for (const chunk of chunks) {
+    const lines = chunk.split("\n");
+    if (!lines[0].trim().startsWith("▼") || !lines[0].includes("記事目")) continue;
+
+    // First non-empty line after the marker line = title
+    let titleIdx = -1;
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].trim()) { titleIdx = i; break; }
+    }
+    if (titleIdx === -1) continue;
+
+    const title = lines[titleIdx].trim();
+    const body = lines.slice(titleIdx + 1).join("\n").trim();
+
+    if (title && body) results.push({ title, body });
+  }
+
+  return results;
+}
+
 interface PastePreview {
   title: string;
   date: string;
@@ -54,7 +86,7 @@ interface PastePreview {
   body: string;
 }
 
-export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
+export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle, onBulkUpdateBodies }: Props) {
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -63,6 +95,8 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const bulkBodyInputRef = useRef<HTMLInputElement>(null);
+  const [bulkBodyMsg, setBulkBodyMsg] = useState("");
 
   // Pagination
   const PAGE_SIZE = 10;
@@ -171,6 +205,37 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     URL.revokeObjectURL(url);
   };
 
+  const handleBulkBodyFile = useCallback(
+    async (file: File) => {
+      setBulkBodyMsg("解析中...");
+      try {
+        const text = await file.text();
+        const parsed = parseTxtBodies(text);
+
+        // Build title → body map (normalize whitespace for matching)
+        const bodyMap = new Map(parsed.map((p) => [p.title.replace(/\s+/g, " ").trim(), p.body]));
+
+        const updates: { id: string; body: string }[] = [];
+        for (const article of articles) {
+          const key = article.title.replace(/\s+/g, " ").trim();
+          const body = bodyMap.get(key);
+          if (body) updates.push({ id: article.id, body });
+        }
+
+        if (updates.length === 0) {
+          setBulkBodyMsg("マッチした記事が見つかりませんでした（タイトルを確認してください）");
+          return;
+        }
+
+        onBulkUpdateBodies(updates);
+        setBulkBodyMsg(`✓ ${updates.length}本の記事に本文を追加しました`);
+      } catch {
+        setBulkBodyMsg("エラー：ファイルの読み込みに失敗しました");
+      }
+    },
+    [articles, onBulkUpdateBodies]
+  );
+
   const handlePasteParse = () => {
     if (!pasteText.trim()) { setPasteMsg("テキストを貼り付けてください"); return; }
     const title = parsePasteTitle(pasteText);
@@ -276,6 +341,32 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
           {importProgress}
         </div>
       )}
+
+      {/* Bulk body import */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={() => { setBulkBodyMsg(""); bulkBodyInputRef.current?.click(); }}
+          className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-sm rounded-lg transition-colors"
+        >
+          📥 既存記事に本文を一括追加
+        </button>
+        {bulkBodyMsg && (
+          <span className={`text-sm ${bulkBodyMsg.startsWith("✓") ? "text-green-400" : "text-zinc-400"}`}>
+            {bulkBodyMsg}
+          </span>
+        )}
+        <input
+          ref={bulkBodyInputRef}
+          type="file"
+          accept=".txt"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleBulkBodyFile(file);
+            e.target.value = "";
+          }}
+        />
+      </div>
 
       {/* Paste-to-add section */}
       <div className="border border-zinc-700 rounded-xl overflow-hidden">

@@ -93,5 +93,19 @@ export function useArticlesDB() {
     []
   );
 
-  return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries };
+  const bulkUpdateBodies = useCallback(
+    (updates: { id: string; body: string }[]) => {
+      setArticles((prev) => {
+        const map = new Map(updates.map((u) => [u.id, u.body]));
+        const updated = prev.map((a) =>
+          map.has(a.id) ? { ...a, body: map.get(a.id)! } : a
+        );
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      });
+    },
+    []
+  );
+
+  return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };
 }
