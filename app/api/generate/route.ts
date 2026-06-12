@@ -130,7 +130,7 @@ ${structureMemoSection}
     const maxTokens = isPaid ? 5000 : wordCount === "standard" ? 4000 : 3000;
 
     const stream = await client.messages.stream({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
