@@ -13,8 +13,8 @@ interface FormFields {
   issueNumber: string;
   title: string;
   body: string;
+  memo: string;
   date: string;
-  sourceNoteUrl: string;
 }
 
 const NEWSLETTER_START_MONTH = "2026-06";
@@ -39,20 +39,50 @@ function nextIssueNumber(newsletters: Newsletter[]): string {
   return String(Math.max(...nums) + 1);
 }
 
+function blankFields(newsletters: Newsletter[]): FormFields {
+  return {
+    issueNumber: nextIssueNumber(newsletters),
+    title: "",
+    body: "",
+    memo: "",
+    date: new Date().toISOString().split("T")[0],
+  };
+}
+
+function fieldsFromNewsletter(n: Newsletter): FormFields {
+  return {
+    issueNumber: n.issueNumber,
+    title: n.title,
+    body: n.body,
+    memo: n.memo ?? "",
+    date: n.date,
+  };
+}
+
 export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Props) {
   const [showAllMonths, setShowAllMonths] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [fields, setFields] = useState<FormFields>({ issueNumber: "", title: "", body: "", date: "", sourceNoteUrl: "" });
-  const [saved, setSaved] = useState(false);
 
+  // Add panel state
+  const [addOpen, setAddOpen] = useState(false);
+  const [addFields, setAddFields] = useState<FormFields>(blankFields(newsletters));
+  const [addSaved, setAddSaved] = useState(false);
+
+  // Edit panel state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
+  const [editSaved, setEditSaved] = useState(false);
+
+  // ── Graph ────────────────────────────────────────────
   const currentMonth = new Date().toISOString().slice(0, 7);
 
   const twelveMonthsAgoDate = new Date();
   twelveMonthsAgoDate.setMonth(twelveMonthsAgoDate.getMonth() - 11);
   const twelveMonthsAgo = `${twelveMonthsAgoDate.getFullYear()}-${String(twelveMonthsAgoDate.getMonth() + 1).padStart(2, "0")}`;
 
-  const displayStart = showAllMonths ? NEWSLETTER_START_MONTH : twelveMonthsAgo;
+  // Never go before NEWSLETTER_START_MONTH
+  const defaultStart = twelveMonthsAgo < NEWSLETTER_START_MONTH ? NEWSLETTER_START_MONTH : twelveMonthsAgo;
+  const displayStart = showAllMonths ? NEWSLETTER_START_MONTH : defaultStart;
+
   const monthlyCounts = newsletters.reduce<Record<string, number>>((acc, n) => {
     const month = n.date.slice(0, 7);
     acc[month] = (acc[month] || 0) + 1;
@@ -64,53 +94,148 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
 
   const sortedNewsletters = [...newsletters].sort((a, b) => b.date.localeCompare(a.date));
 
+  // ── Add panel handlers ───────────────────────────────
   const openAdd = () => {
+    setAddFields(blankFields(newsletters));
+    setAddSaved(false);
+    setAddOpen(true);
     setEditingId(null);
-    setFields({
-      issueNumber: nextIssueNumber(newsletters),
-      title: "",
-      body: "",
-      date: new Date().toISOString().split("T")[0],
-      sourceNoteUrl: "",
-    });
-    setSaved(false);
-    setModalOpen(true);
   };
 
+  const handleAdd = () => {
+    if (!addFields.title.trim() || !addFields.body.trim() || !addFields.date) return;
+    onAdd({
+      issueNumber: addFields.issueNumber.trim(),
+      title: addFields.title.trim(),
+      body: addFields.body,
+      memo: addFields.memo.trim() || undefined,
+      date: addFields.date,
+    });
+    setAddSaved(true);
+    setTimeout(() => { setAddOpen(false); setAddSaved(false); }, 1000);
+  };
+
+  const closeAdd = () => { setAddOpen(false); setAddSaved(false); };
+
+  // ── Edit panel handlers ──────────────────────────────
   const openEdit = (n: Newsletter) => {
     setEditingId(n.id);
-    setFields({
-      issueNumber: n.issueNumber,
-      title: n.title,
-      body: n.body,
-      date: n.date,
-      sourceNoteUrl: n.sourceNoteUrl ?? "",
+    setEditFields(fieldsFromNewsletter(n));
+    setEditSaved(false);
+    setAddOpen(false);
+  };
+
+  const handleEdit = (id: string) => {
+    if (!editFields.title.trim() || !editFields.body.trim() || !editFields.date) return;
+    onUpdate(id, {
+      issueNumber: editFields.issueNumber.trim(),
+      title: editFields.title.trim(),
+      body: editFields.body,
+      memo: editFields.memo.trim() || undefined,
+      date: editFields.date,
     });
-    setSaved(false);
-    setModalOpen(true);
+    setEditSaved(true);
+    setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
   };
 
-  const handleSave = () => {
-    if (!fields.title.trim() || !fields.body.trim() || !fields.date) return;
-    const data = {
-      issueNumber: fields.issueNumber.trim(),
-      title: fields.title.trim(),
-      body: fields.body,
-      date: fields.date,
-      sourceNoteUrl: fields.sourceNoteUrl.trim() || undefined,
-    };
-    if (editingId) {
-      onUpdate(editingId, data);
-    } else {
-      onAdd(data);
-    }
-    setSaved(true);
-    setTimeout(() => { setModalOpen(false); setSaved(false); }, 1000);
-  };
+  // ── Shared form UI ───────────────────────────────────
+  const FormPanel = ({
+    f,
+    setF,
+    onSave,
+    onCancel,
+    saved,
+    canSave,
+  }: {
+    f: FormFields;
+    setF: (fn: (p: FormFields) => FormFields) => void;
+    onSave: () => void;
+    onCancel: () => void;
+    saved: boolean;
+    canSave: boolean;
+  }) => (
+    <div className="space-y-3">
+      {/* 号数 */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">号数（任意）</label>
+        <input
+          type="text"
+          value={f.issueNumber}
+          onChange={(e) => setF((p) => ({ ...p, issueNumber: e.target.value }))}
+          placeholder="例：1、第1号"
+          className="w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
+        />
+      </div>
 
-  const closeModal = () => { setModalOpen(false); setEditingId(null); setSaved(false); };
+      {/* タイトル */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">タイトル<span className="text-red-400 ml-1">*</span></label>
+        <input
+          type="text"
+          value={f.title}
+          onChange={(e) => setF((p) => ({ ...p, title: e.target.value }))}
+          placeholder="メルマガのタイトル"
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
+        />
+      </div>
 
-  const canSave = fields.title.trim() !== "" && fields.body.trim() !== "" && fields.date !== "";
+      {/* 本文 */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">本文<span className="text-red-400 ml-1">*</span></label>
+        <textarea
+          value={f.body}
+          onChange={(e) => setF((p) => ({ ...p, body: e.target.value }))}
+          placeholder="メルマガ本文"
+          rows={10}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+        />
+      </div>
+
+      {/* メモ */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">メモ（任意）</label>
+        <textarea
+          value={f.memo}
+          onChange={(e) => setF((p) => ({ ...p, memo: e.target.value }))}
+          placeholder="気づき・反応・次回に活かしたいことなど"
+          rows={3}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+        />
+      </div>
+
+      {/* 配信日 */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">配信日<span className="text-red-400 ml-1">*</span></label>
+        <input
+          type="date"
+          value={f.date}
+          onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))}
+          className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+        />
+      </div>
+
+      {/* Buttons */}
+      <div className="flex gap-2 items-center pt-1">
+        <button
+          onClick={onSave}
+          disabled={!canSave}
+          className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+            saved
+              ? "bg-green-600 text-white"
+              : "bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black"
+          }`}
+        >
+          {saved ? "✓ 保存しました" : "保存"}
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+        >
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -141,15 +266,32 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
         </button>
       </div>
 
+      {/* Add panel */}
+      <div className="border border-zinc-700 rounded-xl overflow-hidden">
+        <button
+          onClick={() => { if (addOpen) closeAdd(); else openAdd(); }}
+          className="w-full flex items-center justify-between px-4 py-3 bg-zinc-800 hover:bg-zinc-750 text-left transition-colors"
+        >
+          <span className="text-sm font-medium text-zinc-300">📨 配信したメルマガを登録</span>
+          <span className="text-zinc-500 text-xs">{addOpen ? "▲ 閉じる" : "▼ 開く"}</span>
+        </button>
+        {addOpen && (
+          <div className="p-5 bg-zinc-800/40">
+            <FormPanel
+              f={addFields}
+              setF={setAddFields}
+              onSave={handleAdd}
+              onCancel={closeAdd}
+              saved={addSaved}
+              canSave={addFields.title.trim() !== "" && addFields.body.trim() !== "" && addFields.date !== ""}
+            />
+          </div>
+        )}
+      </div>
+
       {/* List header */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium text-zinc-400">配信済みメルマガ（{newsletters.length}件）</h3>
-        <button
-          onClick={openAdd}
-          className="text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black font-medium rounded-lg transition-colors"
-        >
-          ＋ 配信したメルマガを登録
-        </button>
       </div>
 
       {/* List */}
@@ -160,139 +302,42 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
       ) : (
         <div className="space-y-2">
           {sortedNewsletters.map((n) => (
-            <div key={n.id} className="bg-zinc-800 rounded-lg p-3 flex items-start gap-3">
-              <div className="text-xs text-zinc-500 shrink-0 pt-0.5 w-28">
-                {n.issueNumber && <div className="text-zinc-600">#{n.issueNumber}号</div>}
-                <div>{n.date}</div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
-                  {n.sourceNoteUrl && (
-                    <a
-                      href={n.sourceNoteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-400 hover:text-blue-300 border border-blue-500/40 hover:border-blue-400 rounded px-1.5 py-0.5 shrink-0 transition-colors"
-                    >
-                      noteで見る
-                    </a>
-                  )}
+            <div key={n.id} className="bg-zinc-800 rounded-lg overflow-hidden">
+              {/* Card row */}
+              <div className="p-3 flex items-start gap-3">
+                <div className="text-xs text-zinc-300 shrink-0 pt-0.5 whitespace-nowrap">
+                  {n.issueNumber ? `${n.issueNumber}号・${n.date}` : n.date}
                 </div>
-              </div>
-              <button
-                onClick={() => openEdit(n)}
-                className="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-zinc-600 text-zinc-500 hover:text-zinc-300 transition-colors"
-              >
-                編集
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Modal */}
-      {modalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
-          onClick={closeModal}
-        >
-          <div
-            className="bg-zinc-900 border border-zinc-700 rounded-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-5 space-y-4">
-              <h2 className="text-sm font-semibold text-zinc-200">
-                {editingId ? "メルマガを編集" : "配信済みメルマガを登録"}
-              </h2>
-
-              {/* 号数 */}
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">号数（任意）</label>
-                <input
-                  type="text"
-                  value={fields.issueNumber}
-                  onChange={(e) => setFields((p) => ({ ...p, issueNumber: e.target.value }))}
-                  placeholder="例：1、第1号"
-                  className="w-40 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* タイトル */}
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">
-                  タイトル<span className="text-red-400 ml-1">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={fields.title}
-                  onChange={(e) => setFields((p) => ({ ...p, title: e.target.value }))}
-                  placeholder="メルマガのタイトル"
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* 本文 */}
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">
-                  本文<span className="text-red-400 ml-1">*</span>
-                </label>
-                <textarea
-                  value={fields.body}
-                  onChange={(e) => setFields((p) => ({ ...p, body: e.target.value }))}
-                  placeholder="メルマガ本文"
-                  rows={10}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
-                />
-              </div>
-
-              {/* 配信日 */}
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">
-                  配信日<span className="text-red-400 ml-1">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={fields.date}
-                  onChange={(e) => setFields((p) => ({ ...p, date: e.target.value }))}
-                  className="w-48 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* 元note記事URL */}
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">元note記事URL（任意）</label>
-                <input
-                  type="url"
-                  value={fields.sourceNoteUrl}
-                  onChange={(e) => setFields((p) => ({ ...p, sourceNoteUrl: e.target.value }))}
-                  placeholder="https://note.com/..."
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex gap-2 items-center pt-1">
+                <div className="flex-1 min-w-0">
+                  <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
+                </div>
                 <button
-                  onClick={handleSave}
-                  disabled={!canSave}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                    saved
-                      ? "bg-green-600 text-white"
-                      : "bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black"
+                  onClick={() => editingId === n.id ? setEditingId(null) : openEdit(n)}
+                  className={`shrink-0 text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                    editingId === n.id
+                      ? "border-zinc-500 text-zinc-400 hover:text-zinc-200"
+                      : "border-zinc-600 text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  {saved ? "✓ 保存しました" : "保存"}
-                </button>
-                <button
-                  onClick={closeModal}
-                  className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-                >
-                  キャンセル
+                  {editingId === n.id ? "閉じる" : "編集"}
                 </button>
               </div>
+
+              {/* Inline edit */}
+              {editingId === n.id && (
+                <div className="border-t border-zinc-700 p-4 bg-zinc-800/60">
+                  <FormPanel
+                    f={editFields}
+                    setF={setEditFields}
+                    onSave={() => handleEdit(n.id)}
+                    onCancel={() => { setEditingId(null); setEditSaved(false); }}
+                    saved={editSaved}
+                    canSave={editFields.title.trim() !== "" && editFields.body.trim() !== "" && editFields.date !== ""}
+                  />
+                </div>
+              )}
             </div>
-          </div>
+          ))}
         </div>
       )}
     </div>

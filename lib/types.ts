@@ -17,6 +17,7 @@ export interface Newsletter {
   issueNumber: string;
   title: string;
   body: string;
+  memo?: string;
   date: string;
   sourceNoteUrl?: string;
 }
