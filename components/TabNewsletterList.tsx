@@ -59,9 +59,7 @@ function fieldsFromNewsletter(n: Newsletter): FormFields {
   };
 }
 
-// ── FormPanel は TabNewsletterList の外に定義 ──────────────────────
-// コンポーネント内に定義すると親の再レンダー毎に新しい関数参照が生成され、
-// React がアンマウント→再マウントを繰り返してフォーカスが失われる。
+// ── FormPanel はモジュールレベルに定義（コンポーネント内定義だと再マウントが起きる）
 interface FormPanelProps {
   f: FormFields;
   setF: React.Dispatch<React.SetStateAction<FormFields>>;
@@ -122,14 +120,14 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps
         />
       </div>
 
-      {/* 配信日 */}
+      {/* 配信日 — [color-scheme:dark] でカレンダーアイコンをダーク背景に対応 */}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">配信日<span className="text-red-400 ml-1">*</span></label>
         <input
           type="date"
           value={f.date}
           onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))}
-          className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+          className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 [color-scheme:dark]"
         />
       </div>
 
@@ -170,6 +168,9 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
   const [editSaved, setEditSaved] = useState(false);
+
+  // Memo tooltip state — clicked で固定表示、hover は CSS group で制御
+  const [pinnedMemoId, setPinnedMemoId] = useState<string | null>(null);
 
   // ── Graph ────────────────────────────────────────────
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -221,6 +222,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
     setEditFields(fieldsFromNewsletter(n));
     setEditSaved(false);
     setAddOpen(false);
+    setPinnedMemoId(null);
   };
 
   const handleEdit = (id: string) => {
@@ -303,13 +305,41 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
           {sortedNewsletters.map((n) => (
             <div key={n.id} className="bg-zinc-800 rounded-lg overflow-hidden">
               {/* Card row */}
-              <div className="p-3 flex items-start gap-3">
-                <div className="text-xs text-zinc-300 shrink-0 pt-0.5 whitespace-nowrap">
+              <div className="p-3 flex items-center gap-3">
+                <div className="text-xs text-zinc-300 shrink-0 whitespace-nowrap">
                   {n.issueNumber ? `${n.issueNumber}号・${n.date}` : n.date}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
                 </div>
+
+                {/* メモアイコン＋ツールチップ — 幅を常に確保してレイアウトを固定 */}
+                <div className="shrink-0 w-6 h-6 flex items-center justify-center">
+                  {n.memo && (
+                    <div className="relative group">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPinnedMemoId(pinnedMemoId === n.id ? null : n.id);
+                        }}
+                        aria-label="メモを確認"
+                        className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+                      >
+                        <span className="text-xs leading-none">📝</span>
+                      </button>
+
+                      {/* ツールチップ: hover(CSS) または click(JS style) で表示 */}
+                      <div
+                        className="absolute z-50 bottom-full right-0 mb-2 w-72 max-h-48 overflow-y-auto bg-zinc-700 border border-zinc-600 rounded-lg p-3 shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
+                        style={pinnedMemoId === n.id ? { opacity: 1, pointerEvents: "auto" } : undefined}
+                      >
+                        <p className="text-zinc-400 text-xs font-medium mb-1.5">メモ</p>
+                        <p className="text-zinc-200 text-xs whitespace-pre-wrap break-words">{n.memo}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <button
                   onClick={() => editingId === n.id ? setEditingId(null) : openEdit(n)}
                   className={`shrink-0 text-xs px-2.5 py-1 rounded-lg border transition-colors ${
