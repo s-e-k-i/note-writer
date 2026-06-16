@@ -12,6 +12,15 @@ export interface Article {
   url?: string;
 }
 
+export interface Newsletter {
+  id: string;
+  issueNumber: string;
+  title: string;
+  body: string;
+  date: string;
+  sourceNoteUrl?: string;
+}
+
 export type ArticleType = "free" | "paid";
 export type WordCount = "short" | "standard" | "ai";
 
