@@ -16,6 +16,7 @@ interface Props {
 
 interface EditFields {
   title: string;
+  url: string;
   date: string;
   body: string;
   magazines: string[];
@@ -44,6 +45,15 @@ function parsePastePrice(text: string): { isPaid: boolean; price?: number } {
     if (price > 0) return { isPaid: true, price };
   }
   return { isPaid: false };
+}
+
+function parsePasteUrl(text: string): { url: string; body: string } {
+  const lines = text.split("\n");
+  const urlLineIdx = lines.findIndex((l) => /https?:\/\/[^\s]*note\.com[^\s]*/i.test(l));
+  if (urlLineIdx === -1) return { url: "", body: text };
+  const url = (lines[urlLineIdx].match(/https?:\/\/[^\s]*note\.com[^\s]*/i) ?? [])[0] ?? "";
+  const body = lines.filter((_, i) => i !== urlLineIdx).join("\n");
+  return { url, body };
 }
 
 // ── Bulk body parser ──────────────────────────────────────────────
@@ -79,6 +89,7 @@ function parseTxtBodies(text: string): ParsedBody[] {
 
 interface PastePreview {
   title: string;
+  url: string;
   date: string;
   isPaid: boolean;
   price?: number;
@@ -107,7 +118,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
   // Article edit state
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFields, setEditFields] = useState<EditFields>({ title: "", date: "", body: "", magazines: [], isPaid: false, paidPrice: "" });
+  const [editFields, setEditFields] = useState<EditFields>({ title: "", url: "", date: "", body: "", magazines: [], isPaid: false, paidPrice: "" });
   const [editSaved, setEditSaved] = useState(false);
 
   // Paste-to-add state
@@ -144,6 +155,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     setEditSaved(false);
     setEditFields({
       title: a.title,
+      url: a.url ?? "",
       date: a.date,
       body: a.body ?? "",
       magazines: a.magazines ?? [a.magazine],
@@ -166,6 +178,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     const price = parseInt(editFields.paidPrice, 10);
     const updates: Partial<Article> = {
       title: editFields.title.trim() || "（タイトル未設定）",
+      url: editFields.url.trim() || undefined,
       date: editFields.date,
       magazine: editFields.magazines[0],
       magazines: editFields.magazines,
@@ -250,10 +263,11 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
   const handlePasteParse = () => {
     if (!pasteText.trim()) { setPasteMsg("テキストを貼り付けてください"); return; }
-    const title = parsePasteTitle(pasteText);
-    const date = parsePasteDate(pasteText);
-    const { isPaid, price } = parsePastePrice(pasteText);
-    setPastePreview({ title, date, isPaid, price, body: pasteText.trim() });
+    const { url, body: bodyWithoutUrl } = parsePasteUrl(pasteText);
+    const title = parsePasteTitle(bodyWithoutUrl);
+    const date = parsePasteDate(bodyWithoutUrl);
+    const { isPaid, price } = parsePastePrice(bodyWithoutUrl);
+    setPastePreview({ title, url, date, isPaid, price, body: bodyWithoutUrl.trim() });
     setPasteMsg("");
   };
 
@@ -265,6 +279,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     const bodyForSummary = pastePreview.body;
     onAddArticle({
       title: addedTitle,
+      url: pastePreview.url || undefined,
       date: pastePreview.date,
       magazine: pasteSelectedMags[0],
       magazines: pasteSelectedMags,
@@ -467,6 +482,12 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                     <span className="text-zinc-200">{pastePreview.title}</span>
                   </div>
                   <div className="flex gap-3">
+                    <span className="text-zinc-500 w-16 shrink-0 text-xs">URL</span>
+                    <span className={pastePreview.url ? "text-blue-400 break-all text-xs" : "text-zinc-600 text-xs"}>
+                      {pastePreview.url || "（未検出）"}
+                    </span>
+                  </div>
+                  <div className="flex gap-3">
                     <span className="text-zinc-500 w-16 shrink-0 text-xs">日付</span>
                     <span className="text-zinc-200">{pastePreview.date}</span>
                   </div>
@@ -545,8 +566,8 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                 {displayData.map(({ month, count }) => (
                   <div key={month}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className={count === 0 ? "text-zinc-600" : "text-zinc-300"}>{month}</span>
-                      <span className={count === 0 ? "text-zinc-600 font-medium" : "text-amber-400 font-medium"}>{count}本</span>
+                      <span className="text-zinc-300">{month}</span>
+                      <span className="text-amber-400 font-medium">{count}本</span>
                     </div>
                     <div className="h-1.5 bg-zinc-700 rounded-full">
                       <div
@@ -633,6 +654,17 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                           有料{a.paidPrice ? ` ¥${a.paidPrice.toLocaleString()}` : ""}
                         </span>
                       )}
+                      {a.url && (
+                        <a
+                          href={a.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-400 hover:text-blue-300 border border-blue-500/40 hover:border-blue-400 rounded px-1.5 py-0.5 shrink-0 transition-colors"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          noteで見る
+                        </a>
+                      )}
                     </div>
                     <p className="text-zinc-500 text-xs mt-0.5 truncate">
                       {(a.magazines ?? [a.magazine]).map((m) => m.split("──")[0].trim()).join("・")}
@@ -661,6 +693,18 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                         value={editFields.title}
                         onChange={(e) => setEditFields((p) => ({ ...p, title: e.target.value }))}
                         className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
+
+                    {/* note URL */}
+                    <div>
+                      <label className="text-xs text-zinc-400 mb-1 block">note記事URL（任意）</label>
+                      <input
+                        type="url"
+                        value={editFields.url}
+                        onChange={(e) => setEditFields((p) => ({ ...p, url: e.target.value }))}
+                        placeholder="https://note.com/..."
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
                       />
                     </div>
 

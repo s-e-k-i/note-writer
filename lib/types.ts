@@ -9,6 +9,7 @@ export interface Article {
   paidPrice?: number;
   magazines?: string[];
   body?: string;
+  url?: string;
 }
 
 export type ArticleType = "free" | "paid";

@@ -57,9 +57,9 @@ function classifyMagazine(title: string, body: string): string {
   return best.score > 0 ? best.magazine : MAGAZINES[0];
 }
 
-function parseArticles(text: string): { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[] }[] {
+function parseArticles(text: string): { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[]; url?: string }[] {
   const lines = text.split("\n");
-  const articles: { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[] }[] = [];
+  const articles: { number: number; date: string; title: string; body: string; isPaid: boolean; paidPrice?: number; magazines: string[]; url?: string }[] = [];
 
   let startIdx = 0;
   for (let i = 0; i < lines.length; i++) {
@@ -78,6 +78,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
     isPaid: boolean;
     paidPrice?: number;
     magazines: string[];
+    url?: string;
   } | null = null;
 
   for (let i = startIdx; i < lines.length; i++) {
@@ -94,6 +95,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
           isPaid: currentArticle.isPaid,
           paidPrice: currentArticle.paidPrice,
           magazines: currentArticle.magazines,
+          url: currentArticle.url,
         });
       }
       const [, num, year, month, day, price, magazineTag] = match;
@@ -105,10 +107,13 @@ function parseArticles(text: string): { number: number; date: string; title: str
         isPaid: !!price,
         paidPrice: price ? parseInt(price) : undefined,
         magazines: magazineTag ? magazineTag.split(",").map(resolveMagazineName) : [],
+        url: undefined,
       };
     } else if (currentArticle) {
       if (!currentArticle.title) {
         currentArticle.title = line.trim();
+      } else if (line.match(/^URL:\s*https?:\/\//)) {
+        currentArticle.url = line.replace(/^URL:\s*/, "").trim();
       } else {
         currentArticle.bodyLines.push(line);
       }
@@ -124,6 +129,7 @@ function parseArticles(text: string): { number: number; date: string; title: str
       isPaid: currentArticle.isPaid,
       paidPrice: currentArticle.paidPrice,
       magazines: currentArticle.magazines,
+      url: currentArticle.url,
     });
   }
 
@@ -156,6 +162,7 @@ export async function POST(request: Request) {
         summary: a.body.slice(0, 150).replace(/\n/g, " ").trim(),
         isPaid: a.isPaid,
         paidPrice: a.paidPrice,
+        url: a.url,
       };
     });
 
