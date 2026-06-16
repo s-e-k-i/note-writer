@@ -59,101 +59,20 @@ function fieldsFromNewsletter(n: Newsletter): FormFields {
   };
 }
 
-export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Props) {
-  const [showAllMonths, setShowAllMonths] = useState(false);
+// ── FormPanel は TabNewsletterList の外に定義 ──────────────────────
+// コンポーネント内に定義すると親の再レンダー毎に新しい関数参照が生成され、
+// React がアンマウント→再マウントを繰り返してフォーカスが失われる。
+interface FormPanelProps {
+  f: FormFields;
+  setF: React.Dispatch<React.SetStateAction<FormFields>>;
+  onSave: () => void;
+  onCancel: () => void;
+  saved: boolean;
+  canSave: boolean;
+}
 
-  // Add panel state
-  const [addOpen, setAddOpen] = useState(false);
-  const [addFields, setAddFields] = useState<FormFields>(blankFields(newsletters));
-  const [addSaved, setAddSaved] = useState(false);
-
-  // Edit panel state
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
-  const [editSaved, setEditSaved] = useState(false);
-
-  // ── Graph ────────────────────────────────────────────
-  const currentMonth = new Date().toISOString().slice(0, 7);
-
-  const twelveMonthsAgoDate = new Date();
-  twelveMonthsAgoDate.setMonth(twelveMonthsAgoDate.getMonth() - 11);
-  const twelveMonthsAgo = `${twelveMonthsAgoDate.getFullYear()}-${String(twelveMonthsAgoDate.getMonth() + 1).padStart(2, "0")}`;
-
-  // Never go before NEWSLETTER_START_MONTH
-  const defaultStart = twelveMonthsAgo < NEWSLETTER_START_MONTH ? NEWSLETTER_START_MONTH : twelveMonthsAgo;
-  const displayStart = showAllMonths ? NEWSLETTER_START_MONTH : defaultStart;
-
-  const monthlyCounts = newsletters.reduce<Record<string, number>>((acc, n) => {
-    const month = n.date.slice(0, 7);
-    acc[month] = (acc[month] || 0) + 1;
-    return acc;
-  }, {});
-  const displayMonths = generateMonthRange(displayStart, currentMonth);
-  const displayData = displayMonths.map((month) => ({ month, count: monthlyCounts[month] || 0 }));
-  const maxCount = Math.max(...displayData.map((d) => d.count), 1);
-
-  const sortedNewsletters = [...newsletters].sort((a, b) => b.date.localeCompare(a.date));
-
-  // ── Add panel handlers ───────────────────────────────
-  const openAdd = () => {
-    setAddFields(blankFields(newsletters));
-    setAddSaved(false);
-    setAddOpen(true);
-    setEditingId(null);
-  };
-
-  const handleAdd = () => {
-    if (!addFields.title.trim() || !addFields.body.trim() || !addFields.date) return;
-    onAdd({
-      issueNumber: addFields.issueNumber.trim(),
-      title: addFields.title.trim(),
-      body: addFields.body,
-      memo: addFields.memo.trim() || undefined,
-      date: addFields.date,
-    });
-    setAddSaved(true);
-    setTimeout(() => { setAddOpen(false); setAddSaved(false); }, 1000);
-  };
-
-  const closeAdd = () => { setAddOpen(false); setAddSaved(false); };
-
-  // ── Edit panel handlers ──────────────────────────────
-  const openEdit = (n: Newsletter) => {
-    setEditingId(n.id);
-    setEditFields(fieldsFromNewsletter(n));
-    setEditSaved(false);
-    setAddOpen(false);
-  };
-
-  const handleEdit = (id: string) => {
-    if (!editFields.title.trim() || !editFields.body.trim() || !editFields.date) return;
-    onUpdate(id, {
-      issueNumber: editFields.issueNumber.trim(),
-      title: editFields.title.trim(),
-      body: editFields.body,
-      memo: editFields.memo.trim() || undefined,
-      date: editFields.date,
-    });
-    setEditSaved(true);
-    setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
-  };
-
-  // ── Shared form UI ───────────────────────────────────
-  const FormPanel = ({
-    f,
-    setF,
-    onSave,
-    onCancel,
-    saved,
-    canSave,
-  }: {
-    f: FormFields;
-    setF: (fn: (p: FormFields) => FormFields) => void;
-    onSave: () => void;
-    onCancel: () => void;
-    saved: boolean;
-    canSave: boolean;
-  }) => (
+function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps) {
+  return (
     <div className="space-y-3">
       {/* 号数 */}
       <div>
@@ -236,6 +155,86 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
       </div>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Props) {
+  const [showAllMonths, setShowAllMonths] = useState(false);
+
+  // Add panel state
+  const [addOpen, setAddOpen] = useState(false);
+  const [addFields, setAddFields] = useState<FormFields>(blankFields(newsletters));
+  const [addSaved, setAddSaved] = useState(false);
+
+  // Edit panel state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
+  const [editSaved, setEditSaved] = useState(false);
+
+  // ── Graph ────────────────────────────────────────────
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  const twelveMonthsAgoDate = new Date();
+  twelveMonthsAgoDate.setMonth(twelveMonthsAgoDate.getMonth() - 11);
+  const twelveMonthsAgo = `${twelveMonthsAgoDate.getFullYear()}-${String(twelveMonthsAgoDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const defaultStart = twelveMonthsAgo < NEWSLETTER_START_MONTH ? NEWSLETTER_START_MONTH : twelveMonthsAgo;
+  const displayStart = showAllMonths ? NEWSLETTER_START_MONTH : defaultStart;
+
+  const monthlyCounts = newsletters.reduce<Record<string, number>>((acc, n) => {
+    const month = n.date.slice(0, 7);
+    acc[month] = (acc[month] || 0) + 1;
+    return acc;
+  }, {});
+  const displayMonths = generateMonthRange(displayStart, currentMonth);
+  const displayData = displayMonths.map((month) => ({ month, count: monthlyCounts[month] || 0 }));
+  const maxCount = Math.max(...displayData.map((d) => d.count), 1);
+
+  const sortedNewsletters = [...newsletters].sort((a, b) => b.date.localeCompare(a.date));
+
+  // ── Add panel handlers ───────────────────────────────
+  const openAdd = () => {
+    setAddFields(blankFields(newsletters));
+    setAddSaved(false);
+    setAddOpen(true);
+    setEditingId(null);
+  };
+
+  const handleAdd = () => {
+    if (!addFields.title.trim() || !addFields.body.trim() || !addFields.date) return;
+    onAdd({
+      issueNumber: addFields.issueNumber.trim(),
+      title: addFields.title.trim(),
+      body: addFields.body,
+      memo: addFields.memo.trim() || undefined,
+      date: addFields.date,
+    });
+    setAddSaved(true);
+    setTimeout(() => { setAddOpen(false); setAddSaved(false); }, 1000);
+  };
+
+  const closeAdd = () => { setAddOpen(false); setAddSaved(false); };
+
+  // ── Edit panel handlers ──────────────────────────────
+  const openEdit = (n: Newsletter) => {
+    setEditingId(n.id);
+    setEditFields(fieldsFromNewsletter(n));
+    setEditSaved(false);
+    setAddOpen(false);
+  };
+
+  const handleEdit = (id: string) => {
+    if (!editFields.title.trim() || !editFields.body.trim() || !editFields.date) return;
+    onUpdate(id, {
+      issueNumber: editFields.issueNumber.trim(),
+      title: editFields.title.trim(),
+      body: editFields.body,
+      memo: editFields.memo.trim() || undefined,
+      date: editFields.date,
+    });
+    setEditSaved(true);
+    setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
+  };
 
   return (
     <div className="space-y-6">
