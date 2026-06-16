@@ -299,6 +299,8 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     );
   };
 
+  const [showAllMonths, setShowAllMonths] = useState(false);
+
   const magazineCounts = MAGAZINES.map((m) => ({
     name: m.split("──")[0].trim(),
     count: articles.filter((a) => (a.magazines ?? [a.magazine]).includes(m)).length,
@@ -310,11 +312,36 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     return acc;
   }, {});
 
-  const sortedMonths = Object.entries(monthlyCounts)
-    .sort(([a], [b]) => b.localeCompare(a))
-    .slice(0, 12);
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const maxMonthCount = Math.max(...Object.values(monthlyCounts), 1);
+  const oldestMonth = articles.length > 0
+    ? [...articles].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 7)
+    : currentMonth;
+
+  const twelveMonthsAgoDate = new Date();
+  twelveMonthsAgoDate.setMonth(twelveMonthsAgoDate.getMonth() - 11);
+  const twelveMonthsAgo = `${twelveMonthsAgoDate.getFullYear()}-${String(twelveMonthsAgoDate.getMonth() + 1).padStart(2, "0")}`;
+
+  const generateMonthRange = (start: string, end: string): string[] => {
+    const result: string[] = [];
+    const [sy, sm] = start.split("-").map(Number);
+    const [ey, em] = end.split("-").map(Number);
+    let y = ey, m = em;
+    while (y > sy || (y === sy && m >= sm)) {
+      result.push(`${y}-${String(m).padStart(2, "0")}`);
+      m--;
+      if (m === 0) { m = 12; y--; }
+    }
+    return result;
+  };
+
+  const displayMonths = showAllMonths
+    ? generateMonthRange(oldestMonth, currentMonth)
+    : generateMonthRange(twelveMonthsAgo, currentMonth);
+
+  const displayData = displayMonths.map((month) => ({ month, count: monthlyCounts[month] || 0 }));
+
+  const maxMonthCount = Math.max(...displayData.map((d) => d.count), 1);
 
   const paidArticles = articles.filter((a) => a.isPaid);
   const paidCount = paidArticles.length;
@@ -513,13 +540,13 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
             {/* Monthly counts */}
             <div className="bg-zinc-800 rounded-xl p-5">
-              <h3 className="text-sm font-medium text-zinc-400 mb-4">月別投稿数（直近12ヶ月）</h3>
+              <h3 className="text-sm font-medium text-zinc-400 mb-4">月別投稿数</h3>
               <div className="space-y-2">
-                {sortedMonths.map(([month, count]) => (
+                {displayData.map(({ month, count }) => (
                   <div key={month}>
                     <div className="flex justify-between text-sm mb-1">
-                      <span className="text-zinc-300">{month}</span>
-                      <span className="text-amber-400 font-medium">{count}本</span>
+                      <span className={count === 0 ? "text-zinc-600" : "text-zinc-300"}>{month}</span>
+                      <span className={count === 0 ? "text-zinc-600 font-medium" : "text-amber-400 font-medium"}>{count}本</span>
                     </div>
                     <div className="h-1.5 bg-zinc-700 rounded-full">
                       <div
@@ -530,6 +557,12 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                   </div>
                 ))}
               </div>
+              <button
+                onClick={() => setShowAllMonths((v) => !v)}
+                className="mt-4 text-xs px-3 py-1.5 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+              >
+                {showAllMonths ? "直近12ヶ月に戻す" : "全期間を表示する"}
+              </button>
             </div>
 
             {/* 有料記事 */}
