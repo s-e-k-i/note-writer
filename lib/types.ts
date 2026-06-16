@@ -20,6 +20,7 @@ export interface Newsletter {
   memo?: string;
   date: string;
   sourceNoteUrl?: string;
+  distributionTargets?: string[];
 }
 
 export type ArticleType = "free" | "paid";

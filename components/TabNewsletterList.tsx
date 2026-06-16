@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Newsletter } from "@/lib/types";
 
 interface Props {
@@ -15,9 +15,26 @@ interface FormFields {
   body: string;
   memo: string;
   date: string;
+  distributionTargets: string[];
+}
+
+interface TooltipState {
+  id: string;
+  content: string;
+  anchorTop: number;
+  anchorRight: number;
+  pinned: boolean;
 }
 
 const NEWSLETTER_START_MONTH = "2026-06";
+
+const DISTRIBUTION_TARGETS = [
+  "メルマガ読者（通常・note経由）",
+  "ChatGPTの学校（無料プレゼント登録者）",
+  "ひとりビジネス診断",
+];
+
+const DEFAULT_DISTRIBUTION = ["メルマガ読者（通常・note経由）"];
 
 function generateMonthRange(start: string, end: string): string[] {
   const result: string[] = [];
@@ -46,6 +63,7 @@ function blankFields(newsletters: Newsletter[]): FormFields {
     body: "",
     memo: "",
     date: new Date().toISOString().split("T")[0],
+    distributionTargets: DEFAULT_DISTRIBUTION,
   };
 }
 
@@ -56,6 +74,7 @@ function fieldsFromNewsletter(n: Newsletter): FormFields {
     body: n.body,
     memo: n.memo ?? "",
     date: n.date,
+    distributionTargets: n.distributionTargets ?? DEFAULT_DISTRIBUTION,
   };
 }
 
@@ -70,6 +89,15 @@ interface FormPanelProps {
 }
 
 function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps) {
+  const toggleTarget = (t: string) => {
+    setF((p) => ({
+      ...p,
+      distributionTargets: p.distributionTargets.includes(t)
+        ? p.distributionTargets.filter((x) => x !== t)
+        : [...p.distributionTargets, t],
+    }));
+  };
+
   return (
     <div className="space-y-3">
       {/* 号数 */}
@@ -120,7 +148,7 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps
         />
       </div>
 
-      {/* 配信日 — [color-scheme:dark] でカレンダーアイコンをダーク背景に対応 */}
+      {/* 配信日 */}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">配信日<span className="text-red-400 ml-1">*</span></label>
         <input
@@ -129,6 +157,30 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps
           onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))}
           className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 [color-scheme:dark]"
         />
+      </div>
+
+      {/* 配信先 */}
+      <div>
+        <label className="text-xs text-zinc-400 mb-2 block">配信先（複数可）</label>
+        <div className="flex flex-wrap gap-2">
+          {DISTRIBUTION_TARGETS.map((t) => {
+            const checked = f.distributionTargets.includes(t);
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => toggleTarget(t)}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                  checked
+                    ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                    : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Buttons */}
@@ -169,8 +221,41 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
   const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
   const [editSaved, setEditSaved] = useState(false);
 
-  // Memo tooltip state — clicked で固定表示、hover は CSS group で制御
-  const [pinnedMemoId, setPinnedMemoId] = useState<string | null>(null);
+  // Memo tooltip — position: fixed で overflow: hidden を完全に脱出する
+  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 画面外クリックでツールチップを閉じる
+  useEffect(() => {
+    const handler = () => setTooltip(null);
+    document.addEventListener("click", handler);
+    return () => {
+      document.removeEventListener("click", handler);
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
+
+  const showTooltip = (e: React.MouseEvent, n: Newsletter, pin: boolean) => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setTooltip({
+      id: n.id,
+      content: n.memo!,
+      anchorTop: rect.top,
+      anchorRight: window.innerWidth - rect.right,
+      pinned: pin,
+    });
+  };
+
+  const scheduleHide = () => {
+    hideTimerRef.current = setTimeout(() => {
+      setTooltip((prev) => (prev?.pinned ? prev : null));
+    }, 120);
+  };
+
+  const cancelHide = () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+  };
 
   // ── Graph ────────────────────────────────────────────
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -209,6 +294,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
       body: addFields.body,
       memo: addFields.memo.trim() || undefined,
       date: addFields.date,
+      distributionTargets: addFields.distributionTargets,
     });
     setAddSaved(true);
     setTimeout(() => { setAddOpen(false); setAddSaved(false); }, 1000);
@@ -222,7 +308,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
     setEditFields(fieldsFromNewsletter(n));
     setEditSaved(false);
     setAddOpen(false);
-    setPinnedMemoId(null);
+    setTooltip(null);
   };
 
   const handleEdit = (id: string) => {
@@ -233,10 +319,20 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
       body: editFields.body,
       memo: editFields.memo.trim() || undefined,
       date: editFields.date,
+      distributionTargets: editFields.distributionTargets,
     });
     setEditSaved(true);
     setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
   };
+
+  // ── tooltip の表示位置計算 ────────────────────────────
+  // ボタンの上に十分なスペースがあれば上、なければ下に表示
+  const TOOLTIP_APPROX_HEIGHT = 200;
+  const tooltipStyle = tooltip
+    ? tooltip.anchorTop > TOOLTIP_APPROX_HEIGHT + 12
+      ? { bottom: `${window.innerHeight - tooltip.anchorTop + 8}px`, right: `${tooltip.anchorRight}px` }
+      : { top: `${tooltip.anchorTop + 28}px`, right: `${tooltip.anchorRight}px` }
+    : {};
 
   return (
     <div className="space-y-6">
@@ -313,30 +409,25 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
                   <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
                 </div>
 
-                {/* メモアイコン＋ツールチップ — 幅を常に確保してレイアウトを固定 */}
+                {/* メモアイコン — 幅を常に確保してレイアウトを固定 */}
                 <div className="shrink-0 w-6 h-6 flex items-center justify-center">
                   {n.memo && (
-                    <div className="relative group">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPinnedMemoId(pinnedMemoId === n.id ? null : n.id);
-                        }}
-                        aria-label="メモを確認"
-                        className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
-                      >
-                        <span className="text-xs leading-none">📝</span>
-                      </button>
-
-                      {/* ツールチップ: hover(CSS) または click(JS style) で表示 */}
-                      <div
-                        className="absolute z-50 bottom-full right-0 mb-2 w-72 max-h-48 overflow-y-auto bg-zinc-700 border border-zinc-600 rounded-lg p-3 shadow-xl opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150"
-                        style={pinnedMemoId === n.id ? { opacity: 1, pointerEvents: "auto" } : undefined}
-                      >
-                        <p className="text-zinc-400 text-xs font-medium mb-1.5">メモ</p>
-                        <p className="text-zinc-200 text-xs whitespace-pre-wrap break-words">{n.memo}</p>
-                      </div>
-                    </div>
+                    <button
+                      onMouseEnter={(e) => showTooltip(e, n, false)}
+                      onMouseLeave={scheduleHide}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tooltip?.id === n.id && tooltip.pinned) {
+                          setTooltip(null);
+                        } else {
+                          showTooltip(e, n, true);
+                        }
+                      }}
+                      aria-label="メモを確認"
+                      className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-zinc-200 transition-colors"
+                    >
+                      <span className="text-xs leading-none">📝</span>
+                    </button>
                   )}
                 </div>
 
@@ -367,6 +458,20 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* メモツールチップ — position: fixed で overflow: hidden の外に脱出 */}
+      {tooltip && (
+        <div
+          className="fixed z-[200] w-72 max-h-48 overflow-y-auto bg-zinc-700 border border-zinc-600 rounded-lg p-3 shadow-xl pointer-events-auto"
+          style={tooltipStyle}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="text-zinc-400 text-xs font-medium mb-1.5">メモ</p>
+          <p className="text-zinc-200 text-xs whitespace-pre-wrap break-words">{tooltip.content}</p>
         </div>
       )}
     </div>
