@@ -42,7 +42,7 @@ ${bodyText || "（本文データなし）"}
 【文字数】
 ${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
 
-${referenceSample ? `【参考にしたい文章（文体・トーンの参考として使う）】\n${referenceSample}\n` : ""}
+${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・エピソード・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
 
 本文だけを出力すること（分析文・メモ・タイトルは不要）。`;

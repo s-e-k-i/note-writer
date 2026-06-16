@@ -56,8 +56,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
 
   const sortedArticles = [...articles].sort((a, b) => b.date.localeCompare(a.date));
   const filteredArticles = query.trim()
-    ? sortedArticles.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 20)
-    : sortedArticles.slice(0, 15);
+    ? sortedArticles.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : sortedArticles;
 
   const handleSelectArticle = (a: Article) => {
     setSelectedArticle(a);
@@ -193,7 +193,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
             placeholder="タイトルで検索…"
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 mb-3"
           />
-          <div className="space-y-1 max-h-96 overflow-y-auto">
+          <div className="space-y-1 max-h-[600px] overflow-y-auto">
             {filteredArticles.length === 0 ? (
               <p className="text-zinc-500 text-sm py-4 text-center">記事が見つかりません</p>
             ) : (
@@ -259,11 +259,11 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
                 </div>
               </div>
               <div>
-                <label className="text-xs text-zinc-400 mb-1 block">参考にしたい過去の文章（任意）</label>
+                <label className="text-xs text-zinc-400 mb-1 block">参考にしたいエピソード・過去の文章（任意）</label>
                 <textarea
                   value={referenceSample}
                   onChange={(e) => setReferenceSample(e.target.value)}
-                  placeholder="文体・トーンの参考にしたい文章があれば貼り付けてください"
+                  placeholder="黄金期の原稿・ブログなど、エピソードや出来事の参考にしたい文章があれば貼り付けてください（文体はそのまま真似しません）"
                   rows={4}
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
                 />
