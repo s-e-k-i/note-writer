@@ -76,7 +76,7 @@ function fieldsFromNewsletter(n: Newsletter): FormFields {
     body: n.body,
     memo: n.memo ?? "",
     date: n.date,
-    distributionTargets: n.distributionTargets ?? DEFAULT_DISTRIBUTION,
+    distributionTargets: n.distributionTargets ?? [],
   };
 }
 
