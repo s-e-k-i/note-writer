@@ -23,6 +23,15 @@ export interface Newsletter {
   distributionTargets?: string[];
 }
 
+export interface NewsletterDraft {
+  id: string;
+  title: string;
+  body: string;
+  sourceArticleTitle?: string;
+  sourceArticleUrl?: string;
+  createdAt: string;
+}
+
 export type ArticleType = "free" | "paid";
 export type WordCount = "short" | "standard" | "ai";
 

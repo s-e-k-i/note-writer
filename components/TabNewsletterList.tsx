@@ -1,12 +1,20 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Newsletter } from "@/lib/types";
+
+interface PendingDraft {
+  title: string;
+  body: string;
+  sourceNoteUrl?: string;
+}
 
 interface Props {
   newsletters: Newsletter[];
   onAdd: (n: Omit<Newsletter, "id">) => void;
   onUpdate: (id: string, updates: Partial<Newsletter>) => void;
+  pendingDraft?: PendingDraft | null;
+  onPendingDraftConsumed?: () => void;
 }
 
 interface FormFields {
@@ -214,7 +222,7 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave, onIssueNumberEdi
 }
 
 // ─────────────────────────────────────────────────────────────────────
-export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Props) {
+export default function TabNewsletterList({ newsletters, onAdd, onUpdate, pendingDraft, onPendingDraftConsumed }: Props) {
   const [showAllMonths, setShowAllMonths] = useState(false);
 
   // Add panel state
@@ -241,6 +249,31 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, []);
+
+  // 下書きから「配信済みとして登録」された場合、追加パネルを開いてタイトル・本文を自動入力
+  const openAddWithDraft = useCallback((draft: PendingDraft) => {
+    const targets = DEFAULT_DISTRIBUTION;
+    const autoIssue = targets.length === 1
+      ? nextIssueNumberForTarget(newsletters, targets[0])
+      : "";
+    setAddFields({
+      issueNumber: autoIssue,
+      title: draft.title,
+      body: draft.body,
+      memo: "",
+      date: new Date().toISOString().split("T")[0],
+      distributionTargets: DEFAULT_DISTRIBUTION,
+    });
+    setAddIssueEdited(false);
+    setAddSaved(false);
+    setAddOpen(true);
+    setEditingId(null);
+    onPendingDraftConsumed?.();
+  }, [newsletters, onPendingDraftConsumed]);
+
+  useEffect(() => {
+    if (pendingDraft) openAddWithDraft(pendingDraft);
+  }, [pendingDraft]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showTooltip = (e: React.MouseEvent, n: Newsletter, pin: boolean) => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);

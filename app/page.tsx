@@ -9,13 +9,16 @@ import TabGenerate from "@/components/TabGenerate";
 import TabRewrite from "@/components/TabRewrite";
 import TabDrafts from "@/components/TabDrafts";
 import TabNewsletterList from "@/components/TabNewsletterList";
+import TabNewsletterWrite from "@/components/TabNewsletterWrite";
+import TabNewsletterDrafts from "@/components/TabNewsletterDrafts";
 import PasswordGate from "@/components/PasswordGate";
-import { Article, Draft, ProposalContext } from "@/lib/types";
+import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
+import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 
 type Section = "note" | "newsletter";
 type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts";
-type NewsletterTab = "list";
+type NewsletterTab = "list" | "write" | "drafts";
 type RewriteMode = "rewrite" | "polish";
 
 const NOTE_TABS: { id: NoteTab; label: string }[] = [
@@ -28,6 +31,8 @@ const NOTE_TABS: { id: NoteTab; label: string }[] = [
 
 const NEWSLETTER_TABS: { id: NewsletterTab; label: string }[] = [
   { id: "list", label: "📋 一覧" },
+  { id: "write", label: "✍️ 執筆" },
+  { id: "drafts", label: "📝 下書き" },
 ];
 
 export default function Home() {
@@ -40,8 +45,29 @@ export default function Home() {
   const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
   const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter } = useNewsletterDB();
+  const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
 
-  const loaded = articlesLoaded && newslettersLoaded;
+  // draft → list の引き継ぎ
+  const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; _t: number } | null>(null);
+
+  const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded;
+
+  const handleRegisterDraftAsSent = (draft: NewsletterDraft) => {
+    setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, _t: Date.now() });
+    setNewsletterTab("list");
+  };
+
+  const handleNewsletterAdd = (n: Omit<import("@/lib/types").Newsletter, "id">) => {
+    addNewsletter({ ...n, sourceNoteUrl: pendingDraft?.sourceNoteUrl ?? n.sourceNoteUrl });
+    if (pendingDraft) {
+      // ドラフトを削除: title+bodyで一致するものを探す
+      const matched = newsletterDrafts.find(
+        (d) => d.title === pendingDraft.title && d.body === pendingDraft.body
+      );
+      if (matched) removeNewsletterDraft(matched.id);
+      setPendingDraft(null);
+    }
+  };
 
   const handleSelectTheme = (proposal: ProposalContext) => {
     setPendingProposal(proposal);
@@ -197,8 +223,25 @@ export default function Home() {
                   {newsletterTab === "list" && (
                     <TabNewsletterList
                       newsletters={newsletters}
-                      onAdd={addNewsletter}
+                      onAdd={handleNewsletterAdd}
                       onUpdate={updateNewsletter}
+                      pendingDraft={pendingDraft}
+                      onPendingDraftConsumed={() => setPendingDraft(null)}
+                    />
+                  )}
+                  {newsletterTab === "write" && (
+                    <TabNewsletterWrite
+                      articles={articles}
+                      newsletters={newsletters}
+                      onSaveDraft={addNewsletterDraft}
+                    />
+                  )}
+                  {newsletterTab === "drafts" && (
+                    <TabNewsletterDrafts
+                      drafts={newsletterDrafts}
+                      onUpdate={updateNewsletterDraft}
+                      onRemove={removeNewsletterDraft}
+                      onRegisterAsSent={handleRegisterDraftAsSent}
                     />
                   )}
                 </>
