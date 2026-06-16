@@ -276,6 +276,18 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
   const displayData = displayMonths.map((month) => ({ month, count: monthlyCounts[month] || 0 }));
   const maxCount = Math.max(...displayData.map((d) => d.count), 1);
 
+  const distributionCounts = [
+    ...DISTRIBUTION_TARGETS.map((t) => ({
+      name: t,
+      count: newsletters.filter((n) => (n.distributionTargets ?? []).includes(t)).length,
+    })),
+    {
+      name: "未設定",
+      count: newsletters.filter((n) => !n.distributionTargets || n.distributionTargets.length === 0).length,
+    },
+  ].sort((a, b) => b.count - a.count);
+  const maxDistCount = Math.max(...distributionCounts.map((d) => d.count), 1);
+
   const sortedNewsletters = [...newsletters].sort((a, b) => b.date.localeCompare(a.date));
 
   // ── Add panel handlers ───────────────────────────────
@@ -336,31 +348,55 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
 
   return (
     <div className="space-y-6">
-      {/* Monthly graph */}
-      <div className="bg-zinc-800 rounded-xl p-5">
-        <h3 className="text-sm font-medium text-zinc-400 mb-4">月別配信数</h3>
-        <div className="space-y-2">
-          {displayData.map(({ month, count }) => (
-            <div key={month}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-zinc-300">{month}</span>
-                <span className="text-amber-400 font-medium">{count}件</span>
+      {/* Graphs */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Distribution target counts */}
+        <div className="bg-zinc-800 rounded-xl p-5">
+          <h3 className="text-sm font-medium text-zinc-400 mb-4">配信先別配信数</h3>
+          <div className="space-y-2">
+            {distributionCounts.map((d) => (
+              <div key={d.name}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-zinc-300 truncate mr-2">{d.name}</span>
+                  <span className="text-amber-400 font-medium shrink-0">{d.count}件</span>
+                </div>
+                <div className="h-1.5 bg-zinc-700 rounded-full">
+                  <div
+                    className="h-full bg-amber-500 rounded-full transition-all"
+                    style={{ width: `${(d.count / maxDistCount) * 100}%` }}
+                  />
+                </div>
               </div>
-              <div className="h-1.5 bg-zinc-700 rounded-full">
-                <div
-                  className="h-full bg-amber-500/70 rounded-full transition-all"
-                  style={{ width: `${(count / maxCount) * 100}%` }}
-                />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-        <button
-          onClick={() => setShowAllMonths((v) => !v)}
-          className="mt-4 text-xs px-3 py-1.5 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
-        >
-          {showAllMonths ? "直近12ヶ月に戻す" : "全期間を表示する"}
-        </button>
+
+        {/* Monthly counts */}
+        <div className="bg-zinc-800 rounded-xl p-5">
+          <h3 className="text-sm font-medium text-zinc-400 mb-4">月別配信数</h3>
+          <div className="space-y-2">
+            {displayData.map(({ month, count }) => (
+              <div key={month}>
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-zinc-300">{month}</span>
+                  <span className="text-amber-400 font-medium">{count}件</span>
+                </div>
+                <div className="h-1.5 bg-zinc-700 rounded-full">
+                  <div
+                    className="h-full bg-amber-500/70 rounded-full transition-all"
+                    style={{ width: `${(count / maxCount) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowAllMonths((v) => !v)}
+            className="mt-4 text-xs px-3 py-1.5 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+          >
+            {showAllMonths ? "直近12ヶ月に戻す" : "全期間を表示する"}
+          </button>
+        </div>
       </div>
 
       {/* Add panel */}
