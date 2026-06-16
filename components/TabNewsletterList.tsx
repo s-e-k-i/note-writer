@@ -49,16 +49,18 @@ function generateMonthRange(start: string, end: string): string[] {
   return result;
 }
 
-function nextIssueNumber(newsletters: Newsletter[]): string {
-  if (newsletters.length === 0) return "1";
-  const nums = newsletters.map((n) => parseInt(n.issueNumber, 10)).filter((n) => !isNaN(n));
-  if (nums.length === 0) return "";
+function nextIssueNumberForTarget(newsletters: Newsletter[], target: string): string {
+  const nums = newsletters
+    .filter((n) => (n.distributionTargets ?? []).includes(target))
+    .map((n) => parseInt(n.issueNumber, 10))
+    .filter((n) => !isNaN(n));
+  if (nums.length === 0) return "1";
   return String(Math.max(...nums) + 1);
 }
 
-function blankFields(newsletters: Newsletter[]): FormFields {
+function blankFields(): FormFields {
   return {
-    issueNumber: nextIssueNumber(newsletters),
+    issueNumber: "",
     title: "",
     body: "",
     memo: "",
@@ -86,16 +88,17 @@ interface FormPanelProps {
   onCancel: () => void;
   saved: boolean;
   canSave: boolean;
+  onIssueNumberEdit?: () => void;
+  onDistributionToggle?: (newTargets: string[]) => void;
 }
 
-function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps) {
+function FormPanel({ f, setF, onSave, onCancel, saved, canSave, onIssueNumberEdit, onDistributionToggle }: FormPanelProps) {
   const toggleTarget = (t: string) => {
-    setF((p) => ({
-      ...p,
-      distributionTargets: p.distributionTargets.includes(t)
-        ? p.distributionTargets.filter((x) => x !== t)
-        : [...p.distributionTargets, t],
-    }));
+    const newTargets = f.distributionTargets.includes(t)
+      ? f.distributionTargets.filter((x) => x !== t)
+      : [...f.distributionTargets, t];
+    setF((p) => ({ ...p, distributionTargets: newTargets }));
+    onDistributionToggle?.(newTargets);
   };
 
   return (
@@ -106,7 +109,10 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave }: FormPanelProps
         <input
           type="text"
           value={f.issueNumber}
-          onChange={(e) => setF((p) => ({ ...p, issueNumber: e.target.value }))}
+          onChange={(e) => {
+            setF((p) => ({ ...p, issueNumber: e.target.value }));
+            onIssueNumberEdit?.();
+          }}
           placeholder="例：1、第1号"
           className="w-40 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
         />
@@ -213,12 +219,13 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
 
   // Add panel state
   const [addOpen, setAddOpen] = useState(false);
-  const [addFields, setAddFields] = useState<FormFields>(blankFields(newsletters));
+  const [addFields, setAddFields] = useState<FormFields>(blankFields());
   const [addSaved, setAddSaved] = useState(false);
+  const [addIssueEdited, setAddIssueEdited] = useState(false);
 
   // Edit panel state
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editFields, setEditFields] = useState<FormFields>(blankFields([]));
+  const [editFields, setEditFields] = useState<FormFields>(blankFields());
   const [editSaved, setEditSaved] = useState(false);
 
   // Memo tooltip — position: fixed で overflow: hidden を完全に脱出する
@@ -292,10 +299,23 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
 
   // ── Add panel handlers ───────────────────────────────
   const openAdd = () => {
-    setAddFields(blankFields(newsletters));
+    const targets = DEFAULT_DISTRIBUTION;
+    const autoIssue = targets.length === 1
+      ? nextIssueNumberForTarget(newsletters, targets[0])
+      : "";
+    setAddFields({ ...blankFields(), issueNumber: autoIssue });
+    setAddIssueEdited(false);
     setAddSaved(false);
     setAddOpen(true);
     setEditingId(null);
+  };
+
+  const handleAddDistributionToggle = (newTargets: string[]) => {
+    if (addIssueEdited) return;
+    if (newTargets.length === 1) {
+      const auto = nextIssueNumberForTarget(newsletters, newTargets[0]);
+      setAddFields((p) => ({ ...p, issueNumber: auto }));
+    }
   };
 
   const handleAdd = () => {
@@ -417,6 +437,8 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate }: Prop
               onCancel={closeAdd}
               saved={addSaved}
               canSave={addFields.title.trim() !== "" && addFields.body.trim() !== "" && addFields.date !== ""}
+              onIssueNumberEdit={() => setAddIssueEdited(true)}
+              onDistributionToggle={handleAddDistributionToggle}
             />
           </div>
         )}
