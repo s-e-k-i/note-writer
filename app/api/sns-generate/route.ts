@@ -1,0 +1,67 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { PROFILE_DOCUMENT, SNS_RULES } from "@/lib/profile";
+import { getSharedContext } from "@/lib/redis";
+import { NotebookEntry } from "@/lib/types";
+
+const client = new Anthropic();
+
+export async function POST(request: Request) {
+  try {
+    const { channel, memo, notebookEntries } = await request.json() as {
+      channel: "X" | "Facebook";
+      memo?: string;
+      notebookEntries?: NotebookEntry[];
+    };
+
+    const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
+
+    const CONTEXT_LIMIT = 2000;
+
+    const notebookSection =
+      Array.isArray(notebookEntries) && notebookEntries.length > 0
+        ? `\n【ネタ帳（参考）】\n${notebookEntries.map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\nネタ帳の中で今の気分に合うものがあれば投稿のヒントにしてください。使う必要はありません。\n`
+        : "";
+
+    const sharedContextSection =
+      devLog || ideaMemo
+        ? `\n【開発ログ・アイデアメモ（参考）】\n${devLog ? `開発ログ：${devLog.content.slice(0, CONTEXT_LIMIT)}\n` : ""}${ideaMemo ? `アイデアメモ：${ideaMemo.content.slice(0, CONTEXT_LIMIT)}\n` : ""}`
+        : "";
+
+    const memoSection = memo?.trim() ? `\n【参考にするメモ・ネタ】\n${memo.trim()}\n` : "";
+
+    const channelInstruction =
+      channel === "X"
+        ? "X（旧Twitter）向けの投稿文を1つ作成してください。必ず140字以内にしてください。"
+        : "Facebook向けの投稿文を1つ作成してください。300〜600字程度にしてください。";
+
+    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${SNS_RULES}`;
+
+    const userMessage = `${channelInstruction}
+${memoSection}${notebookSection}${sharedContextSection}
+上記のルールに従い、投稿文のみを出力してください。説明文や前置きは不要です。`;
+
+    const stream = await client.messages.stream({
+      model: "claude-sonnet-4-6",
+      max_tokens: 800,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMessage }],
+    });
+
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of stream) {
+          if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
+            controller.enqueue(encoder.encode(chunk.delta.text));
+          }
+        }
+        controller.close();
+      },
+    });
+
+    return new Response(readable, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  } catch (error) {
+    console.error("SNS generate error:", error);
+    return Response.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
+  }
+}

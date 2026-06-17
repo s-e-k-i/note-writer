@@ -13,6 +13,8 @@ import TabNewsletterList from "@/components/TabNewsletterList";
 import TabNewsletterWrite from "@/components/TabNewsletterWrite";
 import TabNewsletterDrafts from "@/components/TabNewsletterDrafts";
 import TabNotebook from "@/components/TabNotebook";
+import TabBulletin from "@/components/TabBulletin";
+import TabSns from "@/components/TabSns";
 import PasswordGate from "@/components/PasswordGate";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
@@ -21,8 +23,8 @@ import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
 const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
-type Section = "note" | "newsletter" | "notebook";
-type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts";
+type Section = "note" | "newsletter" | "notebook" | "sns";
+type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts" | "bulletin";
 type NewsletterTab = "list" | "write" | "drafts";
 type RewriteMode = "rewrite" | "polish";
 
@@ -32,6 +34,7 @@ const NOTE_TABS: { id: NoteTab; label: string }[] = [
   { id: "generate", label: "✍️ 記事を書く" },
   { id: "rewrite", label: "🔁 リライト" },
   { id: "drafts", label: "📝 下書き管理" },
+  { id: "bulletin", label: "📌 掲示板" },
 ];
 
 const NEWSLETTER_TABS: { id: NewsletterTab; label: string }[] = [
@@ -150,7 +153,7 @@ export default function Home() {
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
           <div className="max-w-4xl mx-auto flex items-center">
             <div className="flex gap-1 flex-1">
-              {(["note", "newsletter", "notebook"] as Section[]).map((s) => (
+              {(["note", "newsletter", "notebook", "sns"] as Section[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSection(s)}
@@ -160,7 +163,7 @@ export default function Home() {
                       : "border-transparent text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : "ネタ帳"}
+                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : s === "notebook" ? "ネタ帳" : "発信"}
                 </button>
               ))}
             </div>
@@ -264,6 +267,9 @@ export default function Home() {
                       onSendToRewrite={handleSendToRewrite}
                     />
                   )}
+                  {noteTab === "bulletin" && (
+                    <TabBulletin notebookEntries={notebookEntries} />
+                  )}
                 </>
               )}
 
@@ -306,6 +312,11 @@ export default function Home() {
                   onUpdate={updateNotebookEntry}
                   onRemove={removeNotebookEntry}
                 />
+              )}
+
+              {/* sns section */}
+              {section === "sns" && (
+                <TabSns notebookEntries={notebookEntries} />
               )}
             </>
           )}

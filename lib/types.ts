@@ -39,6 +39,34 @@ export interface NotebookEntry {
   createdAt: string;
 }
 
+export interface BulletinPost {
+  id: string;
+  text: string;
+  postedDate: string;
+  note?: string;
+}
+
+export interface BulletinDraft {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface SnsPost {
+  id: string;
+  channel: "X" | "Facebook";
+  text: string;
+  postedDate: string;
+  note?: string;
+}
+
+export interface SnsDraft {
+  id: string;
+  channel: "X" | "Facebook";
+  text: string;
+  createdAt: string;
+}
+
 export type ArticleType = "free" | "paid";
 export type WordCount = "short" | "standard" | "ai";
 
