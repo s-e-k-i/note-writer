@@ -316,7 +316,7 @@ export default function Home() {
 
               {/* sns section */}
               {section === "sns" && (
-                <TabSns notebookEntries={notebookEntries} />
+                <TabSns notebookEntries={notebookEntries} articles={articles} />
               )}
             </>
           )}

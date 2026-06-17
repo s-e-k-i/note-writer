@@ -38,6 +38,7 @@ export default function TabBulletin({ notebookEntries }: Props) {
 
   // --- 作成 tab state ---
   const [createMemo, setCreateMemo] = useState("");
+  const [showNotebookDropdown, setShowNotebookDropdown] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveMode, setSaveMode] = useState<"posted" | "draft" | null>(null);
@@ -354,7 +355,34 @@ export default function TabBulletin({ notebookEntries }: Props) {
       {subTab === "create" && (
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="block text-xs text-zinc-400">参考にするメモ・ネタ（任意）</label>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs text-zinc-400">参考にするメモ・ネタ（任意）</label>
+              {notebookEntries && notebookEntries.length > 0 && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowNotebookDropdown((v) => !v)}
+                    className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
+                  >
+                    ネタ帳から選ぶ
+                  </button>
+                  {showNotebookDropdown && (
+                    <div className="absolute right-0 top-6 z-10 w-72 bg-zinc-800 border border-zinc-600 rounded-xl shadow-lg overflow-hidden">
+                      <div className="max-h-48 overflow-y-auto">
+                        {notebookEntries.map((e) => (
+                          <button
+                            key={e.id}
+                            onClick={() => { setCreateMemo(e.text); setShowNotebookDropdown(false); }}
+                            className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 border-b border-zinc-700/50 last:border-0 transition-colors leading-relaxed"
+                          >
+                            {e.text.length > 60 ? e.text.slice(0, 60) + "…" : e.text}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             <textarea
               value={createMemo}
               onChange={(e) => setCreateMemo(e.target.value)}

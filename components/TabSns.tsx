@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { SnsPost, SnsDraft, NotebookEntry } from "@/lib/types";
+import { SnsPost, SnsDraft, NotebookEntry, Article } from "@/lib/types";
 import { useSnsDB } from "@/lib/useSnsDB";
 
 interface Props {
   notebookEntries?: NotebookEntry[];
+  articles?: Article[];
 }
 
 type SubTab = "list" | "create" | "drafts";
 type Channel = "X" | "Facebook";
+type SnsMode = "normal" | "note-update";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -26,7 +28,7 @@ const CHANNEL_COLORS: Record<Channel, string> = {
   Facebook: "bg-blue-900/50 text-blue-300",
 };
 
-export default function TabSns({ notebookEntries }: Props) {
+export default function TabSns({ notebookEntries, articles }: Props) {
   const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB();
   const [subTab, setSubTab] = useState<SubTab>("list");
 
@@ -46,7 +48,12 @@ export default function TabSns({ notebookEntries }: Props) {
 
   // --- 作成 tab state ---
   const [createChannel, setCreateChannel] = useState<Channel>("X");
+  const [snsMode, setSnsMode] = useState<SnsMode>("normal");
   const [createMemo, setCreateMemo] = useState("");
+  const [showNotebookDropdown, setShowNotebookDropdown] = useState(false);
+  // note記事の更新を知らせるモード
+  const [noteSelectedArticle, setNoteSelectedArticle] = useState<Article | null>(null);
+  const [noteArticleQuery, setNoteArticleQuery] = useState("");
   const [generatedText, setGeneratedText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveMode, setSaveMode] = useState<"posted" | "draft" | null>(null);
@@ -63,6 +70,11 @@ export default function TabSns({ notebookEntries }: Props) {
   const abortRef = useRef<AbortController | null>(null);
 
   const todayIso = new Date().toISOString().slice(0, 10);
+
+  // 記事フィルタリング
+  const filteredNoteArticles = (articles ?? []).filter((a) =>
+    noteArticleQuery ? a.title.toLowerCase().includes(noteArticleQuery.toLowerCase()) : true
+  );
 
   // --- 一覧 handlers ---
   const filteredPosts = listChannelFilter === "all" ? posts : posts.filter((p) => p.channel === listChannelFilter);
@@ -99,19 +111,54 @@ export default function TabSns({ notebookEntries }: Props) {
     setShowAddForm(false);
   };
 
+  // チャンネル切り替え（作成タブ）
+  const handleChannelChange = (ch: Channel) => {
+    setCreateChannel(ch);
+    setGeneratedText("");
+    setSaveMode(null);
+    // Facebookに切り替えたらnote-updateモードを解除
+    if (ch === "Facebook" && snsMode === "note-update") {
+      setSnsMode("normal");
+      setNoteSelectedArticle(null);
+      setNoteArticleQuery("");
+    }
+  };
+
+  // モード切り替え（作成タブ・X専用）
+  const handleSnsModeChange = (m: SnsMode) => {
+    setSnsMode(m);
+    setGeneratedText("");
+    setSaveMode(null);
+    if (m === "normal") {
+      setNoteSelectedArticle(null);
+      setNoteArticleQuery("");
+    } else {
+      setCreateMemo("");
+      setShowNotebookDropdown(false);
+    }
+  };
+
   // --- 作成 handlers ---
   const handleGenerate = async () => {
     if (isGenerating) return;
+    if (snsMode === "note-update" && !noteSelectedArticle) return;
+
     abortRef.current = new AbortController();
     setIsGenerating(true);
     setGeneratedText("");
     setSaveMode(null);
     setJustSaved(false);
+
+    const body =
+      snsMode === "note-update"
+        ? { channel: createChannel, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "", notebookEntries: [] }
+        : { channel: createChannel, memo: createMemo, notebookEntries: notebookEntries ?? [] };
+
     try {
       const resp = await fetch("/api/sns-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channel: createChannel, memo: createMemo, notebookEntries: notebookEntries ?? [] }),
+        body: JSON.stringify(body),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) {
@@ -144,6 +191,8 @@ export default function TabSns({ notebookEntries }: Props) {
     setTimeout(() => {
       setGeneratedText("");
       setCreateMemo("");
+      setNoteSelectedArticle(null);
+      setNoteArticleQuery("");
       setPostedDate(new Date().toISOString().slice(0, 10));
       setPostNote("");
       setJustSaved(false);
@@ -159,6 +208,8 @@ export default function TabSns({ notebookEntries }: Props) {
     setTimeout(() => {
       setGeneratedText("");
       setCreateMemo("");
+      setNoteSelectedArticle(null);
+      setNoteArticleQuery("");
       setJustSaved(false);
       setSubTab("drafts");
     }, 1200);
@@ -196,6 +247,7 @@ export default function TabSns({ notebookEntries }: Props) {
   ];
 
   const charLimitNote = createChannel === "X" ? "140字以内" : "300〜600字";
+  const canGenerate = snsMode === "note-update" ? !!noteSelectedArticle : true;
 
   return (
     <div className="space-y-4">
@@ -273,7 +325,7 @@ export default function TabSns({ notebookEntries }: Props) {
                   type="date"
                   value={addDate}
                   onChange={(e) => setAddDate(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
+                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500 [color-scheme:dark]"
                 />
               </div>
               <input
@@ -362,7 +414,7 @@ export default function TabSns({ notebookEntries }: Props) {
                         type="date"
                         value={editPostDate}
                         onChange={(e) => setEditPostDate(e.target.value)}
-                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
+                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500 [color-scheme:dark]"
                       />
                     </div>
                     <input
@@ -399,13 +451,15 @@ export default function TabSns({ notebookEntries }: Props) {
       {/* ===== 作成 ===== */}
       {subTab === "create" && (
         <div className="space-y-4">
+
+          {/* チャンネル選択 */}
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">チャンネル</label>
             <div className="flex gap-2">
               {(["X", "Facebook"] as const).map((ch) => (
                 <button
                   key={ch}
-                  onClick={() => { setCreateChannel(ch); setGeneratedText(""); setSaveMode(null); }}
+                  onClick={() => handleChannelChange(ch)}
                   className={`px-4 py-2 text-sm rounded-xl border transition-colors ${
                     createChannel === ch
                       ? "border-zinc-500 bg-zinc-600 text-white font-medium"
@@ -419,20 +473,122 @@ export default function TabSns({ notebookEntries }: Props) {
             <p className="text-xs text-zinc-600">{charLimitNote}</p>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-xs text-zinc-400">参考にするメモ・ネタ（任意）</label>
-            <textarea
-              value={createMemo}
-              onChange={(e) => setCreateMemo(e.target.value)}
-              rows={4}
-              placeholder="投稿に使いたいネタや伝えたいことをメモしてください。空欄でも生成できます。"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 resize-y font-sans leading-relaxed"
-            />
-          </div>
+          {/* 投稿モード切り替え（Xのみ） */}
+          {createChannel === "X" && (
+            <div className="flex gap-1 bg-zinc-800/60 rounded-lg p-1">
+              {(["normal", "note-update"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleSnsModeChange(m)}
+                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+                    snsMode === m ? "bg-zinc-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {m === "normal" ? "通常の投稿" : "note記事の更新を知らせる"}
+                </button>
+              ))}
+            </div>
+          )}
 
+          {/* === 通常の投稿モード === */}
+          {snsMode === "normal" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs text-zinc-400">参考にするメモ・ネタ（任意）</label>
+                {notebookEntries && notebookEntries.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowNotebookDropdown((v) => !v)}
+                      className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
+                    >
+                      ネタ帳から選ぶ
+                    </button>
+                    {showNotebookDropdown && (
+                      <div className="absolute right-0 top-6 z-10 w-72 bg-zinc-800 border border-zinc-600 rounded-xl shadow-lg overflow-hidden">
+                        <div className="max-h-48 overflow-y-auto">
+                          {notebookEntries.map((e) => (
+                            <button
+                              key={e.id}
+                              onClick={() => { setCreateMemo(e.text); setShowNotebookDropdown(false); }}
+                              className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-zinc-700 border-b border-zinc-700/50 last:border-0 transition-colors leading-relaxed"
+                            >
+                              {e.text.length > 60 ? e.text.slice(0, 60) + "…" : e.text}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <textarea
+                value={createMemo}
+                onChange={(e) => setCreateMemo(e.target.value)}
+                rows={4}
+                placeholder="投稿に使いたいネタや伝えたいことをメモしてください。空欄でも生成できます。"
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-zinc-600 resize-y font-sans leading-relaxed"
+              />
+            </div>
+          )}
+
+          {/* === note記事の更新を知らせるモード（X専用） === */}
+          {snsMode === "note-update" && (
+            <div className="space-y-3">
+              {!noteSelectedArticle ? (
+                <div className="bg-zinc-800 rounded-xl p-4">
+                  <p className="text-xs text-zinc-400 font-medium mb-3">告知するnote記事を選ぶ</p>
+                  <input
+                    type="text"
+                    value={noteArticleQuery}
+                    onChange={(e) => setNoteArticleQuery(e.target.value)}
+                    placeholder="タイトルで検索…"
+                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 mb-3"
+                  />
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {filteredNoteArticles.length === 0 ? (
+                      <p className="text-zinc-500 text-sm py-4 text-center">記事が見つかりません</p>
+                    ) : (
+                      filteredNoteArticles.map((a) => (
+                        <button
+                          key={a.id}
+                          onClick={() => setNoteSelectedArticle(a)}
+                          className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-zinc-700/50 transition-colors group"
+                        >
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xs text-zinc-500 shrink-0">{a.date}</span>
+                            <span className="text-sm text-zinc-200 group-hover:text-white truncate">{a.title}</span>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-zinc-800 rounded-xl p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs text-zinc-500 mb-0.5">{noteSelectedArticle.date}</p>
+                      <p className="text-sm font-medium text-zinc-200">{noteSelectedArticle.title}</p>
+                      {noteSelectedArticle.url && (
+                        <p className="text-xs text-zinc-600 mt-1 truncate">{noteSelectedArticle.url}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => { setNoteSelectedArticle(null); setNoteArticleQuery(""); setGeneratedText(""); setSaveMode(null); }}
+                      className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+                    >
+                      変更
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 生成ボタン */}
           <button
             onClick={handleGenerate}
-            disabled={isGenerating}
+            disabled={isGenerating || !canGenerate}
             className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-medium rounded-xl transition-colors"
           >
             {isGenerating ? "生成中..." : "おまかせで生成する"}
@@ -447,6 +603,7 @@ export default function TabSns({ notebookEntries }: Props) {
             </button>
           )}
 
+          {/* 生成結果 */}
           {generatedText && (
             <div className="space-y-3">
               <div className="bg-zinc-800 rounded-xl p-4">
@@ -476,7 +633,7 @@ export default function TabSns({ notebookEntries }: Props) {
                       type="date"
                       value={postedDate}
                       onChange={(e) => setPostedDate(e.target.value)}
-                      className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
+                      className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500 [color-scheme:dark]"
                     />
                   </div>
                   <input
