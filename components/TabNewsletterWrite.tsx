@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Article, Newsletter, NewsletterDraft } from "@/lib/types";
 
 interface Props {
@@ -13,6 +13,7 @@ interface Idea {
   angleType: string;
   title: string;
   description: string;
+  reason?: string;
 }
 
 type NlWriteMode = "auto" | "memo" | "note-article" | "purpose" | "chat";
@@ -24,12 +25,28 @@ const WORD_COUNT_OPTIONS = [
 ] as const;
 
 const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }[] = [
-  { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガを分析し、今書くべきテーマを自動提案" },
+  { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガの配信リズムを分析し、今書くべきテーマを戦略的に提案" },
   { id: "purpose", icon: "🎯", title: "目的から考える", desc: "書く目的・ターゲットを入力して戦略的なテーマを提案（近日対応予定）" },
   { id: "memo", icon: "📝", title: "メモから考える", desc: "殴り書きのメモを貼り付けるだけ。AIが整理してテーマ案を提案" },
   { id: "chat", icon: "💬", title: "一緒に考える（壁打ち）", desc: "チャット形式でAIと話しながらテーマを絞り込む（近日対応予定）" },
-  { id: "note-article", icon: "📰", title: "note記事から選ぶ", desc: "既存のnote記事を元に、メルマガでしか言えない角度でテーマを提案" },
+  { id: "note-article", icon: "📰", title: "note記事から選ぶ", desc: "既存のnote記事をダイジェスト化し、続きはnoteで読んでもらう形式のメルマガを提案" },
 ];
+
+const LS_KEY = "nl_write_state_v1";
+
+type PersistedState = {
+  mode: NlWriteMode | null;
+  memoText: string;
+  memoSummary: string;
+  memoSubmitted: boolean;
+  selectedArticleId: string | null;
+  ideas: Idea[] | null;
+  selectedIdea: Idea | null;
+  wordCountMode: "short" | "standard" | "ai";
+  referenceSample: string;
+  generatedBody: string;
+  editedTitle: string;
+};
 
 function articlePreviewText(a: Article): string {
   const src = a.body || a.summary || "";
@@ -41,37 +58,96 @@ function magazineShort(mag: string): string {
 }
 
 export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft }: Props) {
-  // Mode
   const [mode, setMode] = useState<NlWriteMode | null>(null);
 
-  // Memo mode
   const [memoText, setMemoText] = useState("");
   const [memoSummary, setMemoSummary] = useState("");
   const [memoSubmitted, setMemoSubmitted] = useState(false);
 
-  // Note-article mode
   const [query, setQuery] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
-  // Ideas
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
   const [ideasLoading, setIdeasLoading] = useState(false);
   const [ideasError, setIdeasError] = useState("");
 
-  // Selected idea + body generation options
   const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
   const [wordCountMode, setWordCountMode] = useState<"short" | "standard" | "ai">("standard");
   const [referenceSample, setReferenceSample] = useState("");
 
-  // Body generation
   const [generatedBody, setGeneratedBody] = useState("");
   const [editedTitle, setEditedTitle] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
   const [saveDone, setSaveDone] = useState(false);
 
-  // ── Reset ───────────────────────────────────────────────────
-  const handleReset = () => {
+  // ── localStorage: restore on mount ────────────────────────
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const s: PersistedState = JSON.parse(raw);
+      setMode(s.mode ?? null);
+      setMemoText(s.memoText ?? "");
+      setMemoSummary(s.memoSummary ?? "");
+      setMemoSubmitted(s.memoSubmitted ?? false);
+      setIdeas(s.ideas ?? null);
+      setSelectedIdea(s.selectedIdea ?? null);
+      setWordCountMode(s.wordCountMode ?? "standard");
+      setReferenceSample(s.referenceSample ?? "");
+      setGeneratedBody(s.generatedBody ?? "");
+      setEditedTitle(s.editedTitle ?? "");
+      if (s.selectedArticleId && articles.length > 0) {
+        const found = articles.find((a) => a.id === s.selectedArticleId) ?? null;
+        setSelectedArticle(found);
+      }
+    } catch {
+      // ignore corrupt data
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── localStorage: restore selected article when articles load ──
+  useEffect(() => {
+    if (selectedArticle) return;
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const s: PersistedState = JSON.parse(raw);
+      if (s.selectedArticleId && articles.length > 0) {
+        const found = articles.find((a) => a.id === s.selectedArticleId) ?? null;
+        setSelectedArticle(found);
+      }
+    } catch {
+      // ignore
+    }
+  }, [articles, selectedArticle]);
+
+  // ── localStorage: save on every state change ──────────────
+  useEffect(() => {
+    const s: PersistedState = {
+      mode,
+      memoText,
+      memoSummary,
+      memoSubmitted,
+      selectedArticleId: selectedArticle?.id ?? null,
+      ideas,
+      selectedIdea,
+      wordCountMode,
+      referenceSample,
+      generatedBody,
+      editedTitle,
+    };
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(s));
+    } catch {
+      // ignore quota errors
+    }
+  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle]);
+
+  // ── Reset (clears localStorage) ───────────────────────────
+  const handleReset = useCallback(() => {
+    try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
     setMode(null);
     setMemoText("");
     setMemoSummary("");
@@ -82,15 +158,17 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setIdeasLoading(false);
     setIdeasError("");
     setSelectedIdea(null);
+    setWordCountMode("standard");
+    setReferenceSample("");
     setGeneratedBody("");
     setEditedTitle("");
     setGenerating(false);
     setGenerateError("");
     setSaveDone(false);
-  };
+  }, []);
 
   // ── API: auto ideas ────────────────────────────────────────
-  const generateAutoIdeas = async () => {
+  const generateAutoIdeas = useCallback(async () => {
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
@@ -111,7 +189,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     } finally {
       setIdeasLoading(false);
     }
-  };
+  }, [articles, newsletters]);
 
   // ── API: memo ideas ────────────────────────────────────────
   const generateMemoIdeas = async () => {
@@ -142,8 +220,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   };
 
   // ── API: note-article ideas ────────────────────────────────
-  const generateNoteIdeas = async () => {
-    if (!selectedArticle) return;
+  const generateNoteIdeas = async (article: Article) => {
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
@@ -152,9 +229,9 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          articleTitle: selectedArticle.title,
-          articleBody: selectedArticle.body,
-          articleSummary: selectedArticle.summary,
+          articleTitle: article.title,
+          articleBody: article.body,
+          articleSummary: article.summary,
         }),
       });
       const data = await res.json();
@@ -176,7 +253,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     if (m === "auto") generateAutoIdeas();
   };
 
-  // ── Idea select (shows options screen, no auto-generate) ───
+  // ── Idea select ────────────────────────────────────────────
   const handlePickIdea = (idea: Idea) => {
     setSelectedIdea(idea);
     setEditedTitle(idea.title);
@@ -207,6 +284,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           articleTitle: selectedArticle?.title ?? "",
           articleBody: selectedArticle?.body,
           articleSummary: selectedArticle?.summary,
+          articleUrl: selectedArticle?.url,
+          isDigestMode: mode === "note-article",
           wordCountMode,
           referenceSample: referenceSample.trim() || undefined,
           recentNewsletters,
@@ -247,14 +326,16 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setSaveDone(true);
   };
 
-  // ── Article picker helpers ─────────────────────────────────
+  // ── Article picker ─────────────────────────────────────────
   const sortedArticles = [...articles].sort((a, b) => b.date.localeCompare(a.date));
   const filteredArticles = query.trim()
     ? sortedArticles.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase()))
     : sortedArticles;
 
+  const hasAnyState = !!(mode || selectedArticle || ideas || selectedIdea || generatedBody || memoText);
+
   // ── Shared: ideas panel ────────────────────────────────────
-  const IdeasPanel = () => (
+  const IdeasPanel = ({ showReason }: { showReason?: boolean }) => (
     <div className="space-y-3">
       {ideasError && <p className="text-red-400 text-xs">{ideasError}</p>}
       {ideasLoading && (
@@ -263,14 +344,19 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           テーマを考えています…
         </div>
       )}
-      {ideas && (
+      {ideas && !ideasLoading && (
         <>
           <p className="text-xs text-zinc-500 pt-1">テーマ案を選んでください</p>
           {ideas.map((idea, i) => (
             <div key={i} className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
               <p className="text-xs text-amber-400 font-medium mb-1">{idea.angleType}</p>
               <p className="text-sm text-zinc-200 font-medium mb-2">{idea.title}</p>
-              <p className="text-xs text-zinc-400 leading-relaxed mb-3">{idea.description}</p>
+              <p className="text-xs text-zinc-400 leading-relaxed mb-2">{idea.description}</p>
+              {showReason && idea.reason && (
+                <p className="text-xs text-zinc-500 bg-zinc-900/60 rounded px-2.5 py-1.5 mb-3 leading-relaxed">
+                  💡 {idea.reason}
+                </p>
+              )}
               <button
                 onClick={() => handlePickIdea(idea)}
                 className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
@@ -285,7 +371,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   );
 
   // ════════════════════════════════════════════════════════════
-  // SCREEN D: editing body (generating or generated)
+  // SCREEN D: body editing
   // ════════════════════════════════════════════════════════════
   if (selectedIdea && (generating || generatedBody)) {
     return (
@@ -293,14 +379,22 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <p className="text-xs text-amber-400 font-medium">{selectedIdea.angleType}</p>
-            {!generating && (
+            <div className="flex items-center gap-2 shrink-0">
+              {!generating && (
+                <button
+                  onClick={() => { setGeneratedBody(""); setSaveDone(false); }}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+                >
+                  ← 設定に戻る
+                </button>
+              )}
               <button
-                onClick={() => { setGeneratedBody(""); setSaveDone(false); }}
-                className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+                onClick={handleReset}
+                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
               >
-                ← 設定に戻る
+                最初からやり直す
               </button>
-            )}
+            </div>
           </div>
 
           <div>
@@ -365,11 +459,16 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   }
 
   // ════════════════════════════════════════════════════════════
-  // SCREEN C: idea selected → options + generate button
+  // SCREEN C: idea selected → options + generate
   // ════════════════════════════════════════════════════════════
   if (selectedIdea) {
     return (
       <div className="space-y-4">
+        <div className="flex justify-end">
+          <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+            最初からやり直す
+          </button>
+        </div>
         <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -433,7 +532,14 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   if (!mode) {
     return (
       <div className="space-y-4">
-        <p className="text-zinc-400 text-sm">どのような方法で次のメルマガを考えますか？</p>
+        <div className="flex items-center justify-between">
+          <p className="text-zinc-400 text-sm">どのような方法で次のメルマガを考えますか？</p>
+          {hasAnyState && (
+            <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+              最初からやり直す
+            </button>
+          )}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {MODE_CARDS.map((card) => (
             <button
@@ -456,12 +562,17 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   // ════════════════════════════════════════════════════════════
   return (
     <div className="space-y-4">
-      <button
-        onClick={handleReset}
-        className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
-      >
-        ← 方法を選び直す
-      </button>
+      <div className="flex items-center justify-between">
+        <button
+          onClick={handleReset}
+          className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+        >
+          ← 方法を選び直す
+        </button>
+        <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+          最初からやり直す
+        </button>
+      </div>
 
       {/* Coming soon */}
       {(mode === "purpose" || mode === "chat") && (
@@ -476,10 +587,10 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         <div className="space-y-4">
           <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
             <p className="text-xs text-zinc-400">
-              既存のnote記事（{articles.length}本）・配信済みメルマガ（{newsletters.length}件）を分析して、重複しない新テーマを提案します
+              note記事（{articles.length}本）・メルマガ（{newsletters.length}件）の配信タイムラインを分析して、配信リズムに合ったテーマを提案します
             </p>
           </div>
-          <IdeasPanel />
+          <IdeasPanel showReason />
           {ideas && !ideasLoading && (
             <button
               onClick={generateAutoIdeas}
@@ -591,10 +702,10 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
 
           {!ideas && !ideasLoading && (
             <button
-              onClick={generateNoteIdeas}
+              onClick={() => generateNoteIdeas(selectedArticle)}
               className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-medium rounded-lg transition-colors"
             >
-              メルマガ化アイデアを考える
+              書き出し方を考える
             </button>
           )}
 
@@ -602,7 +713,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
 
           {ideas && !ideasLoading && (
             <button
-              onClick={() => { setIdeas(null); setIdeasError(""); generateNoteIdeas(); }}
+              onClick={() => { setIdeas(null); setIdeasError(""); generateNoteIdeas(selectedArticle); }}
               className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors"
             >
               別のアイデアを考えてもらう

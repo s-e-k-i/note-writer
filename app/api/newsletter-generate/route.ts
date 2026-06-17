@@ -12,8 +12,19 @@ const WORD_COUNT_NOTE: Record<string, string> = {
 
 export async function POST(request: Request) {
   try {
-    const { angleType, ideaTitle, description, articleTitle, articleBody, articleSummary, wordCountMode, referenceSample, recentNewsletters } =
-      await request.json();
+    const {
+      angleType,
+      ideaTitle,
+      description,
+      articleTitle,
+      articleBody,
+      articleSummary,
+      articleUrl,
+      wordCountMode,
+      referenceSample,
+      recentNewsletters,
+      isDigestMode,
+    } = await request.json();
 
     const bodyText = articleBody ? articleBody.slice(0, 3000) : articleSummary ?? "";
 
@@ -26,7 +37,43 @@ export async function POST(request: Request) {
 
 ${NEWSLETTER_RULES}`;
 
-    const userMessage = `以下の条件でメルマガ本文を書いてください。
+    let userMessage: string;
+
+    if (isDigestMode) {
+      userMessage = `以下の条件でメルマガ本文を書いてください。
+
+【目的】
+このメルマガは「note記事のダイジェスト＋noteへの誘導」です。
+- 記事の要点を届けて「読んでよかった」と思わせる
+- ただし全部は語らず、「もっと詳しく読みたい」と思わせる情報量にとどめる
+- 本文の最後に、元のnote記事URLと読みに行きたくなる一言を必ず入れる
+- note記事に書いていない新しいエピソード・裏話は作らない
+
+【元note記事タイトル】
+${articleTitle}
+
+【元note記事本文（抜粋）】
+${bodyText || "（本文データなし）"}
+
+【note記事URL】
+${articleUrl || "（URLなし）"}
+
+【書き出し方】
+${angleType}
+
+【仮タイトル・内容の方向性】
+${ideaTitle}：${description}
+
+【文字数】
+${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
+
+${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
+${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
+
+本文だけを出力すること（分析文・メモ・タイトルは不要）。
+末尾には必ずnote記事URLを含め、読みに行きたくなる一言で締めること。`;
+    } else {
+      userMessage = `以下の条件でメルマガ本文を書いてください。
 
 【元note記事タイトル】
 ${articleTitle}
@@ -46,6 +93,7 @@ ${referenceSample ? `【参考にしたいエピソード・過去の文章】\n
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
 
 本文だけを出力すること（分析文・メモ・タイトルは不要）。`;
+    }
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-6",
