@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { Article, ConsultMessage } from "@/lib/types";
+import { getSharedContext } from "@/lib/redis";
 
 const client = new Anthropic();
 
@@ -138,6 +139,8 @@ export async function POST(request: Request) {
   try {
     const { mode, messages, articles, purposeForm, articleType, notebookEntries } = await request.json();
 
+    const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
+
     const articleList: Article[] = articles || [];
     const systemPrompt = buildSystemPrompt(articleList, articleType);
 
@@ -152,10 +155,14 @@ export async function POST(request: Request) {
         ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
         : "";
 
-      console.log("[consult/auto] notebookEntries count:", Array.isArray(notebookEntries) ? notebookEntries.length : "not array");
-      if (Array.isArray(notebookEntries) && notebookEntries.length > 0) {
-        console.log("[consult/auto] notebookSection included:", notebookSection.slice(0, 200));
-      }
+      const CONTEXT_LIMIT = 3000;
+      const sharedContextSection = (devLog || ideaMemo)
+        ? `\n【開発ログ・アイデアメモ（hitoribiz-osとの共有情報）】
+${devLog ? `【開発ログ（直近の開発活動の記録）】\n${devLog.content.slice(0, CONTEXT_LIMIT)}${devLog.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
+${ideaMemo ? `\n【アイデアメモ（開発・ビジネスアイデアのメモ）】\n${ideaMemo.content.slice(0, CONTEXT_LIMIT)}${ideaMemo.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
+
+特に「AIツールの進捗」に関する記事テーマを考える際は、関さん自身の記憶よりも上記の開発ログの実際の記録を優先して参照してください。\n`
+        : "";
 
       userMessages = [
         {
@@ -164,7 +171,7 @@ export async function POST(request: Request) {
 
 【重要】以下の既存タイトルと重複・類似するテーマは絶対に避けてください：
 ${existingTitles}
-${notebookSection}
+${notebookSection}${sharedContextSection}
 「ひとりビジネス・コンサル導線」になる記事を優先し、上記にない新しい角度・切り口を選んでください。${articleType === "paid" ? "\n有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
         },
       ];

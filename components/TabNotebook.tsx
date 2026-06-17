@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { NotebookEntry } from "@/lib/types";
+import SharedContextPanel from "./SharedContextPanel";
 
 interface Props {
   entries: NotebookEntry[];
@@ -54,14 +55,18 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
 
   if (entries.length === 0) {
     return (
-      <div className="text-center py-16 text-zinc-500 text-sm">
-        <p className="mb-1">ネタ帳はまだ空です</p>
-        <p>ヘッダーの「＋ ネタを書く」ボタンから登録できます</p>
+      <div>
+        <div className="text-center py-16 text-zinc-500 text-sm">
+          <p className="mb-1">ネタ帳はまだ空です</p>
+          <p>ヘッダーの「＋ ネタを書く」ボタンから登録できます</p>
+        </div>
+        <SharedContextPanel />
       </div>
     );
   }
 
   return (
+    <div>
     <div className="space-y-3">
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-sm font-medium text-zinc-400">ネタ帳（{entries.length}件）</h3>
@@ -141,6 +146,8 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
           )}
         </div>
       ))}
+    </div>
+    <SharedContextPanel />
     </div>
   );
 }

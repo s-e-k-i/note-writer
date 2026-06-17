@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PROFILE_DOCUMENT, NEWSLETTER_RULES } from "@/lib/profile";
 import { Article, Newsletter } from "@/lib/types";
+import { getSharedContext } from "@/lib/redis";
 
 const client = new Anthropic();
 
@@ -11,6 +12,8 @@ function magazineShort(mag: string): string {
 export async function POST(request: Request) {
   try {
     const { articles, newsletters, distributionTarget, notebookEntries } = await request.json();
+
+    const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
 
     const articleList: Article[] = articles || [];
     const newsletterList: Newsletter[] = newsletters || [];
@@ -111,10 +114,14 @@ AIが全カテゴリを見て最適な提案をする。
       ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
       : "";
 
-    console.log("[newsletter-auto] notebookEntries count:", Array.isArray(notebookEntries) ? notebookEntries.length : "not array");
-    if (Array.isArray(notebookEntries) && notebookEntries.length > 0) {
-      console.log("[newsletter-auto] notebookSection included:", notebookSection.slice(0, 200));
-    }
+    const CONTEXT_LIMIT = 3000;
+    const sharedContextSection = (devLog || ideaMemo)
+      ? `\n【開発ログ・アイデアメモ（hitoribiz-osとの共有情報）】
+${devLog ? `【開発ログ（直近の開発活動の記録）】\n${devLog.content.slice(0, CONTEXT_LIMIT)}${devLog.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
+${ideaMemo ? `\n【アイデアメモ（開発・ビジネスアイデアのメモ）】\n${ideaMemo.content.slice(0, CONTEXT_LIMIT)}${ideaMemo.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
+
+特に「AIツールの進捗」に関するメルマガテーマを考える際は、関さん自身の記憶よりも上記の開発ログの実際の記録を優先して参照してください。\n`
+      : "";
 
     const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
 
@@ -133,7 +140,7 @@ ${recentArticleTitles || "（記事なし）"}
 
 【重複チェック用：直近メルマガ一覧】
 ${recentNewsletterTitles || "（配信なし）"}
-${notebookSection}
+${notebookSection}${sharedContextSection}
 【提案の条件】
 - 上記のnote記事・メルマガと重複・類似するテーマは絶対に避ける
 - 以下の戦略的な観点を踏まえて提案する：
