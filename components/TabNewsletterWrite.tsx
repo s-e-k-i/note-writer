@@ -47,6 +47,7 @@ type PersistedState = {
   referenceSample: string;
   generatedBody: string;
   editedTitle: string;
+  generatedBodies: Record<string, string>;
 };
 
 function articlePreviewText(a: Article): string {
@@ -56,6 +57,31 @@ function articlePreviewText(a: Article): string {
 
 function magazineShort(mag: string): string {
   return mag.split("──")[0].trim();
+}
+
+function ResetButton({ onClick }: { onClick: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        backgroundColor: hovered ? "#52525b" : "#3f3f46",
+        color: hovered ? "#e4e4e7" : "#a1a1aa",
+        padding: "8px 16px",
+        fontSize: "0.875rem",
+        lineHeight: "1.25rem",
+        borderRadius: "0.5rem",
+        border: "none",
+        cursor: "pointer",
+        whiteSpace: "nowrap",
+        transition: "background-color 150ms, color 150ms",
+      }}
+    >
+      最初からやり直す
+    </button>
+  );
 }
 
 export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft }: Props) {
@@ -79,6 +105,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
 
   const [generatedBody, setGeneratedBody] = useState("");
   const [editedTitle, setEditedTitle] = useState("");
+  const [generatedBodies, setGeneratedBodies] = useState<Record<string, string>>({});
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
   const [saveDone, setSaveDone] = useState(false);
@@ -100,6 +127,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       setReferenceSample(s.referenceSample ?? "");
       setGeneratedBody(s.generatedBody ?? "");
       setEditedTitle(s.editedTitle ?? "");
+      setGeneratedBodies(s.generatedBodies ?? {});
       if (s.selectedArticleId && articles.length > 0) {
         const found = articles.find((a) => a.id === s.selectedArticleId) ?? null;
         setSelectedArticle(found);
@@ -141,13 +169,14 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       referenceSample,
       generatedBody,
       editedTitle,
+      generatedBodies,
     };
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(s));
     } catch {
       // ignore quota errors
     }
-  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, ideasSourceMode, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle]);
+  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, ideasSourceMode, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle, generatedBodies]);
 
   // ── 方法選択画面に戻る（データは保持、modeのみnullに）────
   const handleGoBackToModeSelect = useCallback(() => {
@@ -172,6 +201,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setReferenceSample("");
     setGeneratedBody("");
     setEditedTitle("");
+    setGeneratedBodies({});
     setGenerating(false);
     setGenerateError("");
     setSaveDone(false);
@@ -326,6 +356,9 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         body += decoder.decode(value, { stream: true });
         setGeneratedBody(body);
       }
+      if (body && selectedIdea) {
+        setGeneratedBodies((prev) => ({ ...prev, [selectedIdea.title]: body }));
+      }
     } catch {
       setGenerateError("通信エラーが発生しました");
     } finally {
@@ -354,40 +387,64 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   const hasAnyState = !!(mode || selectedArticle || ideas || selectedIdea || generatedBody || memoText);
 
   // ── Shared: ideas panel ────────────────────────────────────
-  const IdeasPanel = ({ showReason }: { showReason?: boolean }) => (
-    <div className="space-y-3">
-      {ideasError && <p className="text-red-400 text-xs">{ideasError}</p>}
-      {ideasLoading && (
-        <div className="bg-zinc-800 rounded-xl p-5 text-sm text-zinc-400 flex items-center gap-2">
-          <span className="inline-block w-1 h-4 bg-amber-400 animate-pulse" />
-          テーマを考えています…
-        </div>
-      )}
-      {ideas && !ideasLoading && (
-        <>
-          <p className="text-xs text-zinc-500 pt-1">テーマ案を選んでください</p>
-          {ideas.map((idea, i) => (
-            <div key={i} className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
-              <p className="text-xs text-amber-400 font-medium mb-1">{idea.angleType}</p>
-              <p className="text-sm text-zinc-200 font-medium mb-2">{idea.title}</p>
-              <p className="text-xs text-zinc-400 leading-relaxed mb-2">{idea.description}</p>
-              {showReason && idea.reason && (
-                <p className="text-xs text-zinc-500 bg-zinc-900/60 rounded px-2.5 py-1.5 mb-3 leading-relaxed">
-                  💡 {idea.reason}
-                </p>
-              )}
-              <button
-                onClick={() => handlePickIdea(idea)}
-                className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
-              >
-                この案で書く →
-              </button>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
+  const IdeasPanel = ({ showReason }: { showReason?: boolean }) => {
+    return (
+      <div className="space-y-3">
+        {ideasError && <p className="text-red-400 text-xs">{ideasError}</p>}
+        {ideasLoading && (
+          <div className="bg-zinc-800 rounded-xl p-5 text-sm text-zinc-400 flex items-center gap-2">
+            <span className="inline-block w-1 h-4 bg-amber-400 animate-pulse" />
+            テーマを考えています…
+          </div>
+        )}
+        {ideas && !ideasLoading && (
+          <>
+            <p className="text-xs text-zinc-500 pt-1">テーマ案を選んでください</p>
+            {ideas.map((idea, i) => {
+              const savedBody = generatedBodies[idea.title];
+              return (
+                <div key={i} className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
+                  <p className="text-xs text-amber-400 font-medium mb-1">{idea.angleType}</p>
+                  <p className="text-sm text-zinc-200 font-medium mb-2">{idea.title}</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed mb-2">{idea.description}</p>
+                  {showReason && idea.reason && (
+                    <p className="text-xs text-zinc-500 bg-zinc-900/60 rounded px-2.5 py-1.5 mb-3 leading-relaxed">
+                      💡 {idea.reason}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      onClick={() => handlePickIdea(idea)}
+                      className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
+                    >
+                      この案で書く →
+                    </button>
+                    {savedBody && (
+                      <>
+                        <span className="text-xs text-green-400 font-medium">生成済み</span>
+                        <button
+                          onClick={() => {
+                            setSelectedIdea(idea);
+                            setEditedTitle(idea.title);
+                            setGeneratedBody(savedBody);
+                            setGenerateError("");
+                            setSaveDone(false);
+                          }}
+                          className="text-xs text-amber-400 hover:text-amber-300 transition-colors"
+                        >
+                          生成した内容を見る →
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+    );
+  };
 
   // ════════════════════════════════════════════════════════════
   // SCREEN D: body editing
@@ -407,12 +464,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
                   ← 設定に戻る
                 </button>
               )}
-              <button
-                onClick={handleReset}
-                className="btn-secondary"
-              >
-                最初からやり直す
-              </button>
+              <ResetButton onClick={handleReset} />
             </div>
           </div>
 
@@ -484,9 +536,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     return (
       <div className="space-y-4">
         <div className="flex justify-end">
-          <button onClick={handleReset} className="btn-secondary">
-            最初からやり直す
-          </button>
+          <ResetButton onClick={handleReset} />
         </div>
         <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
           <div className="flex items-start justify-between gap-3">
@@ -554,9 +604,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         <div className="flex items-center justify-between">
           <p className="text-zinc-400 text-sm">どのような方法で次のメルマガを考えますか？</p>
           {hasAnyState && (
-            <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-              最初からやり直す
-            </button>
+            <ResetButton onClick={handleReset} />
           )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -597,9 +645,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         >
           ← 方法を選び直す
         </button>
-        <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
-          最初からやり直す
-        </button>
+        <ResetButton onClick={handleReset} />
       </div>
 
       {/* Coming soon */}
