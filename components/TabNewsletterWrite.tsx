@@ -29,7 +29,7 @@ const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }
   { id: "purpose", icon: "🎯", title: "目的から考える", desc: "書く目的・ターゲットを入力して戦略的なテーマを提案（近日対応予定）" },
   { id: "memo", icon: "📝", title: "メモから考える", desc: "殴り書きのメモを貼り付けるだけ。AIが整理してテーマ案を提案" },
   { id: "chat", icon: "💬", title: "一緒に考える（壁打ち）", desc: "チャット形式でAIと話しながらテーマを絞り込む（近日対応予定）" },
-  { id: "note-article", icon: "📰", title: "note記事から選ぶ", desc: "既存のnote記事をダイジェスト化し、続きはnoteで読んでもらう形式のメルマガを提案" },
+  { id: "note-article", icon: "📰", title: "note記事から選ぶ", desc: "既存のnote記事をもとに、要点を伝えるメルマガを提案します" },
 ];
 
 const LS_KEY = "nl_write_state_v1";
@@ -560,17 +560,26 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           )}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {MODE_CARDS.map((card) => (
-            <button
-              key={card.id}
-              onClick={() => handleModeSelect(card.id)}
-              className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
-            >
-              <div className="text-2xl mb-2">{card.icon}</div>
-              <div className="font-medium text-zinc-100 mb-1">{card.title}</div>
-              <div className="text-zinc-400 text-sm">{card.desc}</div>
-            </button>
-          ))}
+          {MODE_CARDS.map((card) => {
+            const hasPrev =
+              (card.id === "auto" && ideasSourceMode === "auto" && (ideas?.length ?? 0) > 0) ||
+              (card.id === "memo" && ideasSourceMode === "memo" && (ideas?.length ?? 0) > 0) ||
+              (card.id === "note-article" && selectedArticle !== null);
+            return (
+              <button
+                key={card.id}
+                onClick={() => handleModeSelect(card.id)}
+                className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
+              >
+                <div className="text-2xl mb-2">{card.icon}</div>
+                <div className="font-medium text-zinc-100 mb-1">{card.title}</div>
+                <div className="text-zinc-400 text-sm">{card.desc}</div>
+                {hasPrev && (
+                  <div className="text-xs text-amber-400 mt-2">前回の結果を表示する</div>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
     );
