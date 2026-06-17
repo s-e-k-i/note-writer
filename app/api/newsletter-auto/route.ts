@@ -111,6 +111,11 @@ AIが全カテゴリを見て最適な提案をする。
       ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
       : "";
 
+    console.log("[newsletter-auto] notebookEntries count:", Array.isArray(notebookEntries) ? notebookEntries.length : "not array");
+    if (Array.isArray(notebookEntries) && notebookEntries.length > 0) {
+      console.log("[newsletter-auto] notebookSection included:", notebookSection.slice(0, 200));
+    }
+
     const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
 
     const userMessage = `今の関達也が次に配信すべきメルマガのテーマを2〜3案、配信リズムと戦略を踏まえて提案してください。

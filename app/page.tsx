@@ -137,7 +137,7 @@ export default function Home() {
             </div>
             <button
               onClick={() => setNotebookModalOpen(true)}
-              className="ml-4 px-3 py-1.5 text-xs font-medium bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors whitespace-nowrap"
+              className="ml-4 px-3 py-1.5 text-xs font-medium bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors whitespace-nowrap font-semibold"
             >
               ＋ ネタを書く
             </button>

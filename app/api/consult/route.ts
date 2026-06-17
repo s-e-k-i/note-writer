@@ -152,6 +152,11 @@ export async function POST(request: Request) {
         ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
         : "";
 
+      console.log("[consult/auto] notebookEntries count:", Array.isArray(notebookEntries) ? notebookEntries.length : "not array");
+      if (Array.isArray(notebookEntries) && notebookEntries.length > 0) {
+        console.log("[consult/auto] notebookSection included:", notebookSection.slice(0, 200));
+      }
+
       userMessages = [
         {
           role: "user",
