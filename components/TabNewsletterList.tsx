@@ -7,6 +7,7 @@ interface PendingDraft {
   title: string;
   body: string;
   sourceNoteUrl?: string;
+  distributionTargets?: string[];
 }
 
 interface Props {
@@ -44,6 +45,12 @@ const DISTRIBUTION_TARGETS = [
 ];
 
 const DEFAULT_DISTRIBUTION = ["メルマガ読者（通常・note経由）"];
+
+const DISTRIBUTION_BADGE_LABELS: Record<string, string> = {
+  "メルマガ読者（通常・note経由）": "メルマガ",
+  "ChatGPTの学校（無料プレゼント登録者）": "ChatGPT",
+  "ひとりビジネス診断": "診断",
+};
 
 function generateMonthRange(start: string, end: string): string[] {
   const result: string[] = [];
@@ -262,7 +269,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
 
   // 下書きから「配信済みとして登録」された場合、追加パネルを開いてタイトル・本文を自動入力
   const openAddWithDraft = useCallback((draft: PendingDraft) => {
-    const targets = DEFAULT_DISTRIBUTION;
+    const targets = draft.distributionTargets?.length ? draft.distributionTargets : DEFAULT_DISTRIBUTION;
     const autoIssue = targets.length === 1
       ? nextIssueNumberForTarget(newsletters, targets[0])
       : "";
@@ -272,7 +279,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
       body: draft.body,
       memo: "",
       date: new Date().toISOString().split("T")[0],
-      distributionTargets: DEFAULT_DISTRIBUTION,
+      distributionTargets: targets,
     });
     setAddIssueEdited(false);
     setAddSaved(false);
@@ -514,6 +521,18 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
+                  {n.distributionTargets && n.distributionTargets.length > 0 && (
+                    <div className="flex gap-1 mt-0.5 flex-wrap">
+                      {n.distributionTargets.map((t) => {
+                        const label = DISTRIBUTION_BADGE_LABELS[t];
+                        return label ? (
+                          <span key={t} className="text-xs bg-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded">
+                            {label}
+                          </span>
+                        ) : null;
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* メモアイコン — 幅を常に確保してレイアウトを固定 */}

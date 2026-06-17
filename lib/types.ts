@@ -29,6 +29,7 @@ export interface NewsletterDraft {
   body: string;
   sourceArticleTitle?: string;
   sourceArticleUrl?: string;
+  distributionTargets?: string[];
   createdAt: string;
 }
 

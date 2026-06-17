@@ -24,6 +24,8 @@ export async function POST(request: Request) {
       referenceSample,
       recentNewsletters,
       isDigestMode,
+      additionalInstructions,
+      distributionTarget,
     } = await request.json();
 
     const bodyText = articleBody ? articleBody.slice(0, 3000) : articleSummary ?? "";
@@ -36,6 +38,15 @@ export async function POST(request: Request) {
     const systemPrompt = `${PROFILE_DOCUMENT}
 
 ${NEWSLETTER_RULES}`;
+
+    const distributionNote =
+      distributionTarget && distributionTarget !== "ai"
+        ? `【配信先】この本文は「${distributionTarget}」の読者向けに書くこと。その読者の関心・知識レベル・求めているものを意識した内容・トーンにする。\n`
+        : "";
+
+    const additionalNote = additionalInstructions?.trim()
+      ? `【ユーザーからの明示的な指示（他のすべての指示より最優先で反映すること）】\n${additionalInstructions.trim()}\n`
+      : "";
 
     let userMessage: string;
 
@@ -69,7 +80,8 @@ ${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
 
 ${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
-
+${distributionNote}
+${additionalNote}
 本文だけを出力すること（分析文・メモ・タイトルは不要）。
 末尾には必ずnote記事URLを含め、読みに行きたくなる一言で締めること。`;
     } else {
@@ -91,7 +103,8 @@ ${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
 
 ${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・エピソード・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
-
+${distributionNote}
+${additionalNote}
 本文だけを出力すること（分析文・メモ・タイトルは不要）。`;
     }
 

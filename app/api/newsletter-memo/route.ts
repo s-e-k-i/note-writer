@@ -6,10 +6,12 @@ const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { memoText, articles, newsletters } = await request.json();
+    const { memoText, articles, newsletters, distributionTarget } = await request.json();
 
     const articleList: Article[] = articles || [];
     const newsletterList: Newsletter[] = newsletters || [];
+
+    const targetCategory = distributionTarget && distributionTarget !== "ai" ? distributionTarget : null;
 
     const recentArticleTitles = [...articleList]
       .sort((a, b) => b.date.localeCompare(a.date))
@@ -22,6 +24,10 @@ export async function POST(request: Request) {
       .slice(0, 10)
       .map((n) => `・${n.title}`)
       .join("\n");
+
+    const distributionNote = targetCategory
+      ? `【配信先】この提案は「${targetCategory}」の読者向けに最適化すること。その読者の関心・知識レベル・求めているものを意識した角度・内容・トーンにする。\n`
+      : `【配信先】AIが最も適切な配信先カテゴリを判断すること。各提案のdescriptionの末尾に「※〇〇向け」（メルマガ読者/ChatGPTの学校/ひとりビジネス診断のいずれか）と一言明記する。\n`;
 
     const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
 
@@ -45,7 +51,7 @@ ${recentArticleTitles || "  （なし）"}
 ${recentNewsletterTitles || "  （なし）"}
 - 単純な要約・ダイジェストは提案しない
 - メルマガならではのパーソナルな角度・書けなかった本音を含めること
-
+${distributionNote}
 【出力形式（厳守）】
 JSONオブジェクトのみ出力。前後に説明文・コードブロック記号は不要：
 

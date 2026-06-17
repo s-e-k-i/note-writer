@@ -24,6 +24,13 @@ const WORD_COUNT_OPTIONS = [
   { value: "ai", label: "AIにおまかせ" },
 ] as const;
 
+const DISTRIBUTION_TARGET_OPTIONS = [
+  { value: "ai", label: "AIにおまかせ" },
+  { value: "メルマガ読者（通常・note経由）", label: "メルマガ読者" },
+  { value: "ChatGPTの学校（無料プレゼント登録者）", label: "ChatGPTの学校" },
+  { value: "ひとりビジネス診断", label: "ひとりビジネス診断" },
+] as const;
+
 const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }[] = [
   { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガの配信リズムを分析し、今書くべきテーマを戦略的に提案" },
   { id: "purpose", icon: "🎯", title: "目的から考える", desc: "書く目的・ターゲットを入力して戦略的なテーマを提案（近日対応予定）" },
@@ -45,6 +52,8 @@ type PersistedState = {
   selectedIdea: Idea | null;
   wordCountMode: "short" | "standard" | "ai";
   referenceSample: string;
+  additionalInstructions: string;
+  distributionTarget: string;
   generatedBody: string;
   editedTitle: string;
   generatedBodies: Record<string, string>;
@@ -102,6 +111,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
   const [wordCountMode, setWordCountMode] = useState<"short" | "standard" | "ai">("standard");
   const [referenceSample, setReferenceSample] = useState("");
+  const [additionalInstructions, setAdditionalInstructions] = useState("");
+  const [distributionTarget, setDistributionTarget] = useState("ai");
 
   const [generatedBody, setGeneratedBody] = useState("");
   const [editedTitle, setEditedTitle] = useState("");
@@ -125,6 +136,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       setSelectedIdea(s.selectedIdea ?? null);
       setWordCountMode(s.wordCountMode ?? "standard");
       setReferenceSample(s.referenceSample ?? "");
+      setAdditionalInstructions(s.additionalInstructions ?? "");
+      setDistributionTarget(s.distributionTarget ?? "ai");
       setGeneratedBody(s.generatedBody ?? "");
       setEditedTitle(s.editedTitle ?? "");
       setGeneratedBodies(s.generatedBodies ?? {});
@@ -139,13 +152,14 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   }, []);
 
   // ── localStorage: restore selected article when articles load ──
+  // note-articleモードだった場合のみ復元する
   useEffect(() => {
     if (selectedArticle) return;
     try {
       const raw = localStorage.getItem(LS_KEY);
       if (!raw) return;
       const s: PersistedState = JSON.parse(raw);
-      if (s.selectedArticleId && articles.length > 0) {
+      if (s.mode === "note-article" && s.selectedArticleId && articles.length > 0) {
         const found = articles.find((a) => a.id === s.selectedArticleId) ?? null;
         setSelectedArticle(found);
       }
@@ -167,6 +181,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       selectedIdea,
       wordCountMode,
       referenceSample,
+      additionalInstructions,
+      distributionTarget,
       generatedBody,
       editedTitle,
       generatedBodies,
@@ -176,7 +192,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     } catch {
       // ignore quota errors
     }
-  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, ideasSourceMode, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle, generatedBodies]);
+  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, ideasSourceMode, selectedIdea, wordCountMode, referenceSample, additionalInstructions, distributionTarget, generatedBody, editedTitle, generatedBodies]);
 
   // ── 方法選択画面に戻る（データは保持、modeのみnullに）────
   const handleGoBackToModeSelect = useCallback(() => {
@@ -199,6 +215,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setSelectedIdea(null);
     setWordCountMode("standard");
     setReferenceSample("");
+    setAdditionalInstructions("");
+    setDistributionTarget("ai");
     setGeneratedBody("");
     setEditedTitle("");
     setGeneratedBodies({});
@@ -208,7 +226,9 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   }, []);
 
   // ── API: auto ideas ────────────────────────────────────────
-  const generateAutoIdeas = useCallback(async () => {
+  // targetOverride: 配信先変更直後に新しい値を直接渡す用
+  const generateAutoIdeas = useCallback(async (targetOverride?: string) => {
+    const effectiveTarget = targetOverride !== undefined ? targetOverride : distributionTarget;
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
@@ -217,7 +237,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       const res = await fetch("/api/newsletter-auto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles, newsletters }),
+        body: JSON.stringify({ articles, newsletters, distributionTarget: effectiveTarget }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -231,7 +251,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     } finally {
       setIdeasLoading(false);
     }
-  }, [articles, newsletters]);
+  }, [articles, newsletters, distributionTarget]);
 
   // ── API: memo ideas ────────────────────────────────────────
   const generateMemoIdeas = async () => {
@@ -246,7 +266,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       const res = await fetch("/api/newsletter-memo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memoText, articles, newsletters }),
+        body: JSON.stringify({ memoText, articles, newsletters, distributionTarget }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -296,9 +316,21 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   // ── Mode select ────────────────────────────────────────────
   const handleModeSelect = (m: NlWriteMode) => {
     setMode(m);
+    // note-article以外のモードに入るときはselectedArticleをクリア（バグ修正）
+    if (m !== "note-article") {
+      setSelectedArticle(null);
+    }
     // autoモード：既存のautoアイデアがあれば再生成しない（戻った場合の復元）
     if (m === "auto" && !(ideasSourceMode === "auto" && ideas && ideas.length > 0)) {
       generateAutoIdeas();
+    }
+  };
+
+  // ── Auto mode: 配信先変更 → 即再生成 ─────────────────────
+  const handleAutoDistributionChange = (newTarget: string) => {
+    setDistributionTarget(newTarget);
+    if (mode === "auto") {
+      generateAutoIdeas(newTarget);
     }
   };
 
@@ -337,6 +369,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           isDigestMode: mode === "note-article",
           wordCountMode,
           referenceSample: referenceSample.trim() || undefined,
+          additionalInstructions: additionalInstructions.trim() || undefined,
+          distributionTarget,
           recentNewsletters,
         }),
       });
@@ -369,11 +403,17 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   // ── Save draft ─────────────────────────────────────────────
   const handleSaveDraft = () => {
     if (!editedTitle.trim() || !generatedBody.trim()) return;
+    const isNoteArticleMode = mode === "note-article";
+    // 配信先の引き継ぎ：AIにおまかせ以外の場合は具体的なターゲットを渡す
+    const draftDistributionTargets =
+      distributionTarget !== "ai" ? [distributionTarget] : undefined;
     onSaveDraft({
       title: editedTitle.trim(),
       body: generatedBody.trim(),
-      sourceArticleTitle: selectedArticle?.title,
-      sourceArticleUrl: selectedArticle?.url,
+      // note-articleモード以外では元記事を空にする（バグ修正）
+      sourceArticleTitle: isNoteArticleMode ? selectedArticle?.title : undefined,
+      sourceArticleUrl: isNoteArticleMode ? selectedArticle?.url : undefined,
+      distributionTargets: draftDistributionTargets,
     });
     setSaveDone(true);
   };
@@ -385,6 +425,28 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     : sortedArticles;
 
   const hasAnyState = !!(mode || selectedArticle || ideas || selectedIdea || generatedBody || memoText);
+
+  // ── 配信先選択UI（共通） ───────────────────────────────────
+  const DistributionSelector = ({ onChangeFn }: { onChangeFn?: (v: string) => void }) => (
+    <div>
+      <label className="text-xs text-zinc-400 mb-2 block">配信先</label>
+      <div className="flex flex-wrap gap-2">
+        {DISTRIBUTION_TARGET_OPTIONS.map((o) => (
+          <button
+            key={o.value}
+            onClick={() => (onChangeFn ?? setDistributionTarget)(o.value)}
+            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+              distributionTarget === o.value
+                ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 
   // ── Shared: ideas panel ────────────────────────────────────
   const IdeasPanel = ({ showReason }: { showReason?: boolean }) => {
@@ -492,7 +554,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
 
           {generateError && <p className="text-red-400 text-xs">{generateError}</p>}
 
-          {selectedArticle?.url && (
+          {/* 元記事はnote-articleモードのみ表示 */}
+          {mode === "note-article" && selectedArticle?.url && (
             <p className="text-xs text-zinc-500">
               元記事：
               <a href={selectedArticle.url} target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-amber-400 underline ml-1">
@@ -553,6 +616,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           </div>
 
           <div className="border-t border-zinc-700 pt-4 space-y-4">
+            {/* 文字数モード */}
             <div>
               <label className="text-xs text-zinc-400 mb-2 block">文字数モード</label>
               <div className="flex flex-wrap gap-2">
@@ -572,6 +636,12 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
               </div>
             </div>
 
+            {/* 配信先（note-article以外のモードのみ） */}
+            {mode !== "note-article" && (
+              <DistributionSelector />
+            )}
+
+            {/* 参考エピソード */}
             <div>
               <label className="text-xs text-zinc-400 mb-1 block">参考にしたいエピソード・過去の文章（任意）</label>
               <textarea
@@ -579,6 +649,18 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
                 onChange={(e) => setReferenceSample(e.target.value)}
                 placeholder="黄金期の原稿・ブログなど、エピソードや出来事の参考にしたい文章があれば貼り付けてください（文体はそのまま真似しません）"
                 rows={4}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+              />
+            </div>
+
+            {/* 追加の指示・要望 */}
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">追加の指示・要望（任意）</label>
+              <textarea
+                value={additionalInstructions}
+                onChange={(e) => setAdditionalInstructions(e.target.value)}
+                placeholder="文章の方向性・構成・トーンなどへの要望があれば書いてください（例：3つ目の案の切り口をベースに、もう少し短く、など）"
+                rows={3}
                 className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
               />
             </div>
@@ -659,15 +741,16 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       {/* Auto mode */}
       {mode === "auto" && (
         <div className="space-y-4">
-          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
-            <p className="text-xs text-zinc-400">
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 space-y-3">
+            <DistributionSelector onChangeFn={handleAutoDistributionChange} />
+            <p className="text-xs text-zinc-400 border-t border-zinc-700/50 pt-3">
               note記事（{articles.length}本）・メルマガ（{newsletters.length}件）の配信タイムラインを分析して、配信リズムに合ったテーマを提案します
             </p>
           </div>
           <IdeasPanel showReason />
           {ideas && !ideasLoading && (
             <button
-              onClick={generateAutoIdeas}
+              onClick={() => generateAutoIdeas()}
               className="btn-secondary"
             >
               別の案を提案してもらう
@@ -689,6 +772,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
             rows={10}
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
           />
+          <DistributionSelector />
           <button
             onClick={generateMemoIdeas}
             disabled={ideasLoading || !memoText.trim()}

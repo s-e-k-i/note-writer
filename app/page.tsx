@@ -48,12 +48,12 @@ export default function Home() {
   const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
 
   // draft → list の引き継ぎ
-  const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; _t: number } | null>(null);
+  const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; distributionTargets?: string[]; _t: number } | null>(null);
 
   const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded;
 
   const handleRegisterDraftAsSent = (draft: NewsletterDraft) => {
-    setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, _t: Date.now() });
+    setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, distributionTargets: draft.distributionTargets, _t: Date.now() });
     setNewsletterTab("list");
   };
 
