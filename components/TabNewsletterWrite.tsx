@@ -33,7 +33,7 @@ const DISTRIBUTION_TARGET_OPTIONS = [
 ] as const;
 
 const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }[] = [
-  { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガの配信リズムを分析し、今書くべきテーマを戦略的に提案" },
+  { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガの配信リズム、ネタ帳に書き留めたアイデアを分析し、今書くべきテーマを戦略的に提案" },
   { id: "purpose", icon: "🎯", title: "目的から考える", desc: "書く目的・ターゲットを入力して戦略的なテーマを提案（近日対応予定）" },
   { id: "memo", icon: "📝", title: "メモから考える", desc: "殴り書きのメモを貼り付けるだけ。AIが整理してテーマ案を提案" },
   { id: "chat", icon: "💬", title: "一緒に考える（壁打ち）", desc: "チャット形式でAIと話しながらテーマを絞り込む（近日対応予定）" },
@@ -745,7 +745,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
           <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 space-y-3">
             <DistributionSelector onChangeFn={handleAutoDistributionChange} />
             <p className="text-xs text-zinc-400 border-t border-zinc-700/50 pt-3">
-              note記事（{articles.length}本）・メルマガ（{newsletters.length}件）の配信タイムラインを分析して、配信リズムに合ったテーマを提案します
+              note記事（{articles.length}本）・メルマガ（{newsletters.length}件）の配信タイムライン、ネタ帳のアイデアを分析して、配信リズムに合ったテーマを提案します
             </p>
           </div>
           <IdeasPanel showReason />
