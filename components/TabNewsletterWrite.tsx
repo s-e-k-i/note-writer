@@ -402,14 +402,14 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
               {!generating && (
                 <button
                   onClick={() => { setGeneratedBody(""); setSaveDone(false); }}
-                  className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
                 >
                   ← 設定に戻る
                 </button>
               )}
               <button
                 onClick={handleReset}
-                className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
               >
                 最初からやり直す
               </button>
@@ -484,7 +484,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     return (
       <div className="space-y-4">
         <div className="flex justify-end">
-          <button onClick={handleReset} className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">
+          <button onClick={handleReset} className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200">
             最初からやり直す
           </button>
         </div>
@@ -622,7 +622,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           {ideas && !ideasLoading && (
             <button
               onClick={generateAutoIdeas}
-              className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
             >
               別の案を提案してもらう
             </button>
@@ -742,7 +742,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
           {ideas && !ideasLoading && (
             <button
               onClick={() => { setIdeas(null); setIdeasError(""); generateNoteIdeas(selectedArticle); }}
-              className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors"
+              className="px-4 py-2 text-sm rounded-lg transition-colors bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
             >
               別のアイデアを考えてもらう
             </button>
