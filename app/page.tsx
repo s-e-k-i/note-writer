@@ -44,7 +44,7 @@ export default function Home() {
 
   const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
-  const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter } = useNewsletterDB();
+  const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB();
   const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
 
   // draft → list の引き継ぎ
@@ -225,6 +225,7 @@ export default function Home() {
                       newsletters={newsletters}
                       onAdd={handleNewsletterAdd}
                       onUpdate={updateNewsletter}
+                      onDelete={removeNewsletter}
                       pendingDraft={pendingDraft}
                       onPendingDraftConsumed={() => setPendingDraft(null)}
                     />

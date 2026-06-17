@@ -34,5 +34,13 @@ export function useNewsletterDB() {
     });
   }, []);
 
-  return { newsletters, loaded, addNewsletter, updateNewsletter };
+  const removeNewsletter = useCallback((id: string) => {
+    setNewsletters((prev) => {
+      const updated = prev.filter((n) => n.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  return { newsletters, loaded, addNewsletter, updateNewsletter, removeNewsletter };
 }

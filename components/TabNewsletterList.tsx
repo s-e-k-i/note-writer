@@ -13,6 +13,7 @@ interface Props {
   newsletters: Newsletter[];
   onAdd: (n: Omit<Newsletter, "id">) => void;
   onUpdate: (id: string, updates: Partial<Newsletter>) => void;
+  onDelete: (id: string) => void;
   pendingDraft?: PendingDraft | null;
   onPendingDraftConsumed?: () => void;
 }
@@ -94,13 +95,14 @@ interface FormPanelProps {
   setF: React.Dispatch<React.SetStateAction<FormFields>>;
   onSave: () => void;
   onCancel: () => void;
+  onDelete?: () => void;
   saved: boolean;
   canSave: boolean;
   onIssueNumberEdit?: () => void;
   onDistributionToggle?: (newTargets: string[]) => void;
 }
 
-function FormPanel({ f, setF, onSave, onCancel, saved, canSave, onIssueNumberEdit, onDistributionToggle }: FormPanelProps) {
+function FormPanel({ f, setF, onSave, onCancel, onDelete, saved, canSave, onIssueNumberEdit, onDistributionToggle }: FormPanelProps) {
   const toggleTarget = (t: string) => {
     const newTargets = f.distributionTargets.includes(t)
       ? f.distributionTargets.filter((x) => x !== t)
@@ -198,7 +200,7 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave, onIssueNumberEdi
       </div>
 
       {/* Buttons */}
-      <div className="flex gap-2 items-center pt-1">
+      <div className="flex gap-2 items-center pt-1 flex-wrap">
         <button
           onClick={onSave}
           disabled={!canSave}
@@ -216,13 +218,21 @@ function FormPanel({ f, setF, onSave, onCancel, saved, canSave, onIssueNumberEdi
         >
           キャンセル
         </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="ml-auto px-4 py-1.5 text-sm bg-transparent hover:bg-red-900/30 text-red-500 hover:text-red-400 border border-red-900/50 hover:border-red-500/50 rounded-lg transition-colors"
+          >
+            削除
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────
-export default function TabNewsletterList({ newsletters, onAdd, onUpdate, pendingDraft, onPendingDraftConsumed }: Props) {
+export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDelete, pendingDraft, onPendingDraftConsumed }: Props) {
   const [showAllMonths, setShowAllMonths] = useState(false);
 
   // Add panel state
@@ -390,6 +400,12 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, pendin
     setTimeout(() => { setEditingId(null); setEditSaved(false); }, 1500);
   };
 
+  const handleDelete = (id: string, title: string) => {
+    if (!window.confirm(`「${title}」を削除しますか？\n\nこの操作は取り消せません。`)) return;
+    onDelete(id);
+    setEditingId(null);
+  };
+
   // ── tooltip の表示位置計算 ────────────────────────────
   // ボタンの上に十分なスペースがあれば上、なければ下に表示
   const TOOLTIP_APPROX_HEIGHT = 200;
@@ -542,6 +558,7 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, pendin
                     setF={setEditFields}
                     onSave={() => handleEdit(n.id)}
                     onCancel={() => { setEditingId(null); setEditSaved(false); }}
+                    onDelete={() => handleDelete(n.id, n.title)}
                     saved={editSaved}
                     canSave={editFields.title.trim() !== "" && editFields.body.trim() !== "" && editFields.date !== ""}
                   />
