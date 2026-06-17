@@ -678,7 +678,7 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
           >
             <div className="text-2xl mb-2">✨</div>
             <div className="font-medium text-zinc-100 mb-1">おまかせで提案して</div>
-            <div className="text-zinc-400 text-sm">AIが記事DBを分析し、今書くべきテーマを自動提案</div>
+            <div className="text-zinc-400 text-sm">AIが記事DB・ネタ帳を分析し、今書くべきテーマを自動提案</div>
             {cachedMessages.auto && <div className="text-xs text-amber-400 mt-2">前回の提案を表示する</div>}
           </button>
           <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useArticlesDB } from "@/lib/useArticlesDB";
 import { useNewsletterDB } from "@/lib/useNewsletterDB";
 import { useNotebookDB } from "@/lib/useNotebookDB";
@@ -17,6 +17,9 @@ import PasswordGate from "@/components/PasswordGate";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
+
+const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
+const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
 type Section = "note" | "newsletter" | "notebook";
 type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts";
@@ -47,6 +50,19 @@ export default function Home() {
   // notebook modal
   const [notebookModalOpen, setNotebookModalOpen] = useState(false);
   const [notebookModalText, setNotebookModalText] = useState("");
+  const [todayStr, setTodayStr] = useState("");
+
+  useEffect(() => {
+    const d = new Date();
+    setTodayStr(`${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${DAY_NAMES[d.getDay()]}）`);
+  }, []);
+
+  // auto-save modal draft to localStorage
+  useEffect(() => {
+    if (notebookModalText) {
+      localStorage.setItem(NOTEBOOK_DRAFT_KEY, notebookModalText);
+    }
+  }, [notebookModalText]);
 
   const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
@@ -99,9 +115,21 @@ export default function Home() {
     setNoteTab("rewrite");
   };
 
+  const handleOpenNotebookModal = () => {
+    const draft = localStorage.getItem(NOTEBOOK_DRAFT_KEY);
+    setNotebookModalText(draft ?? "");
+    setNotebookModalOpen(true);
+  };
+
   const handleNotebookSave = () => {
     if (!notebookModalText.trim()) return;
     addNotebookEntry(notebookModalText.trim());
+    localStorage.removeItem(NOTEBOOK_DRAFT_KEY);
+    setNotebookModalText("");
+    setNotebookModalOpen(false);
+  };
+
+  const handleNotebookCancel = () => {
     setNotebookModalText("");
     setNotebookModalOpen(false);
   };
@@ -114,6 +142,7 @@ export default function Home() {
           <div className="max-w-4xl mx-auto flex items-center gap-3">
             <div className="text-lg font-bold text-zinc-100">note-writer</div>
             <div className="text-zinc-500 text-sm">関達也の声でnote記事を書く</div>
+            {todayStr && <div className="ml-auto text-sm text-zinc-400">{todayStr}</div>}
           </div>
         </header>
 
@@ -136,7 +165,7 @@ export default function Home() {
               ))}
             </div>
             <button
-              onClick={() => setNotebookModalOpen(true)}
+              onClick={handleOpenNotebookModal}
               className="ml-4 px-3 py-1.5 text-xs bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-colors whitespace-nowrap"
             >
               ＋ ネタを書く
@@ -294,12 +323,18 @@ export default function Home() {
 
       {/* Notebook modal */}
       {notebookModalOpen && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4"
-          onClick={(e) => { if (e.target === e.currentTarget) { setNotebookModalOpen(false); setNotebookModalText(""); } }}
-        >
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4">
           <div className="bg-zinc-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
-            <h2 className="text-base font-semibold text-zinc-100 mb-4">ネタを書く</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-zinc-100">ネタを書く</h2>
+              <button
+                onClick={handleNotebookCancel}
+                className="text-zinc-500 hover:text-zinc-300 text-xl leading-none transition-colors"
+                aria-label="閉じる"
+              >
+                ✕
+              </button>
+            </div>
             <textarea
               autoFocus
               value={notebookModalText}
@@ -317,7 +352,7 @@ export default function Home() {
                 保存
               </button>
               <button
-                onClick={() => { setNotebookModalOpen(false); setNotebookModalText(""); }}
+                onClick={handleNotebookCancel}
                 className="flex-1 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-xl transition-colors"
               >
                 キャンセル
