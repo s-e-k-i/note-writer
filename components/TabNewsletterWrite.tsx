@@ -15,13 +15,21 @@ interface Idea {
   description: string;
 }
 
-type Step = "pick-article" | "pick-idea" | "edit-body";
+type NlWriteMode = "auto" | "memo" | "note-article" | "purpose" | "chat";
 
 const WORD_COUNT_OPTIONS = [
   { value: "short", label: "短め（500〜800字）" },
   { value: "standard", label: "標準（1000〜1500字）" },
   { value: "ai", label: "AIにおまかせ" },
 ] as const;
+
+const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }[] = [
+  { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガを分析し、今書くべきテーマを自動提案" },
+  { id: "purpose", icon: "🎯", title: "目的から考える", desc: "書く目的・ターゲットを入力して戦略的なテーマを提案（近日対応予定）" },
+  { id: "memo", icon: "📝", title: "メモから考える", desc: "殴り書きのメモを貼り付けるだけ。AIが整理してテーマ案を提案" },
+  { id: "chat", icon: "💬", title: "一緒に考える（壁打ち）", desc: "チャット形式でAIと話しながらテーマを絞り込む（近日対応予定）" },
+  { id: "note-article", icon: "📰", title: "note記事から選ぶ", desc: "既存のnote記事を元に、メルマガでしか言えない角度でテーマを提案" },
+];
 
 function articlePreviewText(a: Article): string {
   const src = a.body || a.summary || "";
@@ -33,64 +41,112 @@ function magazineShort(mag: string): string {
 }
 
 export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft }: Props) {
-  const [step, setStep] = useState<Step>("pick-article");
+  // Mode
+  const [mode, setMode] = useState<NlWriteMode | null>(null);
 
-  // Step 1: article picker
+  // Memo mode
+  const [memoText, setMemoText] = useState("");
+  const [memoSummary, setMemoSummary] = useState("");
+  const [memoSubmitted, setMemoSubmitted] = useState(false);
+
+  // Note-article mode
   const [query, setQuery] = useState("");
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
-  // Step 2: options + idea generation
-  const [wordCountMode, setWordCountMode] = useState<"short" | "standard" | "ai">("standard");
-  const [referenceSample, setReferenceSample] = useState("");
+  // Ideas
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
   const [ideasLoading, setIdeasLoading] = useState(false);
   const [ideasError, setIdeasError] = useState("");
-  const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
 
-  // Step 3: body generation + editing
+  // Selected idea + body generation options
+  const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
+  const [wordCountMode, setWordCountMode] = useState<"short" | "standard" | "ai">("standard");
+  const [referenceSample, setReferenceSample] = useState("");
+
+  // Body generation
   const [generatedBody, setGeneratedBody] = useState("");
   const [editedTitle, setEditedTitle] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState("");
   const [saveDone, setSaveDone] = useState(false);
 
-  const sortedArticles = [...articles].sort((a, b) => b.date.localeCompare(a.date));
-  const filteredArticles = query.trim()
-    ? sortedArticles.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase()))
-    : sortedArticles;
-
-  const handleSelectArticle = (a: Article) => {
-    setSelectedArticle(a);
-    setIdeas(null);
-    setIdeasError("");
-    setSelectedIdea(null);
-    setGeneratedBody("");
-    setEditedTitle("");
-    setSaveDone(false);
-    setStep("pick-idea");
-  };
-
-  const handleChangeArticle = () => {
+  // ── Reset ───────────────────────────────────────────────────
+  const handleReset = () => {
+    setMode(null);
+    setMemoText("");
+    setMemoSummary("");
+    setMemoSubmitted(false);
+    setQuery("");
     setSelectedArticle(null);
     setIdeas(null);
+    setIdeasLoading(false);
     setIdeasError("");
     setSelectedIdea(null);
     setGeneratedBody("");
     setEditedTitle("");
+    setGenerating(false);
+    setGenerateError("");
     setSaveDone(false);
-    setStep("pick-article");
   };
 
-  const handleGenerateIdeas = async () => {
+  // ── API: auto ideas ────────────────────────────────────────
+  const generateAutoIdeas = async () => {
+    setIdeasLoading(true);
+    setIdeasError("");
+    setIdeas(null);
+    try {
+      const res = await fetch("/api/newsletter-auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articles, newsletters }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setIdeasError(data.error ?? "エラーが発生しました");
+      } else {
+        setIdeas(data.ideas);
+      }
+    } catch {
+      setIdeasError("通信エラーが発生しました");
+    } finally {
+      setIdeasLoading(false);
+    }
+  };
+
+  // ── API: memo ideas ────────────────────────────────────────
+  const generateMemoIdeas = async () => {
+    if (!memoText.trim()) return;
+    setIdeasLoading(true);
+    setIdeasError("");
+    setIdeas(null);
+    setMemoSummary("");
+    setMemoSubmitted(true);
+    try {
+      const res = await fetch("/api/newsletter-memo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memoText, articles, newsletters }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setIdeasError(data.error ?? "エラーが発生しました");
+      } else {
+        setIdeas(data.ideas);
+        setMemoSummary(data.summary ?? "");
+      }
+    } catch {
+      setIdeasError("通信エラーが発生しました");
+    } finally {
+      setIdeasLoading(false);
+    }
+  };
+
+  // ── API: note-article ideas ────────────────────────────────
+  const generateNoteIdeas = async () => {
     if (!selectedArticle) return;
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
-    setSelectedIdea(null);
-    setGeneratedBody("");
-    setEditedTitle("");
-    setSaveDone(false);
-    setStep("pick-idea");
     try {
       const res = await fetch("/api/newsletter-ideas", {
         method: "POST",
@@ -114,31 +170,43 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     }
   };
 
-  const handlePickIdea = async (idea: Idea) => {
-    if (!selectedArticle) return;
+  // ── Mode select ────────────────────────────────────────────
+  const handleModeSelect = (m: NlWriteMode) => {
+    setMode(m);
+    if (m === "auto") generateAutoIdeas();
+  };
+
+  // ── Idea select (shows options screen, no auto-generate) ───
+  const handlePickIdea = (idea: Idea) => {
     setSelectedIdea(idea);
     setEditedTitle(idea.title);
     setGeneratedBody("");
     setGenerateError("");
     setSaveDone(false);
+  };
+
+  // ── Body generation ────────────────────────────────────────
+  const handleGenerateBody = async () => {
+    if (!selectedIdea) return;
     setGenerating(true);
-    setStep("edit-body");
+    setGeneratedBody("");
+    setGenerateError("");
+
+    const recentNewsletters = [...newsletters]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 5);
 
     try {
-      const recentNewsletters = [...newsletters]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 5);
-
       const res = await fetch("/api/newsletter-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          angleType: idea.angleType,
-          ideaTitle: idea.title,
-          description: idea.description,
-          articleTitle: selectedArticle.title,
-          articleBody: selectedArticle.body,
-          articleSummary: selectedArticle.summary,
+          angleType: selectedIdea.angleType,
+          ideaTitle: selectedIdea.title,
+          description: selectedIdea.description,
+          articleTitle: selectedArticle?.title ?? "",
+          articleBody: selectedArticle?.body,
+          articleSummary: selectedArticle?.summary,
           wordCountMode,
           referenceSample: referenceSample.trim() || undefined,
           recentNewsletters,
@@ -167,6 +235,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     }
   };
 
+  // ── Save draft ─────────────────────────────────────────────
   const handleSaveDraft = () => {
     if (!editedTitle.trim() || !generatedBody.trim()) return;
     onSaveDraft({
@@ -178,12 +247,296 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setSaveDone(true);
   };
 
-  // ── Render ────────────────────────────────────────────
+  // ── Article picker helpers ─────────────────────────────────
+  const sortedArticles = [...articles].sort((a, b) => b.date.localeCompare(a.date));
+  const filteredArticles = query.trim()
+    ? sortedArticles.filter((a) => a.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : sortedArticles;
 
+  // ── Shared: ideas panel ────────────────────────────────────
+  const IdeasPanel = () => (
+    <div className="space-y-3">
+      {ideasError && <p className="text-red-400 text-xs">{ideasError}</p>}
+      {ideasLoading && (
+        <div className="bg-zinc-800 rounded-xl p-5 text-sm text-zinc-400 flex items-center gap-2">
+          <span className="inline-block w-1 h-4 bg-amber-400 animate-pulse" />
+          テーマを考えています…
+        </div>
+      )}
+      {ideas && (
+        <>
+          <p className="text-xs text-zinc-500 pt-1">テーマ案を選んでください</p>
+          {ideas.map((idea, i) => (
+            <div key={i} className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
+              <p className="text-xs text-amber-400 font-medium mb-1">{idea.angleType}</p>
+              <p className="text-sm text-zinc-200 font-medium mb-2">{idea.title}</p>
+              <p className="text-xs text-zinc-400 leading-relaxed mb-3">{idea.description}</p>
+              <button
+                onClick={() => handlePickIdea(idea)}
+                className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
+              >
+                この案で書く →
+              </button>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+
+  // ════════════════════════════════════════════════════════════
+  // SCREEN D: editing body (generating or generated)
+  // ════════════════════════════════════════════════════════════
+  if (selectedIdea && (generating || generatedBody)) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-xs text-amber-400 font-medium">{selectedIdea.angleType}</p>
+            {!generating && (
+              <button
+                onClick={() => { setGeneratedBody(""); setSaveDone(false); }}
+                className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+              >
+                ← 設定に戻る
+              </button>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 mb-1 block">タイトル</label>
+            <input
+              type="text"
+              value={editedTitle}
+              onChange={(e) => setEditedTitle(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-zinc-400 mb-1 block">
+              本文{generating && <span className="text-amber-400 ml-1">生成中…</span>}
+            </label>
+            <textarea
+              value={generatedBody}
+              onChange={(e) => setGeneratedBody(e.target.value)}
+              rows={20}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+            />
+          </div>
+
+          {generateError && <p className="text-red-400 text-xs">{generateError}</p>}
+
+          {selectedArticle?.url && (
+            <p className="text-xs text-zinc-500">
+              元記事：
+              <a href={selectedArticle.url} target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-amber-400 underline ml-1">
+                {selectedArticle.title}
+              </a>
+            </p>
+          )}
+
+          {!generating && generatedBody && (
+            <div className="flex items-center gap-3 pt-1 border-t border-zinc-700">
+              <button
+                onClick={handleSaveDraft}
+                disabled={saveDone || !editedTitle.trim()}
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  saveDone
+                    ? "bg-green-600 text-white"
+                    : "bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black"
+                }`}
+              >
+                {saveDone ? "✓ 下書きに保存しました" : "下書きとして保存"}
+              </button>
+              {saveDone && (
+                <button
+                  onClick={handleReset}
+                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  新しいテーマを考える
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // SCREEN C: idea selected → options + generate button
+  // ════════════════════════════════════════════════════════════
+  if (selectedIdea) {
+    return (
+      <div className="space-y-4">
+        <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs text-amber-400 font-medium mb-1">{selectedIdea.angleType}</p>
+              <p className="text-sm text-zinc-200 font-medium">{selectedIdea.title}</p>
+            </div>
+            <button
+              onClick={() => setSelectedIdea(null)}
+              className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
+            >
+              ← 別の案を選ぶ
+            </button>
+          </div>
+
+          <div className="border-t border-zinc-700 pt-4 space-y-4">
+            <div>
+              <label className="text-xs text-zinc-400 mb-2 block">文字数モード</label>
+              <div className="flex flex-wrap gap-2">
+                {WORD_COUNT_OPTIONS.map((o) => (
+                  <button
+                    key={o.value}
+                    onClick={() => setWordCountMode(o.value)}
+                    className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                      wordCountMode === o.value
+                        ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                        : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-zinc-400 mb-1 block">参考にしたいエピソード・過去の文章（任意）</label>
+              <textarea
+                value={referenceSample}
+                onChange={(e) => setReferenceSample(e.target.value)}
+                placeholder="黄金期の原稿・ブログなど、エピソードや出来事の参考にしたい文章があれば貼り付けてください（文体はそのまま真似しません）"
+                rows={4}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+              />
+            </div>
+
+            <button
+              onClick={handleGenerateBody}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-medium rounded-lg transition-colors"
+            >
+              本文を生成する
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // SCREEN A: mode selection
+  // ════════════════════════════════════════════════════════════
+  if (!mode) {
+    return (
+      <div className="space-y-4">
+        <p className="text-zinc-400 text-sm">どのような方法で次のメルマガを考えますか？</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {MODE_CARDS.map((card) => (
+            <button
+              key={card.id}
+              onClick={() => handleModeSelect(card.id)}
+              className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
+            >
+              <div className="text-2xl mb-2">{card.icon}</div>
+              <div className="font-medium text-zinc-100 mb-1">{card.title}</div>
+              <div className="text-zinc-400 text-sm">{card.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // SCREEN B: mode-specific input + ideas
+  // ════════════════════════════════════════════════════════════
   return (
-    <div className="space-y-6">
-      {/* Step 1: article selector */}
-      {step === "pick-article" && (
+    <div className="space-y-4">
+      <button
+        onClick={handleReset}
+        className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+      >
+        ← 方法を選び直す
+      </button>
+
+      {/* Coming soon */}
+      {(mode === "purpose" || mode === "chat") && (
+        <div className="bg-zinc-800 rounded-xl p-10 text-center">
+          <p className="text-zinc-300 text-sm font-medium mb-1">近日対応予定</p>
+          <p className="text-zinc-500 text-xs">現在は「おまかせ」「メモから」「note記事から」の3モードが使えます</p>
+        </div>
+      )}
+
+      {/* Auto mode */}
+      {mode === "auto" && (
+        <div className="space-y-4">
+          <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+            <p className="text-xs text-zinc-400">
+              既存のnote記事（{articles.length}本）・配信済みメルマガ（{newsletters.length}件）を分析して、重複しない新テーマを提案します
+            </p>
+          </div>
+          <IdeasPanel />
+          {ideas && !ideasLoading && (
+            <button
+              onClick={generateAutoIdeas}
+              className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              別の案を提案してもらう
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Memo mode: input */}
+      {mode === "memo" && !memoSubmitted && (
+        <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
+          <label className="text-xs text-zinc-400 block">
+            書きたいことをそのまま貼り付けてください（殴り書き・箇条書き・バラバラでOK）
+          </label>
+          <textarea
+            value={memoText}
+            onChange={(e) => setMemoText(e.target.value)}
+            placeholder={"例：\n- 先週、昔の仕事仲間と久しぶりに話した\n- 最近メルマガ読者から来た返信で嬉しかったこと\n- 配信後に感じたこと"}
+            rows={10}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+          />
+          <button
+            onClick={generateMemoIdeas}
+            disabled={ideasLoading || !memoText.trim()}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black text-sm font-medium rounded-lg transition-colors"
+          >
+            {ideasLoading ? "分析中…" : "AIにテーマを考えてもらう"}
+          </button>
+        </div>
+      )}
+
+      {/* Memo mode: results */}
+      {mode === "memo" && memoSubmitted && (
+        <div className="space-y-4">
+          {memoSummary && (
+            <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4">
+              <p className="text-xs font-medium text-amber-400 mb-2">こういう内容として受け取りました</p>
+              <p className="text-sm text-zinc-300 leading-relaxed">{memoSummary}</p>
+            </div>
+          )}
+          <IdeasPanel />
+          {!ideasLoading && (
+            <button
+              onClick={() => { setMemoSubmitted(false); setIdeas(null); setIdeasError(""); setMemoSummary(""); }}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              ← メモを修正する
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Note-article mode: article picker */}
+      {mode === "note-article" && !selectedArticle && (
         <div className="bg-zinc-800 rounded-xl p-5">
           <h3 className="text-sm font-medium text-zinc-400 mb-3">元にするnote記事を選ぶ</h3>
           <input
@@ -200,7 +553,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
               filteredArticles.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => handleSelectArticle(a)}
+                  onClick={() => setSelectedArticle(a)}
                   className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-zinc-700/50 transition-colors group"
                 >
                   <div className="flex items-baseline gap-2">
@@ -215,10 +568,9 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         </div>
       )}
 
-      {/* Step 2: selected article + options + ideas */}
-      {(step === "pick-idea" || step === "edit-body") && selectedArticle && (
+      {/* Note-article mode: article selected */}
+      {mode === "note-article" && selectedArticle && (
         <>
-          {/* Selected article */}
           <div className="bg-zinc-800 rounded-xl p-5">
             <div className="flex items-start justify-between gap-3 mb-3">
               <div>
@@ -226,7 +578,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
                 <p className="text-sm font-medium text-zinc-200">{selectedArticle.title}</p>
               </div>
               <button
-                onClick={handleChangeArticle}
+                onClick={() => { setSelectedArticle(null); setIdeas(null); setIdeasError(""); }}
                 className="shrink-0 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors"
               >
                 変更
@@ -237,150 +589,26 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
             </p>
           </div>
 
-          {/* Options (only shown in pick-idea step) */}
-          {step === "pick-idea" && (
-            <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
-              <div>
-                <label className="text-xs text-zinc-400 mb-2 block">文字数モード</label>
-                <div className="flex flex-wrap gap-2">
-                  {WORD_COUNT_OPTIONS.map((o) => (
-                    <button
-                      key={o.value}
-                      onClick={() => setWordCountMode(o.value)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                        wordCountMode === o.value
-                          ? "border-amber-500 bg-amber-500/10 text-amber-300"
-                          : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-zinc-400 mb-1 block">参考にしたいエピソード・過去の文章（任意）</label>
-                <textarea
-                  value={referenceSample}
-                  onChange={(e) => setReferenceSample(e.target.value)}
-                  placeholder="黄金期の原稿・ブログなど、エピソードや出来事の参考にしたい文章があれば貼り付けてください（文体はそのまま真似しません）"
-                  rows={4}
-                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
-                />
-              </div>
+          {!ideas && !ideasLoading && (
+            <button
+              onClick={generateNoteIdeas}
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-sm font-medium rounded-lg transition-colors"
+            >
+              メルマガ化アイデアを考える
+            </button>
+          )}
 
-              <button
-                onClick={handleGenerateIdeas}
-                disabled={ideasLoading}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black text-sm font-medium rounded-lg transition-colors"
-              >
-                {ideasLoading ? "考え中…" : "メルマガ化アイデアを考える"}
-              </button>
+          <IdeasPanel />
 
-              {ideasError && (
-                <p className="text-red-400 text-xs">{ideasError}</p>
-              )}
-
-              {/* Ideas */}
-              {ideas && (
-                <div className="space-y-3 pt-2 border-t border-zinc-700">
-                  <p className="text-xs text-zinc-500">アイデアを選んでください</p>
-                  {ideas.map((idea, i) => (
-                    <div key={i} className="bg-zinc-900/60 rounded-lg p-4 border border-zinc-700">
-                      <p className="text-xs text-amber-400 font-medium mb-1">{idea.angleType}</p>
-                      <p className="text-sm text-zinc-200 font-medium mb-2">{idea.title}</p>
-                      <p className="text-xs text-zinc-400 leading-relaxed mb-3">{idea.description}</p>
-                      <button
-                        onClick={() => handlePickIdea(idea)}
-                        className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
-                      >
-                        この案で書く →
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+          {ideas && !ideasLoading && (
+            <button
+              onClick={() => { setIdeas(null); setIdeasError(""); generateNoteIdeas(); }}
+              className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 rounded-lg transition-colors"
+            >
+              別のアイデアを考えてもらう
+            </button>
           )}
         </>
-      )}
-
-      {/* Step 3: edit body */}
-      {step === "edit-body" && selectedIdea && (
-        <div className="bg-zinc-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <p className="text-xs text-amber-400 font-medium">{selectedIdea.angleType}</p>
-            </div>
-            <button
-              onClick={() => { setStep("pick-idea"); setGeneratedBody(""); setEditedTitle(""); setSaveDone(false); }}
-              className="text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 hover:border-zinc-500 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-            >
-              ← 案を選び直す
-            </button>
-          </div>
-
-          {/* Editable title */}
-          <div>
-            <label className="text-xs text-zinc-400 mb-1 block">タイトル</label>
-            <input
-              type="text"
-              value={editedTitle}
-              onChange={(e) => setEditedTitle(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
-            />
-          </div>
-
-          {/* Body */}
-          <div>
-            <label className="text-xs text-zinc-400 mb-1 block">
-              本文 {generating && <span className="text-amber-400 ml-1">生成中…</span>}
-            </label>
-            <textarea
-              value={generatedBody}
-              onChange={(e) => setGeneratedBody(e.target.value)}
-              rows={20}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
-            />
-          </div>
-
-          {generateError && <p className="text-red-400 text-xs">{generateError}</p>}
-
-          {/* Source article info */}
-          {selectedArticle?.url && (
-            <p className="text-xs text-zinc-500">
-              元記事：
-              <a href={selectedArticle.url} target="_blank" rel="noopener noreferrer" className="text-zinc-400 hover:text-amber-400 underline ml-1">
-                {selectedArticle.title}
-              </a>
-            </p>
-          )}
-
-          {/* Save button */}
-          {!generating && generatedBody && (
-            <div className="flex items-center gap-3 pt-1 border-t border-zinc-700">
-              <button
-                onClick={handleSaveDraft}
-                disabled={saveDone || !editedTitle.trim()}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  saveDone
-                    ? "bg-green-600 text-white"
-                    : "bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black"
-                }`}
-              >
-                {saveDone ? "✓ 下書きに保存しました" : "下書きとして保存"}
-              </button>
-              {saveDone && (
-                <button
-                  onClick={() => { setStep("pick-article"); setSelectedArticle(null); setIdeas(null); setSelectedIdea(null); setGeneratedBody(""); setEditedTitle(""); setSaveDone(false); setQuery(""); }}
-                  className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  新しい記事を選ぶ
-                </button>
-              )}
-            </div>
-          )}
-        </div>
       )}
     </div>
   );
