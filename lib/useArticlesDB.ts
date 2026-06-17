@@ -5,6 +5,27 @@ import { Article } from "./types";
 
 const STORAGE_KEY = "note_articles_db";
 
+const MAGAZINE_MIGRATIONS: Record<string, string> = {
+  "生きるために走った日々。──自由な働き方へ戻るまで":
+    "娘と生きるために走った日々。──ひとりで稼ぐ力を取り戻すまで",
+};
+
+function migrateArticles(articles: Article[]): { articles: Article[]; changed: boolean } {
+  let changed = false;
+  const migrated = articles.map((a) => {
+    const newMag = MAGAZINE_MIGRATIONS[a.magazine];
+    const newMags = a.magazines?.map((m) => MAGAZINE_MIGRATIONS[m] ?? m);
+    const magChanged = newMag !== undefined || JSON.stringify(newMags) !== JSON.stringify(a.magazines);
+    if (magChanged) changed = true;
+    return {
+      ...a,
+      ...(newMag !== undefined ? { magazine: newMag } : {}),
+      ...(newMags !== undefined ? { magazines: newMags } : {}),
+    };
+  });
+  return { articles: migrated, changed };
+}
+
 export function useArticlesDB() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -12,7 +33,12 @@ export function useArticlesDB() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setArticles(JSON.parse(stored));
+      if (stored) {
+        const parsed: Article[] = JSON.parse(stored);
+        const { articles: migrated, changed } = migrateArticles(parsed);
+        if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        setArticles(migrated);
+      }
     } catch {}
     setLoaded(true);
   }, []);
