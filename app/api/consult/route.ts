@@ -136,7 +136,7 @@ ${articlesSummary}`;
 
 export async function POST(request: Request) {
   try {
-    const { mode, messages, articles, purposeForm, articleType } = await request.json();
+    const { mode, messages, articles, purposeForm, articleType, notebookEntries } = await request.json();
 
     const articleList: Article[] = articles || [];
     const systemPrompt = buildSystemPrompt(articleList, articleType);
@@ -147,6 +147,11 @@ export async function POST(request: Request) {
       const existingTitles = articleList.length > 0
         ? articleList.map((a) => `・${a.title}`).join("\n")
         : "（記事なし）";
+
+      const notebookSection = Array.isArray(notebookEntries) && notebookEntries.length > 0
+        ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
+        : "";
+
       userMessages = [
         {
           role: "user",
@@ -154,7 +159,7 @@ export async function POST(request: Request) {
 
 【重要】以下の既存タイトルと重複・類似するテーマは絶対に避けてください：
 ${existingTitles}
-
+${notebookSection}
 「ひとりビジネス・コンサル導線」になる記事を優先し、上記にない新しい角度・切り口を選んでください。${articleType === "paid" ? "\n有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
         },
       ];

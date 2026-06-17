@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Article, Newsletter, NewsletterDraft } from "@/lib/types";
+import { Article, Newsletter, NewsletterDraft, NotebookEntry } from "@/lib/types";
 
 interface Props {
   articles: Article[];
   newsletters: Newsletter[];
   onSaveDraft: (draft: Omit<NewsletterDraft, "id" | "createdAt">) => void;
+  notebookEntries?: NotebookEntry[];
 }
 
 interface Idea {
@@ -93,7 +94,7 @@ function ResetButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft }: Props) {
+export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft, notebookEntries }: Props) {
   const [mode, setMode] = useState<NlWriteMode | null>(null);
 
   const [memoText, setMemoText] = useState("");
@@ -237,7 +238,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       const res = await fetch("/api/newsletter-auto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles, newsletters, distributionTarget: effectiveTarget }),
+        body: JSON.stringify({ articles, newsletters, distributionTarget: effectiveTarget, notebookEntries: notebookEntries ?? [] }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {

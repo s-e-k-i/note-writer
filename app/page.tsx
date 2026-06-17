@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useArticlesDB } from "@/lib/useArticlesDB";
 import { useNewsletterDB } from "@/lib/useNewsletterDB";
+import { useNotebookDB } from "@/lib/useNotebookDB";
 import TabDatabase from "@/components/TabDatabase";
 import TabConsult from "@/components/TabConsult";
 import TabGenerate from "@/components/TabGenerate";
@@ -11,12 +12,13 @@ import TabDrafts from "@/components/TabDrafts";
 import TabNewsletterList from "@/components/TabNewsletterList";
 import TabNewsletterWrite from "@/components/TabNewsletterWrite";
 import TabNewsletterDrafts from "@/components/TabNewsletterDrafts";
+import TabNotebook from "@/components/TabNotebook";
 import PasswordGate from "@/components/PasswordGate";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 
-type Section = "note" | "newsletter";
+type Section = "note" | "newsletter" | "notebook";
 type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts";
 type NewsletterTab = "list" | "write" | "drafts";
 type RewriteMode = "rewrite" | "polish";
@@ -42,15 +44,20 @@ export default function Home() {
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number; title?: string } | null>(null);
 
+  // notebook modal
+  const [notebookModalOpen, setNotebookModalOpen] = useState(false);
+  const [notebookModalText, setNotebookModalText] = useState("");
+
   const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
   const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB();
   const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
+  const { entries: notebookEntries, loaded: notebookLoaded, addEntry: addNotebookEntry, updateEntry: updateNotebookEntry, removeEntry: removeNotebookEntry } = useNotebookDB();
 
   // draft → list の引き継ぎ
   const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; distributionTargets?: string[]; _t: number } | null>(null);
 
-  const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded;
+  const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded && notebookLoaded;
 
   const handleRegisterDraftAsSent = (draft: NewsletterDraft) => {
     setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, distributionTargets: draft.distributionTargets, _t: Date.now() });
@@ -60,7 +67,6 @@ export default function Home() {
   const handleNewsletterAdd = (n: Omit<import("@/lib/types").Newsletter, "id">) => {
     addNewsletter({ ...n, sourceNoteUrl: pendingDraft?.sourceNoteUrl ?? n.sourceNoteUrl });
     if (pendingDraft) {
-      // ドラフトを削除: title+bodyで一致するものを探す
       const matched = newsletterDrafts.find(
         (d) => d.title === pendingDraft.title && d.body === pendingDraft.body
       );
@@ -93,6 +99,13 @@ export default function Home() {
     setNoteTab("rewrite");
   };
 
+  const handleNotebookSave = () => {
+    if (!notebookModalText.trim()) return;
+    addNotebookEntry(notebookModalText.trim());
+    setNotebookModalText("");
+    setNotebookModalOpen(false);
+  };
+
   return (
     <PasswordGate>
       <div className="min-h-screen bg-zinc-900">
@@ -104,22 +117,30 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Section tabs (upper) */}
+        {/* Section tabs + ネタを書くボタン */}
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
-          <div className="max-w-4xl mx-auto flex gap-1">
-            {(["note", "newsletter"] as Section[]).map((s) => (
-              <button
-                key={s}
-                onClick={() => setSection(s)}
-                className={`px-5 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${
-                  section === s
-                    ? "border-amber-400 text-amber-400"
-                    : "border-transparent text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                {s === "note" ? "note" : "メルマガ"}
-              </button>
-            ))}
+          <div className="max-w-4xl mx-auto flex items-center">
+            <div className="flex gap-1 flex-1">
+              {(["note", "newsletter", "notebook"] as Section[]).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSection(s)}
+                  className={`px-5 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors border-b-2 -mb-px ${
+                    section === s
+                      ? "border-amber-400 text-amber-400"
+                      : "border-transparent text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : "ネタ帳"}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setNotebookModalOpen(true)}
+              className="ml-4 px-3 py-1.5 text-xs font-medium bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors whitespace-nowrap"
+            >
+              ＋ ネタを書く
+            </button>
           </div>
         </div>
 
@@ -182,7 +203,7 @@ export default function Home() {
                   )}
                   {/* Keep TabConsult mounted so cached proposals survive tab switches */}
                   <div className={noteTab === "consult" ? "" : "hidden"}>
-                    <TabConsult articles={articles} onSelectTheme={handleSelectTheme} />
+                    <TabConsult articles={articles} onSelectTheme={handleSelectTheme} notebookEntries={notebookEntries} />
                   </div>
                   {noteTab === "generate" && (
                     <TabGenerate
@@ -235,6 +256,7 @@ export default function Home() {
                       articles={articles}
                       newsletters={newsletters}
                       onSaveDraft={addNewsletterDraft}
+                      notebookEntries={notebookEntries}
                     />
                   )}
                   {newsletterTab === "drafts" && (
@@ -246,6 +268,15 @@ export default function Home() {
                     />
                   )}
                 </>
+              )}
+
+              {/* notebook section */}
+              {section === "notebook" && (
+                <TabNotebook
+                  entries={notebookEntries}
+                  onUpdate={updateNotebookEntry}
+                  onRemove={removeNotebookEntry}
+                />
               )}
             </>
           )}
@@ -260,6 +291,41 @@ export default function Home() {
       >
         ↑
       </button>
+
+      {/* Notebook modal */}
+      {notebookModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 px-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setNotebookModalOpen(false); setNotebookModalText(""); } }}
+        >
+          <div className="bg-zinc-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+            <h2 className="text-base font-semibold text-zinc-100 mb-4">ネタを書く</h2>
+            <textarea
+              autoFocus
+              value={notebookModalText}
+              onChange={(e) => setNotebookModalText(e.target.value)}
+              rows={8}
+              placeholder="思いついたことをそのまま書いてください"
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 resize-y font-sans leading-relaxed"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={handleNotebookSave}
+                disabled={!notebookModalText.trim()}
+                className="flex-1 py-2 text-sm font-semibold bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-600 disabled:text-zinc-400 text-black rounded-xl transition-colors"
+              >
+                保存
+              </button>
+              <button
+                onClick={() => { setNotebookModalOpen(false); setNotebookModalText(""); }}
+                className="flex-1 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-xl transition-colors"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PasswordGate>
   );
 }

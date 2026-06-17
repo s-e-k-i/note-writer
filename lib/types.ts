@@ -33,6 +33,12 @@ export interface NewsletterDraft {
   createdAt: string;
 }
 
+export interface NotebookEntry {
+  id: string;
+  text: string;
+  createdAt: string;
+}
+
 export type ArticleType = "free" | "paid";
 export type WordCount = "short" | "standard" | "ai";
 

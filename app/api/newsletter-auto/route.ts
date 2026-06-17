@@ -10,7 +10,7 @@ function magazineShort(mag: string): string {
 
 export async function POST(request: Request) {
   try {
-    const { articles, newsletters, distributionTarget } = await request.json();
+    const { articles, newsletters, distributionTarget, notebookEntries } = await request.json();
 
     const articleList: Article[] = articles || [];
     const newsletterList: Newsletter[] = newsletters || [];
@@ -107,6 +107,10 @@ AIが全カテゴリを見て最適な提案をする。
 - 配信先カテゴリの中で最近配信が少ないカテゴリがあれば、そこ向けの提案も含める
 - 各案のreasonに想定する配信先カテゴリを明記すること`;
 
+    const notebookSection = Array.isArray(notebookEntries) && notebookEntries.length > 0
+      ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
+      : "";
+
     const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
 
     const userMessage = `今の関達也が次に配信すべきメルマガのテーマを2〜3案、配信リズムと戦略を踏まえて提案してください。
@@ -124,7 +128,7 @@ ${recentArticleTitles || "（記事なし）"}
 
 【重複チェック用：直近メルマガ一覧】
 ${recentNewsletterTitles || "（配信なし）"}
-
+${notebookSection}
 【提案の条件】
 - 上記のnote記事・メルマガと重複・類似するテーマは絶対に避ける
 - 以下の戦略的な観点を踏まえて提案する：

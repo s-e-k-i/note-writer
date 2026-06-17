@@ -4,11 +4,13 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Article, ConsultMessage, ConsultMode, PurposeForm,
   ProposalContext, ConsultSettings, ArticleType, ProposalHistoryEntry,
+  NotebookEntry,
 } from "@/lib/types";
 
 interface Props {
   articles: Article[];
   onSelectTheme: (proposal: ProposalContext) => void;
+  notebookEntries?: NotebookEntry[];
 }
 
 // ── Constants ────────────────────────────────────────────────────
@@ -143,7 +145,7 @@ function displayContext(context: string): string {
 }
 
 // ── Component ────────────────────────────────────────────────────
-export default function TabConsult({ articles, onSelectTheme }: Props) {
+export default function TabConsult({ articles, onSelectTheme, notebookEntries }: Props) {
   // Settings (persisted)
   const [articleType, setArticleType] = useState<ArticleType | null>(null);
   const [price, setPrice] = useState<number | "ai" | null>(null);
@@ -237,6 +239,7 @@ export default function TabConsult({ articles, onSelectTheme }: Props) {
           articles,
           purposeForm: currentMode === "purpose" ? purposeForm : undefined,
           articleType,
+          notebookEntries: currentMode === "auto" ? (notebookEntries ?? []) : undefined,
         }),
       });
       const reader = res.body?.getReader();
