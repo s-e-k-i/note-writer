@@ -29,3 +29,21 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #71717a;
 }
+
+/* セカンダリボタン（最初からやり直す・別のアイデアを考える・設定に戻るなど） */
+.btn-secondary {
+  background-color: #3f3f46;
+  color: #a1a1aa;
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms, color 150ms;
+  white-space: nowrap;
+}
+.btn-secondary:hover {
+  background-color: #52525b;
+  color: #e4e4e7;
+}
