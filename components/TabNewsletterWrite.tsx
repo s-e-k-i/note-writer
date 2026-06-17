@@ -41,6 +41,7 @@ type PersistedState = {
   memoSubmitted: boolean;
   selectedArticleId: string | null;
   ideas: Idea[] | null;
+  ideasSourceMode: NlWriteMode | null;
   selectedIdea: Idea | null;
   wordCountMode: "short" | "standard" | "ai";
   referenceSample: string;
@@ -68,6 +69,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
+  const [ideasSourceMode, setIdeasSourceMode] = useState<NlWriteMode | null>(null);
   const [ideasLoading, setIdeasLoading] = useState(false);
   const [ideasError, setIdeasError] = useState("");
 
@@ -92,6 +94,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       setMemoSummary(s.memoSummary ?? "");
       setMemoSubmitted(s.memoSubmitted ?? false);
       setIdeas(s.ideas ?? null);
+      setIdeasSourceMode(s.ideasSourceMode ?? null);
       setSelectedIdea(s.selectedIdea ?? null);
       setWordCountMode(s.wordCountMode ?? "standard");
       setReferenceSample(s.referenceSample ?? "");
@@ -132,6 +135,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
       memoSubmitted,
       selectedArticleId: selectedArticle?.id ?? null,
       ideas,
+      ideasSourceMode,
       selectedIdea,
       wordCountMode,
       referenceSample,
@@ -143,9 +147,14 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     } catch {
       // ignore quota errors
     }
-  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle]);
+  }, [mode, memoText, memoSummary, memoSubmitted, selectedArticle, ideas, ideasSourceMode, selectedIdea, wordCountMode, referenceSample, generatedBody, editedTitle]);
 
-  // ── Reset (clears localStorage) ───────────────────────────
+  // ── 方法選択画面に戻る（データは保持、modeのみnullに）────
+  const handleGoBackToModeSelect = useCallback(() => {
+    setMode(null);
+  }, []);
+
+  // ── 完全リセット (localStorage含め全データ消去) ──────────
   const handleReset = useCallback(() => {
     try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
     setMode(null);
@@ -155,6 +164,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setQuery("");
     setSelectedArticle(null);
     setIdeas(null);
+    setIdeasSourceMode(null);
     setIdeasLoading(false);
     setIdeasError("");
     setSelectedIdea(null);
@@ -172,6 +182,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
+    setIdeasSourceMode(null);
     try {
       const res = await fetch("/api/newsletter-auto", {
         method: "POST",
@@ -183,6 +194,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         setIdeasError(data.error ?? "エラーが発生しました");
       } else {
         setIdeas(data.ideas);
+        setIdeasSourceMode("auto");
       }
     } catch {
       setIdeasError("通信エラーが発生しました");
@@ -197,6 +209,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
+    setIdeasSourceMode(null);
     setMemoSummary("");
     setMemoSubmitted(true);
     try {
@@ -210,6 +223,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         setIdeasError(data.error ?? "エラーが発生しました");
       } else {
         setIdeas(data.ideas);
+        setIdeasSourceMode("memo");
         setMemoSummary(data.summary ?? "");
       }
     } catch {
@@ -224,6 +238,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     setIdeasLoading(true);
     setIdeasError("");
     setIdeas(null);
+    setIdeasSourceMode(null);
     try {
       const res = await fetch("/api/newsletter-ideas", {
         method: "POST",
@@ -239,6 +254,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
         setIdeasError(data.error ?? "エラーが発生しました");
       } else {
         setIdeas(data.ideas);
+        setIdeasSourceMode("note-article");
       }
     } catch {
       setIdeasError("通信エラーが発生しました");
@@ -250,7 +266,10 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
   // ── Mode select ────────────────────────────────────────────
   const handleModeSelect = (m: NlWriteMode) => {
     setMode(m);
-    if (m === "auto") generateAutoIdeas();
+    // autoモード：既存のautoアイデアがあれば再生成しない（戻った場合の復元）
+    if (m === "auto" && !(ideasSourceMode === "auto" && ideas && ideas.length > 0)) {
+      generateAutoIdeas();
+    }
   };
 
   // ── Idea select ────────────────────────────────────────────
@@ -564,7 +583,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button
-          onClick={handleReset}
+          onClick={handleGoBackToModeSelect}
           className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
         >
           ← 方法を選び直す
