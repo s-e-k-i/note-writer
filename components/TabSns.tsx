@@ -10,8 +10,16 @@ interface Props {
 }
 
 type SubTab = "list" | "create" | "drafts";
-type Channel = "X" | "Facebook";
-type SnsMode = "normal" | "note-update";
+type Channel = "X" | "Facebook" | "Threads";
+type SnsMode = "normal" | "note-update" | "note-article";
+
+const ALL_CHANNELS: Channel[] = ["X", "Facebook", "Threads"];
+
+const CHANNEL_COLORS: Record<string, string> = {
+  X: "bg-zinc-700 text-zinc-200",
+  Facebook: "bg-blue-900/50 text-blue-300",
+  Threads: "bg-purple-900/50 text-purple-300",
+};
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -23,10 +31,20 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-const CHANNEL_COLORS: Record<Channel, string> = {
-  X: "bg-zinc-700 text-zinc-200",
-  Facebook: "bg-blue-900/50 text-blue-300",
-};
+// チャンネルに応じたモード選択肢
+function getModesForChannel(ch: Channel): { value: SnsMode; label: string }[] {
+  if (ch === "Facebook") {
+    return [
+      { value: "normal", label: "通常の投稿" },
+      { value: "note-article", label: "note記事から書く" },
+    ];
+  }
+  // X / Threads
+  return [
+    { value: "normal", label: "通常の投稿" },
+    { value: "note-update", label: "noteの更新を知らせる" },
+  ];
+}
 
 export default function TabSns({ notebookEntries, articles }: Props) {
   const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB();
@@ -40,9 +58,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [editPostDate, setEditPostDate] = useState("");
   const [editSaved, setEditSaved] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // 直接追加フォーム（複数チャンネル選択）
   const [showAddForm, setShowAddForm] = useState(false);
   const [addText, setAddText] = useState("");
-  const [addChannel, setAddChannel] = useState<Channel>("X");
+  const [addChannels, setAddChannels] = useState<string[]>(["X"]);
   const [addDate, setAddDate] = useState("");
   const [addNote, setAddNote] = useState("");
 
@@ -51,12 +71,13 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [snsMode, setSnsMode] = useState<SnsMode>("normal");
   const [createMemo, setCreateMemo] = useState("");
   const [showNotebookDropdown, setShowNotebookDropdown] = useState(false);
-  // note記事の更新を知らせるモード
   const [noteSelectedArticle, setNoteSelectedArticle] = useState<Article | null>(null);
   const [noteArticleQuery, setNoteArticleQuery] = useState("");
   const [generatedText, setGeneratedText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveMode, setSaveMode] = useState<"posted" | "draft" | null>(null);
+  // 投稿済み記録用の複数チャンネル選択
+  const [recordChannels, setRecordChannels] = useState<string[]>([]);
   const [postedDate, setPostedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [postNote, setPostNote] = useState("");
   const [justSaved, setJustSaved] = useState(false);
@@ -68,7 +89,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [deleteDraftConfirmId, setDeleteDraftConfirmId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-
   const todayIso = new Date().toISOString().slice(0, 10);
 
   // 記事フィルタリング
@@ -76,8 +96,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     noteArticleQuery ? a.title.toLowerCase().includes(noteArticleQuery.toLowerCase()) : true
   );
 
-  // --- 一覧 handlers ---
-  const filteredPosts = listChannelFilter === "all" ? posts : posts.filter((p) => p.channel === listChannelFilter);
+  // --- 一覧 ---
+  const filteredPosts =
+    listChannelFilter === "all"
+      ? posts
+      : posts.filter((p) => p.channels.includes(listChannelFilter));
 
   const openEditPost = (p: SnsPost) => {
     setEditPostId(p.id);
@@ -87,10 +110,8 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setEditSaved(false);
     setDeleteConfirmId(null);
   };
-  const closeEditPost = () => {
-    setEditPostId(null);
-    setEditSaved(false);
-  };
+  const closeEditPost = () => { setEditPostId(null); setEditSaved(false); };
+
   const handleSaveEditPost = () => {
     if (!editPostId || !editPostText.trim()) return;
     updatePost(editPostId, { text: editPostText.trim(), note: editPostNote.trim() || undefined, postedDate: editPostDate });
@@ -102,29 +123,34 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setDeleteConfirmId(null);
     if (editPostId === id) closeEditPost();
   };
+
+  // 直接追加（複数チャンネル）
+  const toggleAddChannel = (ch: string) =>
+    setAddChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
+
   const handleAddPost = () => {
-    if (!addText.trim() || !addDate) return;
-    addPost({ channel: addChannel, text: addText.trim(), postedDate: addDate, note: addNote.trim() || undefined });
+    if (!addText.trim() || !addDate || addChannels.length === 0) return;
+    addPost({ channels: addChannels, text: addText.trim(), postedDate: addDate, note: addNote.trim() || undefined });
     setAddText("");
     setAddDate("");
     setAddNote("");
+    setAddChannels(["X"]);
     setShowAddForm(false);
   };
 
-  // チャンネル切り替え（作成タブ）
+  // --- 作成 ---
   const handleChannelChange = (ch: Channel) => {
     setCreateChannel(ch);
     setGeneratedText("");
     setSaveMode(null);
-    // Facebookに切り替えたらnote-updateモードを解除
-    if (ch === "Facebook" && snsMode === "note-update") {
-      setSnsMode("normal");
-      setNoteSelectedArticle(null);
-      setNoteArticleQuery("");
-    }
+    // チャンネルを変えたらモードをリセット（互換モードに）
+    const modes = getModesForChannel(ch);
+    const isCurrentModeValid = modes.some((m) => m.value === snsMode);
+    if (!isCurrentModeValid) setSnsMode("normal");
+    setNoteSelectedArticle(null);
+    setNoteArticleQuery("");
   };
 
-  // モード切り替え（作成タブ・X専用）
   const handleSnsModeChange = (m: SnsMode) => {
     setSnsMode(m);
     setGeneratedText("");
@@ -138,21 +164,29 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     }
   };
 
-  // --- 作成 handlers ---
-  const handleGenerate = async () => {
-    if (isGenerating) return;
-    if (snsMode === "note-update" && !noteSelectedArticle) return;
+  const canGenerate =
+    snsMode === "note-update" || snsMode === "note-article"
+      ? !!noteSelectedArticle
+      : true;
 
+  const generateButtonLabel = (() => {
+    if (isGenerating) return "生成中...";
+    if (snsMode === "normal" && createMemo.trim()) return "この内容で生成する";
+    return "おまかせで生成する";
+  })();
+
+  const handleGenerate = async () => {
+    if (isGenerating || !canGenerate) return;
     abortRef.current = new AbortController();
     setIsGenerating(true);
     setGeneratedText("");
     setSaveMode(null);
     setJustSaved(false);
 
-    const body =
-      snsMode === "note-update"
-        ? { channel: createChannel, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "", notebookEntries: [] }
-        : { channel: createChannel, memo: createMemo, notebookEntries: notebookEntries ?? [] };
+    const isArticleMode = snsMode === "note-update" || snsMode === "note-article";
+    const body = isArticleMode
+      ? { channel: createChannel, mode: snsMode, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "" }
+      : { channel: createChannel, mode: snsMode, memo: createMemo, notebookEntries: notebookEntries ?? [] };
 
     try {
       const resp = await fetch("/api/sns-generate", {
@@ -161,10 +195,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
         body: JSON.stringify(body),
         signal: abortRef.current.signal,
       });
-      if (!resp.ok || !resp.body) {
-        setGeneratedText("エラーが発生しました。もう一度試してください。");
-        return;
-      }
+      if (!resp.ok || !resp.body) { setGeneratedText("エラーが発生しました。もう一度試してください。"); return; }
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
       let buf = "";
@@ -175,17 +206,23 @@ export default function TabSns({ notebookEntries, articles }: Props) {
         setGeneratedText(buf);
       }
     } catch (e: unknown) {
-      if (e instanceof Error && e.name !== "AbortError") {
-        setGeneratedText("エラーが発生しました。もう一度試してください。");
-      }
+      if (e instanceof Error && e.name !== "AbortError") setGeneratedText("エラーが発生しました。もう一度試してください。");
     } finally {
       setIsGenerating(false);
     }
   };
 
+  // 投稿済みとして記録する（複数チャンネル選択）
+  const openSaveAsPosted = () => {
+    setRecordChannels([createChannel]);
+    setSaveMode("posted");
+  };
+  const toggleRecordChannel = (ch: string) =>
+    setRecordChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
+
   const handleSaveAsPosted = () => {
-    if (!generatedText.trim()) return;
-    addPost({ channel: createChannel, text: generatedText.trim(), postedDate: postedDate || todayIso, note: postNote.trim() || undefined });
+    if (!generatedText.trim() || recordChannels.length === 0) return;
+    addPost({ channels: recordChannels, text: generatedText.trim(), postedDate: postedDate || todayIso, note: postNote.trim() || undefined });
     setJustSaved(true);
     setSaveMode(null);
     setTimeout(() => {
@@ -195,6 +232,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       setNoteArticleQuery("");
       setPostedDate(new Date().toISOString().slice(0, 10));
       setPostNote("");
+      setRecordChannels([]);
       setJustSaved(false);
       setSubTab("list");
     }, 1200);
@@ -202,7 +240,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
 
   const handleSaveAsDraft = () => {
     if (!generatedText.trim()) return;
-    addDraft({ channel: createChannel, text: generatedText.trim(), createdAt: new Date().toISOString() });
+    addDraft({ channels: [createChannel], text: generatedText.trim(), createdAt: new Date().toISOString() });
     setJustSaved(true);
     setSaveMode(null);
     setTimeout(() => {
@@ -215,17 +253,14 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     }, 1200);
   };
 
-  // --- 下書き handlers ---
+  // --- 下書き ---
   const openEditDraft = (d: SnsDraft) => {
     setEditDraftId(d.id);
     setEditDraftText(d.text);
     setEditDraftSaved(false);
     setDeleteDraftConfirmId(null);
   };
-  const closeEditDraft = () => {
-    setEditDraftId(null);
-    setEditDraftSaved(false);
-  };
+  const closeEditDraft = () => { setEditDraftId(null); setEditDraftSaved(false); };
   const handleSaveEditDraft = () => {
     if (!editDraftId || !editDraftText.trim()) return;
     updateDraft(editDraftId, { text: editDraftText.trim() });
@@ -233,7 +268,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setTimeout(closeEditDraft, 1000);
   };
   const handleSaveDraftAsPosted = (d: SnsDraft) => {
-    addPost({ channel: d.channel, text: d.text, postedDate: todayIso });
+    addPost({ channels: d.channels, text: d.text, postedDate: todayIso });
     removeDraft(d.id);
     if (editDraftId === d.id) closeEditDraft();
   };
@@ -246,8 +281,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     { key: "drafts", label: `下書き${drafts.length > 0 ? `（${drafts.length}）` : ""}` },
   ];
 
-  const charLimitNote = createChannel === "X" ? "140字以内" : "300〜600字";
-  const canGenerate = snsMode === "note-update" ? !!noteSelectedArticle : true;
+  const currentModes = getModesForChannel(createChannel);
+  const charLimitNote =
+    createChannel === "X" ? "140字以内" :
+    createChannel === "Threads" ? "140〜500字" :
+    "300〜600字";
 
   return (
     <div className="space-y-4">
@@ -271,7 +309,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex gap-1">
-              {(["all", "X", "Facebook"] as const).map((ch) => (
+              {(["all", ...ALL_CHANNELS] as const).map((ch) => (
                 <button
                   key={ch}
                   onClick={() => setListChannelFilter(ch)}
@@ -296,21 +334,26 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           </div>
 
+          {/* 直接追加フォーム */}
           {showAddForm && (
             <div className="bg-zinc-800 rounded-xl p-4 space-y-3 border border-zinc-600">
               <p className="text-xs text-zinc-400 font-medium">投稿を直接追加</p>
-              <div className="flex gap-2">
-                {(["X", "Facebook"] as const).map((ch) => (
-                  <button
-                    key={ch}
-                    onClick={() => setAddChannel(ch)}
-                    className={`text-xs px-3 py-1 rounded-lg border transition-colors ${
-                      addChannel === ch ? "border-zinc-500 bg-zinc-600 text-white" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {ch}
-                  </button>
-                ))}
+              {/* チャンネル複数選択 */}
+              <div>
+                <p className="text-xs text-zinc-500 mb-1.5">チャンネル（複数選択可）</p>
+                <div className="flex gap-2">
+                  {ALL_CHANNELS.map((ch) => (
+                    <label key={ch} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={addChannels.includes(ch)}
+                        onChange={() => toggleAddChannel(ch)}
+                        className="accent-zinc-400 w-3.5 h-3.5"
+                      />
+                      <span className="text-xs text-zinc-300">{ch}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               <textarea
                 value={addText}
@@ -338,7 +381,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
               <div className="flex gap-2">
                 <button
                   onClick={handleAddPost}
-                  disabled={!addText.trim() || !addDate}
+                  disabled={!addText.trim() || !addDate || addChannels.length === 0}
                   className="px-4 py-1.5 text-sm bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
                 >
                   追加
@@ -353,6 +396,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           )}
 
+          {/* 投稿一覧 */}
           {filteredPosts.length === 0 ? (
             <div className="text-center py-12 text-zinc-500 text-sm">
               <p>まだ投稿記録がありません</p>
@@ -362,8 +406,10 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             filteredPosts.map((p) => (
               <div key={p.id} className="bg-zinc-800 rounded-xl overflow-hidden">
                 <div className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[p.channel]}`}>{p.channel}</span>
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    {p.channels.map((ch) => (
+                      <span key={ch} className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[ch] ?? "bg-zinc-700 text-zinc-200"}`}>{ch}</span>
+                    ))}
                     <span className="text-xs text-zinc-500">{formatDate(p.postedDate)}</span>
                   </div>
                   <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-2">{p.text}</p>
@@ -377,26 +423,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                     </button>
                     {deleteConfirmId === p.id ? (
                       <>
-                        <button
-                          onClick={() => handleDeletePost(p.id)}
-                          className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg"
-                        >
-                          削除する
-                        </button>
-                        <button
-                          onClick={() => setDeleteConfirmId(null)}
-                          className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg"
-                        >
-                          キャンセル
-                        </button>
+                        <button onClick={() => handleDeletePost(p.id)} className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg">削除する</button>
+                        <button onClick={() => setDeleteConfirmId(null)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg">キャンセル</button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => setDeleteConfirmId(p.id)}
-                        className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors"
-                      >
-                        削除
-                      </button>
+                      <button onClick={() => setDeleteConfirmId(p.id)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors">削除</button>
                     )}
                   </div>
                 </div>
@@ -429,18 +460,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                       <button
                         onClick={handleSaveEditPost}
                         disabled={editSaved || !editPostText.trim()}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                          editSaved ? "bg-green-600 text-white" : "bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white"
-                        }`}
+                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${editSaved ? "bg-green-600 text-white" : "bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white"}`}
                       >
                         {editSaved ? "✓ 保存しました" : "保存"}
                       </button>
-                      <button
-                        onClick={closeEditPost}
-                        className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-                      >
-                        キャンセル
-                      </button>
+                      <button onClick={closeEditPost} className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">キャンセル</button>
                     </div>
                   </div>
                 )}
@@ -454,11 +478,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       {subTab === "create" && (
         <div className="space-y-4">
 
-          {/* チャンネル選択 */}
+          {/* チャンネル選択（単一・生成ルール用） */}
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">チャンネル</label>
             <div className="flex gap-2">
-              {(["X", "Facebook"] as const).map((ch) => (
+              {ALL_CHANNELS.map((ch) => (
                 <button
                   key={ch}
                   onClick={() => handleChannelChange(ch)}
@@ -475,24 +499,22 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             <p className="text-xs text-zinc-600">{charLimitNote}</p>
           </div>
 
-          {/* 投稿モード切り替え（Xのみ） */}
-          {createChannel === "X" && (
-            <div className="flex gap-1 bg-zinc-800/60 rounded-lg p-1">
-              {(["normal", "note-update"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => handleSnsModeChange(m)}
-                  className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
-                    snsMode === m ? "bg-zinc-600 text-white" : "text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {m === "normal" ? "通常の投稿" : "note記事の更新を知らせる"}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* 投稿モード切り替え（全チャンネル） */}
+          <div className="flex gap-1 bg-zinc-800/60 rounded-lg p-1">
+            {currentModes.map((m) => (
+              <button
+                key={m.value}
+                onClick={() => handleSnsModeChange(m.value)}
+                className={`flex-1 text-xs py-1.5 rounded-md font-medium transition-colors ${
+                  snsMode === m.value ? "bg-zinc-600 text-white" : "text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
 
-          {/* === 通常の投稿モード === */}
+          {/* 通常モード：メモ入力 */}
           {snsMode === "normal" && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -533,12 +555,14 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           )}
 
-          {/* === note記事の更新を知らせるモード（X専用） === */}
-          {snsMode === "note-update" && (
+          {/* 記事選択モード（note-update / note-article） */}
+          {(snsMode === "note-update" || snsMode === "note-article") && (
             <div className="space-y-3">
               {!noteSelectedArticle ? (
                 <div className="bg-zinc-800 rounded-xl p-4">
-                  <p className="text-xs text-zinc-400 font-medium mb-3">告知するnote記事を選ぶ</p>
+                  <p className="text-xs text-zinc-400 font-medium mb-3">
+                    {snsMode === "note-article" ? "投稿のもとにするnote記事を選ぶ" : "告知するnote記事を選ぶ"}
+                  </p>
                   <input
                     type="text"
                     value={noteArticleQuery}
@@ -593,7 +617,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             disabled={isGenerating || !canGenerate}
             className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {isGenerating ? "生成中..." : "おまかせで生成する"}
+            {generateButtonLabel}
           </button>
 
           {isGenerating && (
@@ -609,7 +633,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
           {generatedText && (
             <div className="space-y-3">
               <div className="bg-zinc-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[createChannel]}`}>{createChannel}</span>
                   <p className="text-xs text-zinc-500">生成結果</p>
                 </div>
@@ -629,6 +653,23 @@ export default function TabSns({ notebookEntries, articles }: Props) {
               ) : saveMode === "posted" ? (
                 <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
                   <p className="text-xs text-zinc-400 font-medium">投稿済みとして記録</p>
+                  {/* 複数チャンネル選択 */}
+                  <div>
+                    <p className="text-xs text-zinc-500 mb-1.5">記録するチャンネル（複数選択可）</p>
+                    <div className="flex gap-3">
+                      {ALL_CHANNELS.map((ch) => (
+                        <label key={ch} className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={recordChannels.includes(ch)}
+                            onChange={() => toggleRecordChannel(ch)}
+                            className="accent-zinc-400 w-3.5 h-3.5"
+                          />
+                          <span className="text-xs text-zinc-300">{ch}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex gap-2 items-center">
                     <label className="text-xs text-zinc-500">投稿日</label>
                     <input
@@ -648,40 +689,26 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                   <div className="flex gap-2">
                     <button
                       onClick={handleSaveAsPosted}
-                      className="px-4 py-1.5 text-sm bg-zinc-600 hover:bg-zinc-500 text-white rounded-lg transition-colors"
+                      disabled={recordChannels.length === 0}
+                      className="px-4 py-1.5 text-sm bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white rounded-lg transition-colors"
                     >
                       記録する
                     </button>
-                    <button
-                      onClick={() => setSaveMode(null)}
-                      className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-                    >
-                      戻る
-                    </button>
+                    <button onClick={() => setSaveMode(null)} className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">戻る</button>
                   </div>
                 </div>
               ) : saveMode === "draft" ? (
                 <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
                   <p className="text-xs text-zinc-400">下書きとして保存しますか？</p>
                   <div className="flex gap-2">
-                    <button
-                      onClick={handleSaveAsDraft}
-                      className="px-4 py-1.5 text-sm bg-zinc-600 hover:bg-zinc-500 text-white rounded-lg transition-colors"
-                    >
-                      保存する
-                    </button>
-                    <button
-                      onClick={() => setSaveMode(null)}
-                      className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-                    >
-                      戻る
-                    </button>
+                    <button onClick={handleSaveAsDraft} className="px-4 py-1.5 text-sm bg-zinc-600 hover:bg-zinc-500 text-white rounded-lg transition-colors">保存する</button>
+                    <button onClick={() => setSaveMode(null)} className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">戻る</button>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setSaveMode("posted")}
+                    onClick={openSaveAsPosted}
                     className="flex-1 py-2 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-xl transition-colors"
                   >
                     投稿済みとして記録する
@@ -703,7 +730,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       {subTab === "drafts" && (
         <div className="space-y-3">
           <p className="text-xs text-zinc-500">下書き（{drafts.length}件）</p>
-
           {drafts.length === 0 ? (
             <div className="text-center py-12 text-zinc-500 text-sm">
               <p>下書きはありません</p>
@@ -713,8 +739,10 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             drafts.map((d) => (
               <div key={d.id} className="bg-zinc-800 rounded-xl overflow-hidden">
                 <div className="p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[d.channel]}`}>{d.channel}</span>
+                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    {d.channels.map((ch) => (
+                      <span key={ch} className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[ch] ?? "bg-zinc-700 text-zinc-200"}`}>{ch}</span>
+                    ))}
                     <span className="text-xs text-zinc-500">{formatDateTime(d.createdAt)}</span>
                   </div>
                   <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-2 line-clamp-3">{d.text}</p>
@@ -733,26 +761,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                     </button>
                     {deleteDraftConfirmId === d.id ? (
                       <>
-                        <button
-                          onClick={() => { removeDraft(d.id); setDeleteDraftConfirmId(null); if (editDraftId === d.id) closeEditDraft(); }}
-                          className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg"
-                        >
-                          削除する
-                        </button>
-                        <button
-                          onClick={() => setDeleteDraftConfirmId(null)}
-                          className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg"
-                        >
-                          キャンセル
-                        </button>
+                        <button onClick={() => { removeDraft(d.id); setDeleteDraftConfirmId(null); if (editDraftId === d.id) closeEditDraft(); }} className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg">削除する</button>
+                        <button onClick={() => setDeleteDraftConfirmId(null)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg">キャンセル</button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => setDeleteDraftConfirmId(d.id)}
-                        className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors"
-                      >
-                        削除
-                      </button>
+                      <button onClick={() => setDeleteDraftConfirmId(d.id)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors">削除</button>
                     )}
                   </div>
                 </div>
@@ -769,18 +782,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                       <button
                         onClick={handleSaveEditDraft}
                         disabled={editDraftSaved || !editDraftText.trim()}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                          editDraftSaved ? "bg-green-600 text-white" : "bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white"
-                        }`}
+                        className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${editDraftSaved ? "bg-green-600 text-white" : "bg-zinc-600 hover:bg-zinc-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-white"}`}
                       >
                         {editDraftSaved ? "✓ 保存しました" : "保存"}
                       </button>
-                      <button
-                        onClick={closeEditDraft}
-                        className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-                      >
-                        キャンセル
-                      </button>
+                      <button onClick={closeEditDraft} className="px-4 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">キャンセル</button>
                     </div>
                   </div>
                 )}
