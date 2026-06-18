@@ -18,9 +18,28 @@ export function useSnsDB() {
   useEffect(() => {
     try {
       const p = localStorage.getItem(POSTS_KEY);
-      if (p) setPosts(JSON.parse(p));
+      if (p) {
+        // 旧データ移行: channel(string) → channels(string[])
+        const parsed = JSON.parse(p);
+        setPosts(parsed.map((item: SnsPost & { channel?: string }) => {
+          if (!item.channels) {
+            const { channel, ...rest } = item;
+            return { ...rest, channels: channel ? [channel] : ["X"] };
+          }
+          return item;
+        }));
+      }
       const d = localStorage.getItem(DRAFTS_KEY);
-      if (d) setDrafts(JSON.parse(d));
+      if (d) {
+        const parsed = JSON.parse(d);
+        setDrafts(parsed.map((item: SnsDraft & { channel?: string }) => {
+          if (!item.channels) {
+            const { channel, ...rest } = item;
+            return { ...rest, channels: channel ? [channel] : ["X"] };
+          }
+          return item;
+        }));
+      }
     } catch {}
     setLoaded(true);
   }, []);

@@ -83,7 +83,24 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
       <div ref={listTopRef} className="space-y-3">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-medium text-zinc-400">ネタ帳（{entries.length}件）</h3>
-          <p className="text-xs text-zinc-600">ヘッダーの「＋ ネタを書く」から追加</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                const data = JSON.stringify(entries, null, 2);
+                const blob = new Blob([data], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `notebook-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              ↓ ネタ帳をダウンロード
+            </button>
+            <p className="text-xs text-zinc-600">ヘッダーの「＋ ネタを書く」から追加</p>
+          </div>
         </div>
 
         {pagedEntries.map((e) => (

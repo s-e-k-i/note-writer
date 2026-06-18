@@ -397,7 +397,7 @@ export default function TabBulletin({ notebookEntries }: Props) {
             disabled={isGenerating}
             className="w-full py-2.5 bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white text-sm font-medium rounded-xl transition-colors"
           >
-            {isGenerating ? "生成中..." : "おまかせで生成する"}
+            {isGenerating ? "生成中..." : createMemo.trim() ? "この内容で生成する" : "おまかせで生成する"}
           </button>
 
           {isGenerating && (

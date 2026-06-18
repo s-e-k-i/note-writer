@@ -54,7 +54,7 @@ export interface BulletinDraft {
 
 export interface SnsPost {
   id: string;
-  channel: "X" | "Facebook";
+  channels: string[];   // ["X"], ["Facebook"], ["Threads"], ["X","Threads"] etc.
   text: string;
   postedDate: string;
   note?: string;
@@ -62,7 +62,7 @@ export interface SnsPost {
 
 export interface SnsDraft {
   id: string;
-  channel: "X" | "Facebook";
+  channels: string[];
   text: string;
   createdAt: string;
 }
