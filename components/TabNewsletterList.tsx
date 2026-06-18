@@ -52,6 +52,12 @@ const DISTRIBUTION_BADGE_LABELS: Record<string, string> = {
   "ひとりビジネス診断": "診断",
 };
 
+const DISTRIBUTION_BADGE_COLORS: Record<string, string> = {
+  "メルマガ読者（通常・note経由）": "bg-green-900/50 text-green-300",
+  "ChatGPTの学校（無料プレゼント登録者）": "bg-purple-900/50 text-purple-300",
+  "ひとりビジネス診断": "bg-teal-900/50 text-teal-300",
+};
+
 function generateMonthRange(start: string, end: string): string[] {
   const result: string[] = [];
   const [sy, sm] = start.split("-").map(Number);
@@ -253,6 +259,9 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
   const [editFields, setEditFields] = useState<FormFields>(blankFields());
   const [editSaved, setEditSaved] = useState(false);
 
+  // Filter state
+  const [filterTarget, setFilterTarget] = useState<string>("all");
+
   // Memo tooltip — position: fixed で overflow: hidden を完全に脱出する
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -346,6 +355,9 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
   const maxDistCount = Math.max(...distributionCounts.map((d) => d.count), 1);
 
   const sortedNewsletters = [...newsletters].sort((a, b) => b.date.localeCompare(a.date));
+  const filteredNewsletters = filterTarget === "all"
+    ? sortedNewsletters
+    : sortedNewsletters.filter((n) => (n.distributionTargets ?? []).includes(filterTarget));
 
   // ── Add panel handlers ───────────────────────────────
   const openAdd = () => {
@@ -500,40 +512,59 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
         )}
       </div>
 
-      {/* List header */}
-      <div className="flex items-center justify-between">
+      {/* List header + filter */}
+      <div className="space-y-2">
         <h3 className="text-sm font-medium text-zinc-400">配信済みメルマガ（{newsletters.length}件）</h3>
+        <div className="flex flex-wrap gap-1.5">
+          {[
+            { label: "すべて", value: "all" },
+            { label: "メルマガ", value: "メルマガ読者（通常・note経由）" },
+            { label: "ChatGPT", value: "ChatGPTの学校（無料プレゼント登録者）" },
+            { label: "診断", value: "ひとりビジネス診断" },
+          ].map(({ label, value }) => (
+            <button
+              key={value}
+              onClick={() => setFilterTarget(value)}
+              className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                filterTarget === value
+                  ? "border-amber-500 bg-amber-500/10 text-amber-300"
+                  : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* List */}
-      {sortedNewsletters.length === 0 ? (
+      {filteredNewsletters.length === 0 ? (
         <div className="text-center py-12 text-zinc-500 text-sm">
-          まだ登録されたメルマガはありません
+          {filterTarget === "all" ? "まだ登録されたメルマガはありません" : "該当するメルマガはありません"}
         </div>
       ) : (
         <div className="space-y-2">
-          {sortedNewsletters.map((n) => (
+          {filteredNewsletters.map((n) => (
             <div key={n.id} className="bg-zinc-800 rounded-lg overflow-hidden">
-              {/* Card row */}
-              <div className="p-3 flex items-center gap-3">
-                <div className="text-xs text-zinc-300 shrink-0 whitespace-nowrap">
+              {/* Card row — 1行コンパクト */}
+              <div className="px-3 py-2 flex items-center gap-2">
+                <span className="text-xs text-zinc-400 shrink-0 whitespace-nowrap">
                   {n.issueNumber ? `${n.issueNumber}号・${n.date}` : n.date}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-zinc-200 text-sm font-medium truncate">{n.title}</p>
-                  {n.distributionTargets && n.distributionTargets.length > 0 && (
-                    <div className="flex gap-1 mt-0.5 flex-wrap">
-                      {n.distributionTargets.map((t) => {
-                        const label = DISTRIBUTION_BADGE_LABELS[t];
-                        return label ? (
-                          <span key={t} className="text-xs bg-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded">
-                            {label}
-                          </span>
-                        ) : null;
-                      })}
-                    </div>
-                  )}
-                </div>
+                </span>
+                {n.distributionTargets && n.distributionTargets.length > 0 && (
+                  <div className="flex gap-1 shrink-0 flex-wrap">
+                    {n.distributionTargets.map((t) => {
+                      const label = DISTRIBUTION_BADGE_LABELS[t];
+                      const color = DISTRIBUTION_BADGE_COLORS[t] ?? "bg-zinc-700 text-zinc-400";
+                      return label ? (
+                        <span key={t} className={`text-xs px-1.5 py-0.5 rounded ${color}`}>
+                          {label}
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+                <p className="flex-1 min-w-0 text-sm text-zinc-300 truncate">{n.title}</p>
 
                 {/* メモアイコン — 幅を常に確保してレイアウトを固定 */}
                 <div className="shrink-0 w-6 h-6 flex items-center justify-center">
