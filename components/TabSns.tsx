@@ -49,7 +49,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addText, setAddText] = useState("");
   const [addChannels, setAddChannels] = useState<string[]>(["X"]);
-  const [addDate, setAddDate] = useState("");
+  const [addDate, setAddDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [addNote, setAddNote] = useState("");
 
   // --- 作成 tab state ---
@@ -113,13 +113,18 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const toggleAddChannel = (ch: string) =>
     setAddChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
   const handleAddPost = () => {
-    if (!addText.trim() || !addDate || addChannels.length === 0) return;
+    console.log("[TabSns] handleAddPost called", { addText: addText.trim(), addDate, addChannels });
+    if (!addText.trim() || !addDate || addChannels.length === 0) {
+      console.log("[TabSns] guard: returned early (disabled condition matched)");
+      return;
+    }
     addPost({ channels: addChannels, text: addText.trim(), postedDate: addDate, note: addNote.trim() || undefined });
     setAddText("");
-    setAddDate("");
+    setAddDate(new Date().toISOString().slice(0, 10));
     setAddNote("");
     setAddChannels(["X"]);
     setShowAddForm(false);
+    console.log("[TabSns] setShowAddForm(false) called — form should close");
   };
 
   // --- 作成：チャンネルトグル（X/Threads は複数可、Facebook は排他）---

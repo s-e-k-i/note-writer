@@ -33,7 +33,7 @@ export default function TabBulletin({ notebookEntries }: Props) {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addText, setAddText] = useState("");
-  const [addDate, setAddDate] = useState("");
+  const [addDate, setAddDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [addNote, setAddNote] = useState("");
 
   // --- 作成 tab state ---
@@ -81,12 +81,17 @@ export default function TabBulletin({ notebookEntries }: Props) {
     if (editPostId === id) closeEditPost();
   };
   const handleAddPost = () => {
-    if (!addText.trim() || !addDate) return;
+    console.log("[TabBulletin] handleAddPost called", { addText: addText.trim(), addDate });
+    if (!addText.trim() || !addDate) {
+      console.log("[TabBulletin] guard: returned early (disabled condition matched)");
+      return;
+    }
     addPost({ text: addText.trim(), postedDate: addDate, note: addNote.trim() || undefined });
     setAddText("");
-    setAddDate("");
+    setAddDate(new Date().toISOString().slice(0, 10));
     setAddNote("");
     setShowAddForm(false);
+    console.log("[TabBulletin] setShowAddForm(false) called — form should close");
   };
 
   // --- 作成 handlers ---
