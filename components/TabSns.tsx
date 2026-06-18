@@ -417,12 +417,12 @@ export default function TabSns({ notebookEntries, articles }: Props) {
               <div key={p.id} className="bg-zinc-800 rounded-lg overflow-hidden">
                 {/* 1行コンパクト表示 */}
                 <div className="px-3 py-2 flex items-center gap-3">
-                  {/* 左：チャンネルバッジ＋日付 */}
+                  {/* 左：日付＋チャンネルバッジ */}
                   <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                    <span className="text-xs text-zinc-500 whitespace-nowrap">{formatDate(p.postedDate)}</span>
                     {p.channels.map((ch) => (
                       <span key={ch} className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[ch] ?? "bg-zinc-700 text-zinc-200"}`}>{ch}</span>
                     ))}
-                    <span className="text-xs text-zinc-500 whitespace-nowrap">{formatDate(p.postedDate)}</span>
                   </div>
                   {/* 中央：本文プレビュー */}
                   <p className="flex-1 min-w-0 text-sm text-zinc-400 truncate">
