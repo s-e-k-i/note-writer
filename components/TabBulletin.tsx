@@ -271,12 +271,17 @@ export default function TabBulletin({ notebookEntries }: Props) {
             </div>
           ) : (
             posts.map((p) => (
-              <div key={p.id} className="bg-zinc-800 rounded-xl overflow-hidden">
-                <div className="p-4">
-                  <p className="text-xs text-zinc-500 mb-1">{formatDate(p.postedDate)}</p>
-                  <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-2">{p.text}</p>
-                  {p.note && <p className="text-xs text-zinc-500 italic mb-2">メモ: {p.note}</p>}
-                  <div className="flex gap-2">
+              <div key={p.id} className="bg-zinc-800 rounded-lg overflow-hidden">
+                {/* 1行コンパクト表示 */}
+                <div className="px-3 py-2 flex items-center gap-3">
+                  {/* 左：日付 */}
+                  <span className="text-xs text-zinc-500 shrink-0 whitespace-nowrap">{formatDate(p.postedDate)}</span>
+                  {/* 中央：本文プレビュー */}
+                  <p className="flex-1 min-w-0 text-sm text-zinc-400 truncate">
+                    {p.text.replace(/\n/g, " ")}
+                  </p>
+                  {/* 右：ボタン */}
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => (editPostId === p.id ? closeEditPost() : openEditPost(p))}
                       className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
@@ -293,15 +298,15 @@ export default function TabBulletin({ notebookEntries }: Props) {
                         </button>
                         <button
                           onClick={() => setDeleteConfirmId(null)}
-                          className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg"
+                          className="text-xs px-1.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                         >
-                          キャンセル
+                          ×
                         </button>
                       </>
                     ) : (
                       <button
                         onClick={() => setDeleteConfirmId(p.id)}
-                        className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors"
+                        className="text-xs px-2 py-1 text-zinc-600 hover:text-red-400 transition-colors"
                       >
                         削除
                       </button>

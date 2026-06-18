@@ -48,8 +48,12 @@ body {
   color: #e4e4e7;
 }
 
-/* ダークモード用カレンダーアイコン */
+/* date input：アプリ全体ダークモード固定のためグローバルで適用 */
+input[type="date"] {
+  color-scheme: dark;
+}
+
 input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.8);
+  filter: invert(1);
   cursor: pointer;
 }

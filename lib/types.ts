@@ -31,6 +31,7 @@ export interface NewsletterDraft {
   sourceArticleUrl?: string;
   distributionTargets?: string[];
   createdAt: string;
+  isRewritten?: boolean;
 }
 
 export interface NotebookEntry {

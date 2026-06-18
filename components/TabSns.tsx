@@ -406,7 +406,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           )}
 
-          {/* 投稿一覧 */}
+          {/* 投稿一覧（コンパクト表示） */}
           {filteredPosts.length === 0 ? (
             <div className="text-center py-12 text-zinc-500 text-sm">
               <p>まだ投稿記録がありません</p>
@@ -414,17 +414,22 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           ) : (
             filteredPosts.map((p) => (
-              <div key={p.id} className="bg-zinc-800 rounded-xl overflow-hidden">
-                <div className="p-4">
-                  <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+              <div key={p.id} className="bg-zinc-800 rounded-lg overflow-hidden">
+                {/* 1行コンパクト表示 */}
+                <div className="px-3 py-2 flex items-center gap-3">
+                  {/* 左：チャンネルバッジ＋日付 */}
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                     {p.channels.map((ch) => (
                       <span key={ch} className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[ch] ?? "bg-zinc-700 text-zinc-200"}`}>{ch}</span>
                     ))}
-                    <span className="text-xs text-zinc-500">{formatDate(p.postedDate)}</span>
+                    <span className="text-xs text-zinc-500 whitespace-nowrap">{formatDate(p.postedDate)}</span>
                   </div>
-                  <p className="text-sm text-zinc-300 leading-relaxed whitespace-pre-wrap mb-2">{p.text}</p>
-                  {p.note && <p className="text-xs text-zinc-500 italic mb-2">メモ: {p.note}</p>}
-                  <div className="flex gap-2">
+                  {/* 中央：本文プレビュー */}
+                  <p className="flex-1 min-w-0 text-sm text-zinc-400 truncate">
+                    {p.text.replace(/\n/g, " ")}
+                  </p>
+                  {/* 右：ボタン */}
+                  <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       onClick={() => (editPostId === p.id ? closeEditPost() : openEditPost(p))}
                       className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
@@ -434,10 +439,10 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                     {deleteConfirmId === p.id ? (
                       <>
                         <button onClick={() => handleDeletePost(p.id)} className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg">削除する</button>
-                        <button onClick={() => setDeleteConfirmId(null)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 rounded-lg">キャンセル</button>
+                        <button onClick={() => setDeleteConfirmId(null)} className="text-xs px-1.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors">×</button>
                       </>
                     ) : (
-                      <button onClick={() => setDeleteConfirmId(p.id)} className="text-xs px-2.5 py-1 border border-zinc-700 text-zinc-500 hover:text-red-400 hover:border-red-700/50 rounded-lg transition-colors">削除</button>
+                      <button onClick={() => setDeleteConfirmId(p.id)} className="text-xs px-2 py-1 text-zinc-600 hover:text-red-400 transition-colors">削除</button>
                     )}
                   </div>
                 </div>
