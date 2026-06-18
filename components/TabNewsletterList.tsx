@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Newsletter } from "@/lib/types";
+import DateInput from "@/components/DateInput";
 
 interface PendingDraft {
   title: string;
@@ -180,11 +181,10 @@ function FormPanel({ f, setF, onSave, onCancel, onDelete, saved, canSave, onIssu
       {/* 配信日 */}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">配信日<span className="text-red-400 ml-1">*</span></label>
-        <input
-          type="date"
+        <DateInput
           value={f.date}
           onChange={(e) => setF((p) => ({ ...p, date: e.target.value }))}
-          className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500 [color-scheme:dark]"
+          className="w-48 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-amber-500"
         />
       </div>
 

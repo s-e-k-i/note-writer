@@ -53,7 +53,8 @@ input[type="date"] {
   color-scheme: dark;
 }
 
-input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(1);
+/* DateInputコンポーネント用：ブラウザ標準アイコンを非表示にしてlucideアイコンに差し替え */
+.date-input-custom::-webkit-calendar-picker-indicator {
+  opacity: 0;
   cursor: pointer;
 }

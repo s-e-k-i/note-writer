@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { BulletinPost, BulletinDraft, NotebookEntry } from "@/lib/types";
 import { useBulletinDB } from "@/lib/useBulletinDB";
+import DateInput from "@/components/DateInput";
 
 interface Props {
   notebookEntries?: NotebookEntry[];
@@ -232,11 +233,9 @@ export default function TabBulletin({ notebookEntries }: Props) {
               />
               <div className="flex gap-2 items-center">
                 <label className="text-xs text-zinc-500">投稿日</label>
-                <input
-                  type="date"
+                <DateInput
                   value={addDate}
                   onChange={(e) => setAddDate(e.target.value)}
-                  style={{ colorScheme: "dark" }}
                   className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
                 />
               </div>
@@ -324,11 +323,9 @@ export default function TabBulletin({ notebookEntries }: Props) {
                     />
                     <div className="flex gap-2 items-center">
                       <label className="text-xs text-zinc-500">投稿日</label>
-                      <input
-                        type="date"
+                      <DateInput
                         value={editPostDate}
                         onChange={(e) => setEditPostDate(e.target.value)}
-                        style={{ colorScheme: "dark" }}
                         className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
                       />
                     </div>
@@ -441,11 +438,9 @@ export default function TabBulletin({ notebookEntries }: Props) {
                   <p className="text-xs text-zinc-400 font-medium">投稿済みとして記録</p>
                   <div className="flex gap-2 items-center">
                     <label className="text-xs text-zinc-500">投稿日</label>
-                    <input
-                      type="date"
+                    <DateInput
                       value={postedDate}
                       onChange={(e) => setPostedDate(e.target.value)}
-                      style={{ colorScheme: "dark" }}
                       className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none focus:border-zinc-500"
                     />
                   </div>
