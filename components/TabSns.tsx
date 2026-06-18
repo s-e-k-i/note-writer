@@ -13,7 +13,8 @@ type SubTab = "list" | "create" | "drafts";
 type Channel = "X" | "Facebook" | "Threads";
 type SnsMode = "normal" | "note-update" | "note-article";
 
-const ALL_CHANNELS: Channel[] = ["X", "Facebook", "Threads"];
+// X → Threads → Facebook の順
+const ALL_CHANNELS: Channel[] = ["X", "Threads", "Facebook"];
 
 const CHANNEL_COLORS: Record<string, string> = {
   X: "bg-zinc-700 text-zinc-200",
@@ -31,21 +32,6 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-// チャンネルに応じたモード選択肢
-function getModesForChannel(ch: Channel): { value: SnsMode; label: string }[] {
-  if (ch === "Facebook") {
-    return [
-      { value: "normal", label: "通常の投稿" },
-      { value: "note-article", label: "note記事から書く" },
-    ];
-  }
-  // X / Threads
-  return [
-    { value: "normal", label: "通常の投稿" },
-    { value: "note-update", label: "noteの更新を知らせる" },
-  ];
-}
-
 export default function TabSns({ notebookEntries, articles }: Props) {
   const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB();
   const [subTab, setSubTab] = useState<SubTab>("list");
@@ -59,7 +45,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [editSaved, setEditSaved] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // 直接追加フォーム（複数チャンネル選択）
+  // 直接追加フォーム
   const [showAddForm, setShowAddForm] = useState(false);
   const [addText, setAddText] = useState("");
   const [addChannels, setAddChannels] = useState<string[]>(["X"]);
@@ -67,7 +53,8 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [addNote, setAddNote] = useState("");
 
   // --- 作成 tab state ---
-  const [createChannel, setCreateChannel] = useState<Channel>("X");
+  // X・Threads は複数選択可、Facebook は排他
+  const [createChannels, setCreateChannels] = useState<Channel[]>(["X"]);
   const [snsMode, setSnsMode] = useState<SnsMode>("normal");
   const [createMemo, setCreateMemo] = useState("");
   const [showNotebookDropdown, setShowNotebookDropdown] = useState(false);
@@ -76,7 +63,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   const [generatedText, setGeneratedText] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveMode, setSaveMode] = useState<"posted" | "draft" | null>(null);
-  // 投稿済み記録用の複数チャンネル選択
   const [recordChannels, setRecordChannels] = useState<string[]>([]);
   const [postedDate, setPostedDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [postNote, setPostNote] = useState("");
@@ -111,7 +97,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setDeleteConfirmId(null);
   };
   const closeEditPost = () => { setEditPostId(null); setEditSaved(false); };
-
   const handleSaveEditPost = () => {
     if (!editPostId || !editPostText.trim()) return;
     updatePost(editPostId, { text: editPostText.trim(), note: editPostNote.trim() || undefined, postedDate: editPostDate });
@@ -124,10 +109,9 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     if (editPostId === id) closeEditPost();
   };
 
-  // 直接追加（複数チャンネル）
+  // 直接追加
   const toggleAddChannel = (ch: string) =>
     setAddChannels((prev) => prev.includes(ch) ? prev.filter((c) => c !== ch) : [...prev, ch]);
-
   const handleAddPost = () => {
     if (!addText.trim() || !addDate || addChannels.length === 0) return;
     addPost({ channels: addChannels, text: addText.trim(), postedDate: addDate, note: addNote.trim() || undefined });
@@ -138,17 +122,29 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setShowAddForm(false);
   };
 
-  // --- 作成 ---
-  const handleChannelChange = (ch: Channel) => {
-    setCreateChannel(ch);
+  // --- 作成：チャンネルトグル（X/Threads は複数可、Facebook は排他）---
+  const handleChannelToggle = (ch: Channel) => {
+    let next: Channel[];
+    if (ch === "Facebook") {
+      next = ["Facebook"];
+    } else {
+      const withoutFb = createChannels.filter((c) => c !== "Facebook");
+      if (withoutFb.includes(ch)) {
+        const filtered = withoutFb.filter((c) => c !== ch);
+        next = filtered.length > 0 ? filtered : [ch]; // 最低1つ残す
+      } else {
+        next = [...withoutFb, ch];
+      }
+    }
+    setCreateChannels(next);
     setGeneratedText("");
     setSaveMode(null);
-    // チャンネルを変えたらモードをリセット（互換モードに）
-    const modes = getModesForChannel(ch);
-    const isCurrentModeValid = modes.some((m) => m.value === snsMode);
-    if (!isCurrentModeValid) setSnsMode("normal");
     setNoteSelectedArticle(null);
     setNoteArticleQuery("");
+    // モードの整合性チェック
+    const isFb = next.includes("Facebook");
+    if (isFb && snsMode === "note-update") setSnsMode("normal");
+    if (!isFb && snsMode === "note-article") setSnsMode("normal");
   };
 
   const handleSnsModeChange = (m: SnsMode) => {
@@ -163,6 +159,21 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       setShowNotebookDropdown(false);
     }
   };
+
+  // 最も制約の厳しいチャンネルを代表として使う（API呼び出しや文字数カウント用）
+  const primaryChannel: Channel = createChannels.includes("X") ? "X"
+    : createChannels.includes("Threads") ? "Threads"
+    : "Facebook";
+
+  const isFacebookSelected = createChannels.includes("Facebook");
+
+  const currentModes: { value: SnsMode; label: string }[] = isFacebookSelected
+    ? [{ value: "normal", label: "通常の投稿" }, { value: "note-article", label: "note記事から書く" }]
+    : [{ value: "normal", label: "通常の投稿" }, { value: "note-update", label: "noteの更新を知らせる" }];
+
+  const charLimitNote = createChannels.includes("X") ? "140字以内（Xの制限を優先）"
+    : createChannels.includes("Threads") ? "140〜500字程度"
+    : "300〜600字程度";
 
   const canGenerate =
     snsMode === "note-update" || snsMode === "note-article"
@@ -185,8 +196,8 @@ export default function TabSns({ notebookEntries, articles }: Props) {
 
     const isArticleMode = snsMode === "note-update" || snsMode === "note-article";
     const body = isArticleMode
-      ? { channel: createChannel, mode: snsMode, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "" }
-      : { channel: createChannel, mode: snsMode, memo: createMemo, notebookEntries: notebookEntries ?? [] };
+      ? { channel: primaryChannel, mode: snsMode, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "" }
+      : { channel: primaryChannel, mode: snsMode, memo: createMemo, notebookEntries: notebookEntries ?? [] };
 
     try {
       const resp = await fetch("/api/sns-generate", {
@@ -212,9 +223,9 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     }
   };
 
-  // 投稿済みとして記録する（複数チャンネル選択）
+  // 投稿済みとして記録（生成時に選択していたチャンネルをデフォルトでセット）
   const openSaveAsPosted = () => {
-    setRecordChannels([createChannel]);
+    setRecordChannels([...createChannels]);
     setSaveMode("posted");
   };
   const toggleRecordChannel = (ch: string) =>
@@ -240,7 +251,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
 
   const handleSaveAsDraft = () => {
     if (!generatedText.trim()) return;
-    addDraft({ channels: [createChannel], text: generatedText.trim(), createdAt: new Date().toISOString() });
+    addDraft({ channels: [...createChannels], text: generatedText.trim(), createdAt: new Date().toISOString() });
     setJustSaved(true);
     setSaveMode(null);
     setTimeout(() => {
@@ -281,12 +292,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     { key: "drafts", label: `下書き${drafts.length > 0 ? `（${drafts.length}）` : ""}` },
   ];
 
-  const currentModes = getModesForChannel(createChannel);
-  const charLimitNote =
-    createChannel === "X" ? "140字以内" :
-    createChannel === "Threads" ? "140〜500字" :
-    "300〜600字";
-
   return (
     <div className="space-y-4">
       {/* Sub-tab bar */}
@@ -308,6 +313,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       {subTab === "list" && (
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
+            {/* フィルター: すべて → X → Threads → Facebook */}
             <div className="flex gap-1">
               {(["all", ...ALL_CHANNELS] as const).map((ch) => (
                 <button
@@ -338,7 +344,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
           {showAddForm && (
             <div className="bg-zinc-800 rounded-xl p-4 space-y-3 border border-zinc-600">
               <p className="text-xs text-zinc-400 font-medium">投稿を直接追加</p>
-              {/* チャンネル複数選択 */}
               <div>
                 <p className="text-xs text-zinc-500 mb-1.5">チャンネル（複数選択可）</p>
                 <div className="flex gap-2">
@@ -478,16 +483,16 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       {subTab === "create" && (
         <div className="space-y-4">
 
-          {/* チャンネル選択（単一・生成ルール用） */}
+          {/* チャンネル選択（X/Threads 複数可、Facebook 排他） */}
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">チャンネル</label>
             <div className="flex gap-2">
               {ALL_CHANNELS.map((ch) => (
                 <button
                   key={ch}
-                  onClick={() => handleChannelChange(ch)}
+                  onClick={() => handleChannelToggle(ch)}
                   className={`px-4 py-2 text-sm rounded-xl border transition-colors ${
-                    createChannel === ch
+                    createChannels.includes(ch)
                       ? "border-zinc-500 bg-zinc-600 text-white font-medium"
                       : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600"
                   }`}
@@ -499,7 +504,7 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             <p className="text-xs text-zinc-600">{charLimitNote}</p>
           </div>
 
-          {/* 投稿モード切り替え（全チャンネル） */}
+          {/* 投稿モード切り替え */}
           <div className="flex gap-1 bg-zinc-800/60 rounded-lg p-1">
             {currentModes.map((m) => (
               <button
@@ -633,8 +638,10 @@ export default function TabSns({ notebookEntries, articles }: Props) {
           {generatedText && (
             <div className="space-y-3">
               <div className="bg-zinc-800 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2 flex-wrap">
-                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[createChannel]}`}>{createChannel}</span>
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  {createChannels.map((ch) => (
+                    <span key={ch} className={`text-xs px-1.5 py-0.5 rounded font-medium ${CHANNEL_COLORS[ch]}`}>{ch}</span>
+                  ))}
                   <p className="text-xs text-zinc-500">生成結果</p>
                 </div>
                 <textarea
@@ -643,8 +650,8 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                   rows={8}
                   className="w-full bg-transparent text-sm text-zinc-200 resize-y focus:outline-none font-sans leading-relaxed"
                 />
-                <p className={`text-xs mt-1 ${createChannel === "X" && generatedText.length > 140 ? "text-red-400" : "text-zinc-600"}`}>
-                  {generatedText.length}字{createChannel === "X" && generatedText.length > 140 && "（140字超）"}
+                <p className={`text-xs mt-1 ${primaryChannel === "X" && generatedText.length > 140 ? "text-red-400" : "text-zinc-600"}`}>
+                  {generatedText.length}字{primaryChannel === "X" && generatedText.length > 140 && "（140字超）"}
                 </p>
               </div>
 
@@ -653,7 +660,6 @@ export default function TabSns({ notebookEntries, articles }: Props) {
               ) : saveMode === "posted" ? (
                 <div className="bg-zinc-800 rounded-xl p-4 space-y-3">
                   <p className="text-xs text-zinc-400 font-medium">投稿済みとして記録</p>
-                  {/* 複数チャンネル選択 */}
                   <div>
                     <p className="text-xs text-zinc-500 mb-1.5">記録するチャンネル（複数選択可）</p>
                     <div className="flex gap-3">
