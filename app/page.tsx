@@ -15,6 +15,7 @@ import TabNewsletterDrafts from "@/components/TabNewsletterDrafts";
 import TabNotebook from "@/components/TabNotebook";
 import TabBulletin from "@/components/TabBulletin";
 import TabSns from "@/components/TabSns";
+import ProfileDocumentPanel from "@/components/ProfileDocumentPanel";
 import PasswordGate from "@/components/PasswordGate";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
@@ -23,7 +24,7 @@ import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
 const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
-type Section = "note" | "newsletter" | "notebook" | "sns";
+type Section = "note" | "newsletter" | "notebook" | "sns" | "settings";
 type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts" | "bulletin";
 type NewsletterTab = "list" | "write" | "drafts";
 type RewriteMode = "rewrite" | "polish";
@@ -153,7 +154,7 @@ export default function Home() {
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
           <div className="max-w-4xl mx-auto flex items-center">
             <div className="flex gap-1 flex-1">
-              {(["note", "newsletter", "notebook", "sns"] as Section[]).map((s) => (
+              {(["note", "newsletter", "notebook", "sns", "settings"] as Section[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSection(s)}
@@ -163,7 +164,7 @@ export default function Home() {
                       : "border-transparent text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : s === "notebook" ? "ネタ帳" : "発信"}
+                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : s === "notebook" ? "ネタ帳" : s === "sns" ? "発信" : "設定"}
                 </button>
               ))}
             </div>
@@ -317,6 +318,14 @@ export default function Home() {
               {/* sns section */}
               {section === "sns" && (
                 <TabSns notebookEntries={notebookEntries} articles={articles} />
+              )}
+
+              {/* settings section */}
+              {section === "settings" && (
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-300 mb-4">プロフィールドキュメント</h2>
+                  <ProfileDocumentPanel />
+                </div>
               )}
             </>
           )}
