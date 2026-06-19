@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT } from "@/lib/profile";
+import { ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 
 const client = new Anthropic();
 
@@ -7,7 +8,10 @@ export async function POST(request: Request) {
   try {
     const { body, existingTitles } = await request.json();
 
-    const systemPrompt = `${PROFILE_DOCUMENT}
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}
+
+${ACCURACY_RULES}
 
 あなたは関達也（せきたつや）の記事タイトルを改善する専門家です。
 以下の条件を守ってタイトルを5案生成してください：

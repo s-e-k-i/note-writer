@@ -1,11 +1,12 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
+import { ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 
 const client = new Anthropic();
 
-function buildRewritePrompt(articleText: string): { system: string; user: string } {
+function buildRewritePrompt(articleText: string, profileDoc: string): { system: string; user: string } {
   return {
-    system: `${PROFILE_DOCUMENT}
+    system: `${profileDoc}
 
 あなたは関達也さんの編集者として、記事を改善するアドバイスを行います。
 以下の観点で分析し、具体的な改善提案とリライト全文を提供してください。
@@ -38,9 +39,9 @@ ${articleText}
   };
 }
 
-function buildPolishPrompt(articleText: string): { system: string; user: string } {
+function buildPolishPrompt(articleText: string, profileDoc: string): { system: string; user: string } {
   return {
-    system: `${PROFILE_DOCUMENT}
+    system: `${profileDoc}
 
 あなたは関達也さんの専属校正者です。
 記事の最終チェックを行い、指摘と修正案を出したあと、修正後の全文を出力してください。
@@ -92,10 +93,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "articleText is required" }, { status: 400 });
     }
 
+    const profileDoc = await getProfileDocument();
     const { system, user } =
       mode === "polish"
-        ? buildPolishPrompt(articleText)
-        : buildRewritePrompt(articleText);
+        ? buildPolishPrompt(articleText, profileDoc)
+        : buildRewritePrompt(articleText, profileDoc);
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",

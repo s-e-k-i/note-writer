@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
+import { ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { Article, ConsultMessage } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
 
@@ -40,7 +41,7 @@ function buildArticlesSummary(articles: Article[]): string {
     .join("\n");
 }
 
-function buildSystemPrompt(articles: Article[], articleType?: string): string {
+function buildSystemPrompt(articles: Article[], articleType?: string, profileDoc = ""): string {
   const articleCount = articles.length;
   const magazineCounts = buildMagazineCounts(articles);
   const articlesSummary = buildArticlesSummary(articles);
@@ -54,7 +55,7 @@ function buildSystemPrompt(articles: Article[], articleType?: string): string {
     ? `\n**有料ライン位置**：（どこから有料にするか。「〇〇の見出しの後から」と具体的に）\n**無料と有料の比率**：（例：7割無料・3割有料）`
     : "";
 
-  return `${PROFILE_DOCUMENT}
+  return `${profileDoc}
 
 あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。${paidSystemNote}
 
@@ -134,7 +135,8 @@ export async function POST(request: Request) {
     const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
 
     const articleList: Article[] = articles || [];
-    const systemPrompt = buildSystemPrompt(articleList, articleType);
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = buildSystemPrompt(articleList, articleType, profileDoc);
 
     let userMessages: ConsultMessage[] = messages || [];
 

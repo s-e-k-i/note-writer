@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, NEWSLETTER_RULES } from "@/lib/profile";
+import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 
 const client = new Anthropic();
 
@@ -11,9 +12,12 @@ export async function POST(request: Request) {
       ? articleBody.slice(0, 2000)
       : articleSummary ?? "";
 
-    const systemPrompt = `${PROFILE_DOCUMENT}
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}
 
 ${NEWSLETTER_RULES}
+
+${ACCURACY_RULES}
 
 あなたは関達也のメルマガ編集者として、note記事をメルマガ向けダイジェストに仕立てるアイデアを提案します。`;
 

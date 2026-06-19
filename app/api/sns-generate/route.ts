@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, SNS_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { SNS_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { getSharedContext } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
 
@@ -73,7 +74,8 @@ export async function POST(request: Request) {
     }
 
     const isArticleMode = isNoteUpdate || isNoteArticle;
-    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${SNS_RULES}\n\n${ACCURACY_RULES}`;
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}\n\n${SNS_RULES}\n\n${ACCURACY_RULES}`;
     const userMessage = `${channelInstruction}
 ${memoSection}${isArticleMode ? "" : notebookSection}${isArticleMode ? "" : sharedContextSection}
 上記のルールに従い、投稿文のみを出力してください。説明文や前置きは不要です。`;

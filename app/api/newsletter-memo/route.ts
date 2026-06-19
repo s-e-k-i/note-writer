@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, NEWSLETTER_RULES } from "@/lib/profile";
+import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { Article, Newsletter } from "@/lib/types";
 
 const client = new Anthropic();
@@ -29,7 +30,8 @@ export async function POST(request: Request) {
       ? `【配信先】この提案は「${targetCategory}」の読者向けに最適化すること。その読者の関心・知識レベル・求めているものを意識した角度・内容・トーンにする。\n`
       : `【配信先】AIが最も適切な配信先カテゴリを判断すること。各提案のdescriptionの末尾に「※〇〇向け」（メルマガ読者/ChatGPTの学校/ひとりビジネス診断のいずれか）と一言明記する。\n`;
 
-    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
 
     const userMessage = `以下は関達也が書いたメモです。殴り書き・バラバラでも構いません。
 

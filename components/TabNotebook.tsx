@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { NotebookEntry } from "@/lib/types";
 import SharedContextPanel from "./SharedContextPanel";
+import ProfileDocumentPanel from "./ProfileDocumentPanel";
 
 interface Props {
   entries: NotebookEntry[];
@@ -73,6 +74,7 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
           <p className="mb-1">ネタ帳はまだ空です</p>
           <p>ヘッダーの「＋ ネタを書く」ボタンから登録できます</p>
         </div>
+        <ProfileDocumentPanel />
         <SharedContextPanel />
       </div>
     );

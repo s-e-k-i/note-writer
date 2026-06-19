@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { Newsletter } from "@/lib/types";
 
 const client = new Anthropic();
@@ -35,7 +36,8 @@ export async function POST(request: Request) {
       .map((n, i) => `【配信${i + 1}・${n.date}】${n.title}\n${n.body.slice(0, 400)}`)
       .join("\n\n---\n\n");
 
-    const systemPrompt = `${PROFILE_DOCUMENT}
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}
 
 ${NEWSLETTER_RULES}
 

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
+import { ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { Article } from "@/lib/types";
 
 const client = new Anthropic();
@@ -38,7 +39,8 @@ export async function POST(request: Request) {
       ? `\n━━━━━━━━━━━━━━━━━━━━━━━━\n【有料記事として提案する】\n━━━━━━━━━━━━━━━━━━━━━━━━\n有料記事として設計すること${price && price !== "ai" ? `（価格設定：${price}円）` : ""}。各提案に有料ライン位置と無料・有料の比率を必ず含めること。\n`
       : "";
 
-    const systemPrompt = `${PROFILE_DOCUMENT}
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}
 
 あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。
 ${paidSystemNote}

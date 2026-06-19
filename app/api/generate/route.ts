@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
+import { ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 import { Article } from "@/lib/types";
 
 const client = new Anthropic();
@@ -89,7 +90,8 @@ export async function POST(request: Request) {
 - 関達也のジャンル：体験談×ひとりビジネスノウハウの混合型。読み物系と実用系の中間。`
       : "";
 
-    const systemPrompt = `${PROFILE_DOCUMENT}
+    const profileDoc = await getProfileDocument();
+    const systemPrompt = `${profileDoc}
 
 【これまでの記事一覧（重複回避のため参照）】
 ${articlesSummary}

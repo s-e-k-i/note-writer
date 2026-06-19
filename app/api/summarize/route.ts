@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, MAGAZINES } from "@/lib/profile";
+import { MAGAZINES, ACCURACY_RULES } from "@/lib/profile";
+import { getProfileDocument } from "@/lib/getProfileDocument";
 
 const client = new Anthropic();
 
@@ -12,11 +13,12 @@ export async function POST(request: Request) {
     }
 
     const bodyPreview = body.slice(0, 1500);
+    const profileDoc = await getProfileDocument();
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 500,
-      system: PROFILE_DOCUMENT,
+      system: `${profileDoc}\n\n${ACCURACY_RULES}`,
       messages: [
         {
           role: "user",
