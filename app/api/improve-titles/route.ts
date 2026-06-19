@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { PROFILE_DOCUMENT } from "@/lib/profile";
 
 const client = new Anthropic();
 
@@ -6,7 +7,9 @@ export async function POST(request: Request) {
   try {
     const { body, existingTitles } = await request.json();
 
-    const systemPrompt = `あなたは関達也（せきたつや）の記事タイトルを改善する専門家です。
+    const systemPrompt = `${PROFILE_DOCUMENT}
+
+あなたは関達也（せきたつや）の記事タイトルを改善する専門家です。
 以下の条件を守ってタイトルを5案生成してください：
 - 記事本文の内容・体験談・数字・キーワードを必ず反映させる
 - ターゲット読者（ひとり起業・副業・再起を考えている人）が「これは自分のことだ」と感じる言葉を使う

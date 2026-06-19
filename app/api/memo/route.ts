@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { PROFILE_DOCUMENT } from "@/lib/profile";
 import { Article } from "@/lib/types";
 
 const client = new Anthropic();
@@ -37,21 +38,10 @@ export async function POST(request: Request) {
       ? `\n━━━━━━━━━━━━━━━━━━━━━━━━\n【有料記事として提案する】\n━━━━━━━━━━━━━━━━━━━━━━━━\n有料記事として設計すること${price && price !== "ai" ? `（価格設定：${price}円）` : ""}。各提案に有料ライン位置と無料・有料の比率を必ず含めること。\n`
       : "";
 
-    const systemPrompt = `あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。
-${paidSystemNote}
-━━━━━━━━━━━━━━━━━━━━━━━━
-【関達也のプロフィール・実績】
-━━━━━━━━━━━━━━━━━━━━━━━━
-- 50代シングルパパ。娘と神奈川のワンルーム暮らし
-- 24歳で独立、ひとり起業歴31年
-- メルマガ読者10万人・累計3000名超をサポート・著書あり（サンクチュアリ出版）
-- 9年連続年収1000〜8000万円の実績あり
-- 2020年：コロナ禍でキャンピングカー旅→家・家族・収入を同時に失いホームレス状態に
-- 2021〜2022年：寮付き派遣→Uber Eats配達員で再スタート
-- 2023年：3度倒れる（うつ・めまい・救急車）
-- 2025年5月：noteで再始動
-- 一人称は「僕」
+    const systemPrompt = `${PROFILE_DOCUMENT}
 
+あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。
+${paidSystemNote}
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【既存記事データベース（${articleCount}本）】
 ━━━━━━━━━━━━━━━━━━━━━━━━
