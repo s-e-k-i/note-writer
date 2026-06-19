@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, NEWSLETTER_RULES } from "@/lib/profile";
+import { PROFILE_DOCUMENT, NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
 
 const client = new Anthropic();
 
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       ? `\n【追加の指示・要望（最優先で反映すること）】\n${additionalInstructions.trim()}\n`
       : "";
 
-    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}`;
+    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
     const userMessage = `以下のメルマガ下書きをリライトしてください。
 
 【現在の下書き本文】

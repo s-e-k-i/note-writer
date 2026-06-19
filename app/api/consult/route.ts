@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT } from "@/lib/profile";
+import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
 import { Article, ConsultMessage } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
 
@@ -122,7 +122,9 @@ ${magazineCounts}
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【既存記事データベース（${articleCount}本）】
 ━━━━━━━━━━━━━━━━━━━━━━━━
-${articlesSummary}`;
+${articlesSummary}
+
+${ACCURACY_RULES}`;
 }
 
 export async function POST(request: Request) {

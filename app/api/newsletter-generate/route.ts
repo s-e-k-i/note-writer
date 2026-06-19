@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, NEWSLETTER_RULES } from "@/lib/profile";
+import { PROFILE_DOCUMENT, NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
 import { Newsletter } from "@/lib/types";
 
 const client = new Anthropic();
@@ -37,7 +37,9 @@ export async function POST(request: Request) {
 
     const systemPrompt = `${PROFILE_DOCUMENT}
 
-${NEWSLETTER_RULES}`;
+${NEWSLETTER_RULES}
+
+${ACCURACY_RULES}`;
 
     const distributionNote =
       distributionTarget && distributionTarget !== "ai"

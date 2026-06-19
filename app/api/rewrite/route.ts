@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT } from "@/lib/profile";
+import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
 
 const client = new Anthropic();
 
@@ -8,7 +8,9 @@ function buildRewritePrompt(articleText: string): { system: string; user: string
     system: `${PROFILE_DOCUMENT}
 
 あなたは関達也さんの編集者として、記事を改善するアドバイスを行います。
-以下の観点で分析し、具体的な改善提案とリライト全文を提供してください。`,
+以下の観点で分析し、具体的な改善提案とリライト全文を提供してください。
+
+${ACCURACY_RULES}`,
     user: `以下の記事を分析してください。
 
 ${articleText}
@@ -41,7 +43,9 @@ function buildPolishPrompt(articleText: string): { system: string; user: string 
     system: `${PROFILE_DOCUMENT}
 
 あなたは関達也さんの専属校正者です。
-記事の最終チェックを行い、指摘と修正案を出したあと、修正後の全文を出力してください。`,
+記事の最終チェックを行い、指摘と修正案を出したあと、修正後の全文を出力してください。
+
+${ACCURACY_RULES}`,
     user: `以下の記事を仕上げチェックしてください。
 
 ${articleText}

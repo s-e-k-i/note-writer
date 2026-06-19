@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT } from "@/lib/profile";
+import { PROFILE_DOCUMENT, ACCURACY_RULES } from "@/lib/profile";
 import { Article } from "@/lib/types";
 
 const client = new Anthropic();
@@ -71,7 +71,9 @@ ${articlesSummary}
 - 娘と生きるために走った日々。──ひとりで稼ぐ力を取り戻すまで
 - 自由になるための読書。──やりなおしの途中で
 - 僕と娘のキャンピングカー旅。──1ヶ月のつもりが1年半に
-- 陽はまた昇る。──3度のどん底から1億円と自由へ`;
+- 陽はまた昇る。──3度のどん底から1億円と自由へ
+
+${ACCURACY_RULES}`;
 
     const userMessage = `以下は関達也が書いたメモです。殴り書き・バラバラでも構いません。
 

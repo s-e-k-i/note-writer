@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { PROFILE_DOCUMENT, BULLETIN_RULES } from "@/lib/profile";
+import { PROFILE_DOCUMENT, BULLETIN_RULES, ACCURACY_RULES } from "@/lib/profile";
 import { getSharedContext } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     const memoSection = memo?.trim() ? `\n【参考にするメモ・ネタ】\n${memo.trim()}\n` : "";
 
-    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${BULLETIN_RULES}`;
+    const systemPrompt = `${PROFILE_DOCUMENT}\n\n${BULLETIN_RULES}\n\n${ACCURACY_RULES}`;
 
     const userMessage = `noteメンバーシップ向けの掲示板投稿を1つ作成してください。
 ${memoSection}${notebookSection}${sharedContextSection}
