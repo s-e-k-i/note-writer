@@ -40,21 +40,24 @@ interface TooltipState {
 const NEWSLETTER_START_MONTH = "2026-06";
 
 const DISTRIBUTION_TARGETS = [
-  "メルマガ読者（通常・note経由）",
+  "メルマガ読者（通常）",
+  "メルマガ読者（note経由）",
   "ChatGPTの学校（無料プレゼント登録者）",
   "ひとりビジネス診断",
 ];
 
-const DEFAULT_DISTRIBUTION = ["メルマガ読者（通常・note経由）"];
+const DEFAULT_DISTRIBUTION = ["メルマガ読者（通常）"];
 
 const DISTRIBUTION_BADGE_LABELS: Record<string, string> = {
-  "メルマガ読者（通常・note経由）": "メルマガ",
+  "メルマガ読者（通常）": "通常",
+  "メルマガ読者（note経由）": "note経由",
   "ChatGPTの学校（無料プレゼント登録者）": "ChatGPT",
   "ひとりビジネス診断": "診断",
 };
 
 const DISTRIBUTION_BADGE_COLORS: Record<string, string> = {
-  "メルマガ読者（通常・note経由）": "bg-green-900/50 text-green-300",
+  "メルマガ読者（通常）": "bg-green-900/50 text-green-300",
+  "メルマガ読者（note経由）": "bg-sky-900/50 text-sky-300",
   "ChatGPTの学校（無料プレゼント登録者）": "bg-purple-900/50 text-purple-300",
   "ひとりビジネス診断": "bg-teal-900/50 text-teal-300",
 };
@@ -117,10 +120,8 @@ interface FormPanelProps {
 }
 
 function FormPanel({ f, setF, onSave, onCancel, onDelete, saved, canSave, onIssueNumberEdit, onDistributionToggle }: FormPanelProps) {
-  const toggleTarget = (t: string) => {
-    const newTargets = f.distributionTargets.includes(t)
-      ? f.distributionTargets.filter((x) => x !== t)
-      : [...f.distributionTargets, t];
+  const selectTarget = (t: string) => {
+    const newTargets = [t];
     setF((p) => ({ ...p, distributionTargets: newTargets }));
     onDistributionToggle?.(newTargets);
   };
@@ -190,17 +191,17 @@ function FormPanel({ f, setF, onSave, onCancel, onDelete, saved, canSave, onIssu
 
       {/* 配信先 */}
       <div>
-        <label className="text-xs text-zinc-400 mb-2 block">配信先（複数可）</label>
+        <label className="text-xs text-zinc-400 mb-2 block">配信先</label>
         <div className="flex flex-wrap gap-2">
           {DISTRIBUTION_TARGETS.map((t) => {
-            const checked = f.distributionTargets.includes(t);
+            const selected = f.distributionTargets[0] === t;
             return (
               <button
                 key={t}
                 type="button"
-                onClick={() => toggleTarget(t)}
+                onClick={() => selectTarget(t)}
                 className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                  checked
+                  selected
                     ? "border-amber-500 bg-amber-500/10 text-amber-300"
                     : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-300"
                 }`}
@@ -518,7 +519,8 @@ export default function TabNewsletterList({ newsletters, onAdd, onUpdate, onDele
         <div className="flex flex-wrap gap-1.5">
           {[
             { label: "すべて", value: "all" },
-            { label: "メルマガ", value: "メルマガ読者（通常・note経由）" },
+            { label: "通常", value: "メルマガ読者（通常）" },
+            { label: "note経由", value: "メルマガ読者（note経由）" },
             { label: "ChatGPT", value: "ChatGPTの学校（無料プレゼント登録者）" },
             { label: "診断", value: "ひとりビジネス診断" },
           ].map(({ label, value }) => (

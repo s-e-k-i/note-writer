@@ -5,6 +5,16 @@ import { NewsletterDraft } from "./types";
 
 const STORAGE_KEY = "note_newsletter_drafts_db";
 
+const DISTRIBUTION_MIGRATION: Record<string, string> = {
+  "メルマガ読者（通常・note経由）": "メルマガ読者（通常）",
+};
+
+function migrateTargets(targets: string[] | undefined): string[] | undefined {
+  if (!targets || targets.length === 0) return targets;
+  const migrated = targets.map((t) => DISTRIBUTION_MIGRATION[t] ?? t);
+  return [migrated[0]];
+}
+
 export function useNewsletterDraftDB() {
   const [drafts, setDrafts] = useState<NewsletterDraft[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -12,7 +22,14 @@ export function useNewsletterDraftDB() {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setDrafts(JSON.parse(stored));
+      if (stored) {
+        const parsed: NewsletterDraft[] = JSON.parse(stored);
+        const migrated = parsed.map((d) => ({ ...d, distributionTargets: migrateTargets(d.distributionTargets) }));
+        if (JSON.stringify(migrated) !== stored) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        }
+        setDrafts(migrated);
+      }
     } catch {}
     setLoaded(true);
   }, []);

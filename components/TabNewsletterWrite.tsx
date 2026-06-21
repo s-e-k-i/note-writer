@@ -27,10 +27,15 @@ const WORD_COUNT_OPTIONS = [
 
 const DISTRIBUTION_TARGET_OPTIONS = [
   { value: "ai", label: "AIにおまかせ" },
-  { value: "メルマガ読者（通常・note経由）", label: "メルマガ読者" },
+  { value: "メルマガ読者（通常）", label: "メルマガ読者（通常）" },
+  { value: "メルマガ読者（note経由）", label: "メルマガ読者（note経由）" },
   { value: "ChatGPTの学校（無料プレゼント登録者）", label: "ChatGPTの学校" },
   { value: "ひとりビジネス診断", label: "ひとりビジネス診断" },
 ] as const;
+
+const DISTRIBUTION_TARGET_MIGRATION: Record<string, string> = {
+  "メルマガ読者（通常・note経由）": "メルマガ読者（通常）",
+};
 
 const MODE_CARDS: { id: NlWriteMode; icon: string; title: string; desc: string }[] = [
   { id: "auto", icon: "✨", title: "おまかせで提案して", desc: "AIがnote記事・配信済みメルマガの配信リズム、ネタ帳に書き留めたアイデアを分析し、今書くべきテーマを戦略的に提案" },
@@ -138,7 +143,8 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
       setWordCountMode(s.wordCountMode ?? "standard");
       setReferenceSample(s.referenceSample ?? "");
       setAdditionalInstructions(s.additionalInstructions ?? "");
-      setDistributionTarget(s.distributionTarget ?? "ai");
+      const rawTarget = s.distributionTarget ?? "ai";
+      setDistributionTarget(DISTRIBUTION_TARGET_MIGRATION[rawTarget] ?? rawTarget);
       setGeneratedBody(s.generatedBody ?? "");
       setEditedTitle(s.editedTitle ?? "");
       setGeneratedBodies(s.generatedBodies ?? {});

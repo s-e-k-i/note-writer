@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
     const distributionNote = targetCategory
       ? `【配信先】この提案は「${targetCategory}」の読者向けに最適化すること。その読者の関心・知識レベル・求めているものを意識した角度・内容・トーンにする。\n`
-      : `【配信先】AIが最も適切な配信先カテゴリを判断すること。各提案のdescriptionの末尾に「※〇〇向け」（メルマガ読者/ChatGPTの学校/ひとりビジネス診断のいずれか）と一言明記する。\n`;
+      : `【配信先】AIが最も適切な配信先カテゴリを判断すること。各提案のdescriptionの末尾に「※〇〇向け」（メルマガ読者（通常）/メルマガ読者（note経由）/ChatGPTの学校/ひとりビジネス診断のいずれか）と一言明記する。\n`;
 
     const profileDoc = await getProfileDocument();
     const systemPrompt = `${profileDoc}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
