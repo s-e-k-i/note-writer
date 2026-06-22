@@ -362,10 +362,6 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
   const paidCount = paidArticles.length;
   const totalPaidRevenue = paidArticles.reduce((sum, a) => sum + (a.paidPrice ?? 0), 0);
 
-  const suggestableMagazines = magazineCounts.filter((m) => m.name !== "未登録");
-  const leastMagazine = [...suggestableMagazines].sort((a, b) => a.count - b.count)[0];
-  const recentMagazines = new Set(articles.slice(0, 5).map((a) => a.magazine.split("──")[0].trim()));
-  const neglectedMagazine = suggestableMagazines.find((m) => !recentMagazines.has(m.name));
 
   return (
     <div className="space-y-6">
@@ -608,17 +604,6 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             )}
           </div>
 
-          {/* AI comment */}
-          <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl p-4 text-sm text-zinc-300 space-y-1.5">
-            <p className="text-amber-400 font-medium text-xs mb-2">AIからの一言</p>
-            {leastMagazine && leastMagazine.count < 5 && (
-              <p>「{leastMagazine.name}」はまだ{leastMagazine.count}本と少なめです。</p>
-            )}
-            {neglectedMagazine && (
-              <p>最近「{neglectedMagazine.name}」への投稿がないようです。そろそろ書いてみませんか？</p>
-            )}
-            <p>全{articles.length}本の記事データベースが読み込まれています。</p>
-          </div>
         </>
       )}
 

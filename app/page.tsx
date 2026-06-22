@@ -16,6 +16,7 @@ import TabNotebook from "@/components/TabNotebook";
 import TabBulletin from "@/components/TabBulletin";
 import TabSns from "@/components/TabSns";
 import ProfileDocumentPanel from "@/components/ProfileDocumentPanel";
+import NextSuggestionsPanel from "@/components/NextSuggestionsPanel";
 import PasswordGate from "@/components/PasswordGate";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
@@ -236,6 +237,11 @@ export default function Home() {
                   )}
                   {/* Keep TabConsult mounted so cached proposals survive tab switches */}
                   <div className={noteTab === "consult" ? "" : "hidden"}>
+                    <NextSuggestionsPanel
+                      articles={articles}
+                      notebookEntries={notebookEntries}
+                      onStartWriting={(theme, angle) => handleSelectTheme({ theme, sourceMemo: angle })}
+                    />
                     <TabConsult articles={articles} onSelectTheme={handleSelectTheme} notebookEntries={notebookEntries} />
                   </div>
                   {noteTab === "generate" && (
