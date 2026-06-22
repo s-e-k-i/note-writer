@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Article, NotebookEntry } from "@/lib/types";
-import type { Suggestion } from "@/app/api/next-suggestions/route";
+import { Article, NotebookEntry, Suggestion, SuggestionRole } from "@/lib/types";
 
 type SuggestionData = {
   date: string | null;
@@ -13,8 +12,14 @@ type SuggestionData = {
 interface Props {
   articles: Article[];
   notebookEntries?: NotebookEntry[];
-  onStartWriting: (theme: string, angle: string) => void;
+  onStartWriting: (suggestion: Suggestion) => void;
 }
+
+const ROLE_STYLE: Record<SuggestionRole, { badge: string; border: string }> = {
+  flow:          { badge: "bg-blue-900/60 text-blue-300 border border-blue-700/50",    border: "border-blue-700/30" },
+  sleeping_idea: { badge: "bg-green-900/60 text-green-300 border border-green-700/50", border: "border-green-700/30" },
+  crossover:     { badge: "bg-orange-900/60 text-orange-300 border border-orange-700/50", border: "border-orange-700/30" },
+};
 
 export default function NextSuggestionsPanel({ articles, notebookEntries, onStartWriting }: Props) {
   const [data, setData] = useState<SuggestionData | null>(null);
@@ -93,6 +98,7 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
             <div key={i} className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-4 animate-pulse space-y-2">
+              <div className="h-3 bg-zinc-700 rounded w-16 mb-2" />
               <div className="h-3.5 bg-zinc-700 rounded w-3/4" />
               <div className="h-3 bg-zinc-700/70 rounded w-full" />
               <div className="h-3 bg-zinc-700/70 rounded w-4/5" />
@@ -103,21 +109,37 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
 
       {!loading && data?.suggestions && data.suggestions.length > 0 && (
         <div className="space-y-3">
-          {data.suggestions.map((s, i) => (
-            <div
-              key={i}
-              className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-4 space-y-2.5 hover:border-zinc-600 transition-colors"
-            >
-              <p className="text-sm font-medium text-zinc-100 leading-snug">{s.title}</p>
-              <p className="text-xs text-zinc-400 leading-relaxed">{s.angle}</p>
-              <button
-                onClick={() => onStartWriting(s.title, s.angle)}
-                className="mt-1 px-3 py-1.5 bg-amber-500/90 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-colors"
+          {data.suggestions.map((s, i) => {
+            const style = ROLE_STYLE[s.role] ?? ROLE_STYLE.flow;
+            return (
+              <div
+                key={i}
+                className={`bg-zinc-800/60 border ${style.border} rounded-xl p-4 space-y-2.5 hover:border-opacity-60 transition-colors`}
               >
-                この案で書きはじめる →
-              </button>
-            </div>
-          ))}
+                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.badge}`}>
+                  {s.roleLabel}
+                </span>
+                <p className="text-sm font-medium text-zinc-100 leading-snug">{s.title}</p>
+                <p className="text-xs text-zinc-400 leading-relaxed">{s.angle}</p>
+                {s.role === "crossover" && s.sources.keywords?.length === 2 && (
+                  <p className="text-xs text-orange-400/70">
+                    掛け合わせ：{s.sources.keywords[0]} × {s.sources.keywords[1]}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    onClick={() => onStartWriting(s)}
+                    className="px-3 py-1.5 bg-amber-500/90 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-colors"
+                  >
+                    この案で書きはじめる →
+                  </button>
+                  {/* 将来実装予定 */}
+                  {/* <button className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded-lg transition-colors">深掘り相談</button> */}
+                  {/* <button className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs rounded-lg transition-colors">ネタ帳に戻す</button> */}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

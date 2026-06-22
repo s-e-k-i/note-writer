@@ -240,7 +240,16 @@ export default function Home() {
                     <NextSuggestionsPanel
                       articles={articles}
                       notebookEntries={notebookEntries}
-                      onStartWriting={(theme, angle) => handleSelectTheme({ theme, sourceMemo: angle })}
+                      onStartWriting={(suggestion) =>
+                        handleSelectTheme({
+                          theme: suggestion.title,
+                          sourceMemo: `【提案時の切り口】\n${suggestion.angle}`,
+                          fromSuggestions: true,
+                          suggestionRole: suggestion.role,
+                          suggestionRoleLabel: suggestion.roleLabel,
+                          suggestionSources: suggestion.sources,
+                        })
+                      }
                     />
                     <TabConsult articles={articles} onSelectTheme={handleSelectTheme} notebookEntries={notebookEntries} />
                   </div>

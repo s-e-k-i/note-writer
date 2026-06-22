@@ -71,6 +71,20 @@ export interface SnsDraft {
 export type ArticleType = "free" | "paid";
 export type WordCount = "short" | "standard" | "ai";
 
+export type SuggestionRole = "flow" | "sleeping_idea" | "crossover";
+
+export interface Suggestion {
+  role: SuggestionRole;
+  roleLabel: string;
+  title: string;
+  angle: string;
+  sources: {
+    ideaIds?: string[];
+    articleIds?: string[];
+    keywords?: string[];
+  };
+}
+
 export interface ProposalContext {
   theme: string;
   magazine?: string;
@@ -79,6 +93,14 @@ export interface ProposalContext {
   articleType?: ArticleType;
   price?: number;
   sourceMemo?: string;
+  fromSuggestions?: boolean;
+  suggestionRole?: SuggestionRole;
+  suggestionRoleLabel?: string;
+  suggestionSources?: {
+    ideaIds?: string[];
+    articleIds?: string[];
+    keywords?: string[];
+  };
 }
 
 export interface ConsultMessage {

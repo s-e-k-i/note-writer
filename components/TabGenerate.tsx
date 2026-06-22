@@ -52,6 +52,7 @@ function resolveInitialMagazine(name?: string): string {
 
 export default function TabGenerate({ articles, drafts, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
   const fromProposal = !!(initialProposal?.articleType);
+  const fromSuggestions = !!(initialProposal?.fromSuggestions);
 
   // Form state
   const [theme, setTheme] = useState(initialProposal?.theme ?? "");
@@ -119,6 +120,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     setMagazine(resolveInitialMagazine(initialProposal.magazine));
     setPurpose(initialProposal.purpose ?? "コンサル導線");
     setFullContext(initialProposal.fullContext ?? "");
+    setStructureMemo(initialProposal.fromSuggestions ? (initialProposal.sourceMemo ?? "") : "");
     setArticleType(initialProposal.articleType ?? "free");
     setPrice(initialProposal.price ?? null);
     setCustomPrice("");
@@ -171,6 +173,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     setCleared(true);
     setTheme("");
     setFullContext("");
+    setStructureMemo("");
     setArticleType("free");
     setPrice(null);
     setPriceIsAI(false);
@@ -213,6 +216,11 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
           fullContext: fullContext || undefined,
           structureMemo: structureMemo.trim() || undefined,
           writingStyle,
+          suggestionMeta: (fromSuggestions && !cleared) ? {
+            role: initialProposal?.suggestionRole,
+            roleLabel: initialProposal?.suggestionRoleLabel,
+            sources: initialProposal?.suggestionSources,
+          } : undefined,
         }),
         signal: controller.signal,
       });
@@ -495,8 +503,25 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
 
   return (
     <div className="space-y-5">
-      {/* Back to consult / 別のテーマで書く */}
-      {fullContext && (
+      {/* Back link / 別のテーマで書く */}
+      {(fromSuggestions && !cleared) ? (
+        <div className="flex items-center gap-4">
+          {onBackToConsult && (
+            <button
+              onClick={onBackToConsult}
+              className="text-zinc-500 hover:text-zinc-300 text-sm flex items-center gap-1"
+            >
+              ← 次の記事の提案に戻る
+            </button>
+          )}
+          <button
+            onClick={handleClearProposal}
+            className="text-zinc-500 hover:text-zinc-300 text-sm"
+          >
+            別のテーマで書く
+          </button>
+        </div>
+      ) : fullContext ? (
         <div className="flex items-center gap-4">
           {onBackToConsult && (
             <button
@@ -513,7 +538,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
             別のテーマで書く
           </button>
         </div>
-      )}
+      ) : null}
 
       {/* Proposal context card */}
       {fullContext && (

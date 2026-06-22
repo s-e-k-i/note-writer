@@ -14,10 +14,13 @@ function buildArticlesSummary(articles: Article[]): string {
 
 export async function POST(request: Request) {
   try {
-    const { theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle } =
+    const { theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle, suggestionMeta } =
       await request.json();
 
     console.log("[generate] writingStyle:", writingStyle);
+    if (suggestionMeta) {
+      console.log("[generate] suggestionMeta:", JSON.stringify(suggestionMeta));
+    }
 
     const isPaid = articleType === "paid";
     const articlesSummary = buildArticlesSummary(articles || []);
@@ -91,7 +94,12 @@ export async function POST(request: Request) {
       : "";
 
     const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}
+
+    const suggestionContext = suggestionMeta?.roleLabel
+      ? `\n【この記事の提案背景（参考情報）】\nこの記事は「次の記事の提案」機能の「${suggestionMeta.roleLabel}」から選ばれたものです。提案時の切り口と参照情報を踏まえ、その意図を活かして執筆してください。${suggestionMeta.role === "crossover" && suggestionMeta.sources?.keywords?.length ? `\n掛け合わせキーワード：${(suggestionMeta.sources.keywords as string[]).join(" × ")}` : ""}\n`
+      : "";
+
+    const systemPrompt = `${profileDoc}${suggestionContext}
 
 【これまでの記事一覧（重複回避のため参照）】
 ${articlesSummary}
