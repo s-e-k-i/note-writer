@@ -190,15 +190,16 @@ export default function Home() {
                     ? "Chrome/Edgeで使えます"
                     : pipContainer
                     ? "PiP表示中"
-                    : "ネタ書きウィンドウを常駐表示"
+                    : "PiPで開く"
                 }
-                className={`ml-1 px-2.5 py-1.5 text-xs rounded-lg transition-colors whitespace-nowrap ${
+                aria-label="PiPで開く"
+                className={`ml-1 px-2.5 py-1.5 text-xs rounded-lg transition-colors ${
                   !pipSupported || pipContainer
                     ? "bg-zinc-700 text-zinc-600 cursor-default"
                     : "bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
                 }`}
               >
-                ⧉ PiP
+                ⧉
               </button>
             )}
           </div>
