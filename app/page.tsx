@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useArticlesDB } from "@/lib/useArticlesDB";
 import { useNewsletterDB } from "@/lib/useNewsletterDB";
 import { useNotebookDB } from "@/lib/useNotebookDB";
@@ -17,7 +18,9 @@ import TabBulletin from "@/components/TabBulletin";
 import TabSns from "@/components/TabSns";
 import ProfileDocumentPanel from "@/components/ProfileDocumentPanel";
 import NextSuggestionsPanel from "@/components/NextSuggestionsPanel";
+import NotebookPiPWidget from "@/components/NotebookPiPWidget";
 import PasswordGate from "@/components/PasswordGate";
+import { usePiP } from "@/hooks/usePiP";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
@@ -55,6 +58,9 @@ export default function Home() {
   // notebook modal
   const [notebookModalOpen, setNotebookModalOpen] = useState(false);
   const [notebookModalText, setNotebookModalText] = useState("");
+
+  // Document PiP
+  const { pipSupported, pipContainer, openPiP, closePiP } = usePiP();
   const [todayStr, setTodayStr] = useState("");
 
   useEffect(() => {
@@ -175,6 +181,26 @@ export default function Home() {
             >
               ＋ ネタを書く
             </button>
+            {pipSupported !== null && (
+              <button
+                onClick={() => pipSupported && !pipContainer && openPiP(400, 400)}
+                disabled={!pipSupported || !!pipContainer}
+                title={
+                  !pipSupported
+                    ? "Chrome/Edgeで使えます"
+                    : pipContainer
+                    ? "PiP表示中"
+                    : "ネタ書きウィンドウを常駐表示"
+                }
+                className={`ml-1 px-2.5 py-1.5 text-xs rounded-lg transition-colors whitespace-nowrap ${
+                  !pipSupported || pipContainer
+                    ? "bg-zinc-700 text-zinc-600 cursor-default"
+                    : "bg-zinc-700 hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                ⧉ PiP
+              </button>
+            )}
           </div>
         </div>
 
@@ -355,6 +381,15 @@ export default function Home() {
       >
         ↑
       </button>
+
+      {/* Notebook PiP portal */}
+      {pipContainer && createPortal(
+        <NotebookPiPWidget
+          onSave={addNotebookEntry}
+          onClose={closePiP}
+        />,
+        pipContainer
+      )}
 
       {/* Notebook modal */}
       {notebookModalOpen && (
