@@ -10,11 +10,32 @@ export function useNotebookDB() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    let stored: NotebookEntry[] = [];
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) setEntries(JSON.parse(stored));
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) stored = JSON.parse(raw);
     } catch {}
+
+    setEntries(stored);
     setLoaded(true);
+
+    // idea-engineから追加されたエントリをRedis経由でマージ
+    fetch("/api/notebook-from-idea")
+      .then((r) => r.json())
+      .then(({ entries: redisEntries }: { entries: NotebookEntry[] }) => {
+        if (!redisEntries?.length) return;
+        setEntries((prev) => {
+          const existingIds = new Set(prev.map((e) => e.id));
+          const newEntries = redisEntries.filter((e) => !existingIds.has(e.id));
+          if (!newEntries.length) return prev;
+          const merged = [...newEntries, ...prev].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          );
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          return merged;
+        });
+      })
+      .catch(() => {});
   }, []);
 
   const addEntry = useCallback((text: string) => {
