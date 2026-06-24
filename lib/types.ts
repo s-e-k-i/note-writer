@@ -141,7 +141,7 @@ export interface ProposalHistoryEntry {
 
 export interface SubstackNewsItem {
   id: string;
-  sourceType: "youtube" | "x" | "rss";
+  sourceType: "youtube" | "x" | "rss" | "manual";
   sourceName: string;
   title: string;
   url: string;
@@ -149,6 +149,7 @@ export interface SubstackNewsItem {
   ideaSeed: string;
   collectedAt: string;
   status: "unread" | "use" | "skip";
+  isManual?: boolean;
 }
 
 export interface SubstackYouTubeSource {

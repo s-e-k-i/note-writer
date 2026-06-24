@@ -17,6 +17,18 @@ const KEYWORDS = [
   "claude code", "vibe coding", "AI agent", "one person company",
 ];
 
+const NITTER_INSTANCES = [
+  "https://nitter.net",
+  "https://nitter.privacydev.net",
+  "https://nitter.poast.org",
+];
+
+const RSSHUB_INSTANCES = [
+  "https://rsshub.app",
+];
+
+const SEARCH_KEYWORDS_EN = ["solopreneur", "AI automation", "Claude Code"];
+
 function matchesKeyword(text: string): boolean {
   const lower = text.toLowerCase();
   return KEYWORDS.some((k) => lower.includes(k.toLowerCase()));
@@ -39,6 +51,10 @@ const DEFAULT_SOURCES: SubstackSources = {
     { id: "rss_verge", name: "The Verge AI", url: "https://www.theverge.com/ai-artificial-intelligence/rss/index.xml" },
     { id: "rss_tldr", name: "TLDR AI", url: "https://tldr.tech/api/rss/ai" },
     { id: "rss_anthropic", name: "Anthropic News", url: "https://www.anthropic.com/news/rss" },
+    { id: "rss_hn_solo", name: "Hacker News: solopreneur", url: "https://hnrss.org/newest?q=solopreneur" },
+    { id: "rss_hn_claude", name: "Hacker News: claude code", url: "https://hnrss.org/newest?q=claude+code" },
+    { id: "rss_producthunt", name: "Product Hunt", url: "https://www.producthunt.com/feed" },
+    { id: "rss_indiehackers", name: "Indie Hackers", url: "https://feeds.feedburner.com/indie-hackers" },
   ],
 };
 
@@ -74,6 +90,84 @@ async function fetchRSSItems(
     console.warn(`[collect] RSS failed for ${url}:`, (e as Error).message);
     return [];
   }
+}
+
+// X/Twitter: DuckDuckGo検索経由で投稿URLを発見する（フォールバック3）
+async function fetchXViaSearch(
+  username: string,
+  sourceName: string,
+  existingUrls: Set<string>
+): Promise<SubstackNewsItem[]> {
+  const q = `site:x.com/${username}/status ${SEARCH_KEYWORDS_EN.slice(0, 2).join(" OR ")}`;
+  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+  try {
+    const res = await fetch(searchUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const re = new RegExp(`https://x\\.com/${username}/status/(\\d+)`, "gi");
+    const ids = [...new Set([...html.matchAll(re)].map((m) => m[1]))];
+    const results: SubstackNewsItem[] = [];
+    for (const id of ids.slice(0, 5)) {
+      const url = `https://x.com/${username}/status/${id}`;
+      if (existingUrls.has(url)) continue;
+      results.push({
+        id: `x_search_${id}`,
+        sourceType: "x",
+        sourceName,
+        title: `@${username}のポスト`,
+        url,
+        summary: "",
+        ideaSeed: "",
+        collectedAt: new Date().toISOString(),
+        status: "unread",
+      });
+    }
+    return results;
+  } catch (e) {
+    console.warn(`[collect] X search failed for ${username}:`, (e as Error).message);
+    return [];
+  }
+}
+
+// X取得のフォールバック構造: RSSHub → Nitter複数インスタンス → 検索 → スキップ
+async function fetchXWithFallback(
+  username: string,
+  sourceName: string,
+  existingUrls: Set<string>
+): Promise<SubstackNewsItem[]> {
+  // Step 1: RSSHub
+  for (const host of RSSHUB_INSTANCES) {
+    const url = `${host}/twitter/user/${username}`;
+    const items = await fetchRSSItems(url, sourceName, "x", existingUrls);
+    if (items.length > 0) {
+      console.log(`[collect] ${username}: RSSHub経由で${items.length}件取得`);
+      return items;
+    }
+  }
+
+  // Step 2: Nitter複数インスタンスを順番に試す
+  for (const host of NITTER_INSTANCES) {
+    const url = `${host}/${username}/rss`;
+    const items = await fetchRSSItems(url, sourceName, "x", existingUrls);
+    if (items.length > 0) {
+      console.log(`[collect] ${username}: Nitter(${host})で${items.length}件取得`);
+      return items;
+    }
+  }
+
+  // Step 3: DuckDuckGo検索経由
+  const searchItems = await fetchXViaSearch(username, sourceName, existingUrls);
+  if (searchItems.length > 0) {
+    console.log(`[collect] ${username}: 検索経由で${searchItems.length}件取得`);
+    return searchItems;
+  }
+
+  // Step 4: スキップ
+  console.log(`[collect] ${username}: 取得失敗、スキップ`);
+  return [];
 }
 
 async function fetchYouTubeItems(
@@ -169,8 +263,7 @@ async function runCollect() {
   }
 
   for (const acc of sources.x) {
-    const nitterUrl = `https://nitter.net/${acc.username}/rss`;
-    const items = await fetchRSSItems(nitterUrl, `@${acc.username}`, "x", existingUrls);
+    const items = await fetchXWithFallback(acc.username, `@${acc.username}`, existingUrls);
     candidates.push(...items);
   }
 

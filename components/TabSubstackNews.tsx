@@ -28,9 +28,10 @@ const TYPE_BADGE: Record<string, string> = {
   youtube: "bg-red-900/60 text-red-300 border border-red-700/50",
   x: "bg-zinc-700 text-zinc-200 border border-zinc-600",
   rss: "bg-blue-900/60 text-blue-300 border border-blue-700/50",
+  manual: "bg-amber-900/50 text-amber-300 border border-amber-700/50",
 };
 
-const TYPE_LABEL: Record<string, string> = { youtube: "YouTube", x: "X", rss: "RSS" };
+const TYPE_LABEL: Record<string, string> = { youtube: "YouTube", x: "X", rss: "RSS", manual: "手動" };
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -64,6 +65,11 @@ export default function TabSubstackNews({ onUseItem }: Props) {
   const [discovering, setDiscovering] = useState(false);
   const [discoverResult, setDiscoverResult] = useState<DiscoverResult | null>(null);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  // ── URLから追加 state ──────────────────────────────
+  const [addUrlInput, setAddUrlInput] = useState("");
+  const [addingUrl, setAddingUrl] = useState(false);
+  const [addUrlMsg, setAddUrlMsg] = useState<string | null>(null);
 
   // ── 初期ロード ────────────────────────────────────
   const loadItems = useCallback(async () => {
@@ -106,6 +112,33 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     } finally {
       setCollecting(false);
       setTimeout(() => setCollectMsg(null), 5000);
+    }
+  };
+
+  // ── URLから追加 ───────────────────────────────────
+  const handleAddUrl = async () => {
+    if (!addUrlInput.trim() || addingUrl) return;
+    setAddingUrl(true);
+    setAddUrlMsg(null);
+    try {
+      const res = await fetch("/api/add-url-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: addUrlInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setItems((prev) => [data.item, ...prev]);
+        setAddUrlInput("");
+        setAddUrlMsg("追加しました");
+      } else {
+        setAddUrlMsg(data.error ?? "エラーが発生しました");
+      }
+    } catch {
+      setAddUrlMsg("追加に失敗しました");
+    } finally {
+      setAddingUrl(false);
+      setTimeout(() => setAddUrlMsg(null), 4000);
     }
   };
 
@@ -248,6 +281,29 @@ export default function TabSubstackNews({ onUseItem }: Props) {
             )}
           </div>
 
+          {/* URLから追加 */}
+          <div className="flex gap-2 items-center">
+            <input
+              value={addUrlInput}
+              onChange={(e) => setAddUrlInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddUrl()}
+              placeholder="URLを貼り付けて追加（X投稿・ブログ記事など）"
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={handleAddUrl}
+              disabled={!addUrlInput.trim() || addingUrl}
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors shrink-0"
+            >
+              {addingUrl ? "処理中..." : "追加"}
+            </button>
+          </div>
+          {addUrlMsg && (
+            <p className={`text-xs ${addUrlMsg.includes("失敗") || addUrlMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
+              {addUrlMsg}
+            </p>
+          )}
+
           {/* フィルター */}
           <div className="space-y-2">
             <div className="flex gap-1 flex-wrap">
@@ -306,9 +362,14 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 >
                   {/* ヘッダー行 */}
                   <div className="flex items-start gap-2 flex-wrap">
-                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${TYPE_BADGE[item.sourceType]}`}>
-                      {TYPE_LABEL[item.sourceType]}
+                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${TYPE_BADGE[item.sourceType] ?? TYPE_BADGE.manual}`}>
+                      {TYPE_LABEL[item.sourceType] ?? "手動"}
                     </span>
+                    {item.isManual && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-amber-900/30 text-amber-400 border border-amber-700/30">
+                        手動
+                      </span>
+                    )}
                     <span className="text-xs text-zinc-400">{item.sourceName}</span>
                     <span className="ml-auto text-xs text-zinc-600">{formatDateTime(item.collectedAt)}</span>
                   </div>
@@ -578,10 +639,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
                               {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
                             </div>
-                            <button
-                              onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={ch.channelId ? `https://www.youtube.com/channel/${ch.channelId}` : `https://www.youtube.com/@${ch.name}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -599,10 +667,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
                               {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
                             </div>
-                            <button
-                              onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={ch.channelId ? `https://www.youtube.com/channel/${ch.channelId}` : `https://www.youtube.com/@${ch.name}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -626,10 +701,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-sm font-medium text-zinc-200">@{acc.username}</p>
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{acc.description}</p>
                             </div>
-                            <button
-                              onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={`https://x.com/${acc.username}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -646,10 +728,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-sm font-medium text-zinc-200">@{acc.username}</p>
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{acc.description}</p>
                             </div>
-                            <button
-                              onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={`https://x.com/${acc.username}`}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -674,10 +763,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{feed.description}</p>
                               <p className="text-xs text-zinc-600 truncate mt-0.5">{feed.url}</p>
                             </div>
-                            <button
-                              onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={feed.url}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -695,10 +791,17 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                               <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{feed.description}</p>
                               <p className="text-xs text-zinc-600 truncate mt-0.5">{feed.url}</p>
                             </div>
-                            <button
-                              onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
-                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                            >追加</button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <a
+                                href={feed.url}
+                                target="_blank" rel="noopener noreferrer"
+                                className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                              >↗ 確認する</a>
+                              <button
+                                onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
+                                className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                              >追加</button>
+                            </div>
                           </div>
                         </div>
                       ))}
