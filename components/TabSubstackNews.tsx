@@ -593,7 +593,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
               <input
                 value={discoverQuery}
                 onChange={(e) => setDiscoverQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleDiscover()}
+                onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && handleDiscover()}
                 placeholder="例：Claude Code 実践　solopreneur AI"
                 className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
               />
