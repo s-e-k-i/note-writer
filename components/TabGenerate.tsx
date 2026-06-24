@@ -26,6 +26,11 @@ interface GenerateCache {
   improvedTitlesRaw: string;
   articleType?: ArticleType;
   price?: number | null;
+  structureMemo?: string;
+  magazine?: string;
+  purpose?: string;
+  writingStyle?: "desu" | "de-aru" | "ai";
+  wordCount?: WordCount;
 }
 
 function loadGenerateCache(): GenerateCache | null {
@@ -135,6 +140,12 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     if (cacheMatch) {
       setGenerated(cached!.generated);
       setImprovedTitlesRaw(cached!.improvedTitlesRaw);
+      // 同じ提案に戻ってきたとき、ユーザーが編集したフォーム値を復元
+      if (cached!.structureMemo !== undefined) setStructureMemo(cached!.structureMemo);
+      if (cached!.magazine) setMagazine(cached!.magazine);
+      if (cached!.purpose) setPurpose(cached!.purpose);
+      if (cached!.writingStyle) setWritingStyle(cached!.writingStyle);
+      if (cached!.wordCount) setWordCount(cached!.wordCount);
     } else {
       setGenerated("");
       setImprovedTitlesRaw("");
@@ -151,6 +162,11 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
       setImprovedTitlesRaw(cached.improvedTitlesRaw);
       if (cached.articleType) setArticleType(cached.articleType);
       if (cached.price !== undefined) setPrice(cached.price);
+      if (cached.structureMemo !== undefined) setStructureMemo(cached.structureMemo);
+      if (cached.magazine) setMagazine(cached.magazine);
+      if (cached.purpose) setPurpose(cached.purpose);
+      if (cached.writingStyle) setWritingStyle(cached.writingStyle);
+      if (cached.wordCount) setWordCount(cached.wordCount);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -158,6 +174,24 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
   useEffect(() => {
     if (loading && generated) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [generated, loading]);
+
+  // フォーム値をキャッシュに自動保存（タブを離れて戻ったとき復元するため）
+  useEffect(() => {
+    if (!theme) return;
+    const existing = loadGenerateCache();
+    saveGenerateCache({
+      theme,
+      generated: existing?.theme === theme ? (existing!.generated ?? "") : "",
+      improvedTitlesRaw: existing?.theme === theme ? (existing!.improvedTitlesRaw ?? "") : "",
+      articleType,
+      price,
+      structureMemo,
+      magazine,
+      purpose,
+      writingStyle,
+      wordCount,
+    });
+  }, [theme, structureMemo, magazine, purpose, writingStyle, wordCount, articleType, price]);
 
   const isPaid = articleType === "paid";
   const isFromProposal = fromProposal && !cleared;
@@ -339,7 +373,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
       body,
       isPaid,
       price: isPaid ? (price ?? undefined) : undefined,
-      sourceMemo: initialProposal?.sourceMemo,
+      sourceMemo: structureMemo.trim() || undefined,
       draftType: "generate",
       version,
       versionGroup,
@@ -362,7 +396,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
       body,
       isPaid,
       price: isPaid ? (price ?? undefined) : undefined,
-      sourceMemo: initialProposal?.sourceMemo,
+      sourceMemo: structureMemo.trim() || undefined,
       draftType: "generate",
       version: nextVersion,
       versionGroup,
