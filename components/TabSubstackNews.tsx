@@ -14,10 +14,14 @@ type Section = "items" | "sources" | "discover";
 type StatusFilter = "all" | "unread" | "use" | "skip";
 type TypeFilter = "all" | "youtube" | "x" | "rss";
 
+interface YoutubeItem { name: string; channelId: string; description: string }
+interface XItem { username: string; description: string }
+interface RssItem { name: string; url: string; description: string }
+
 interface DiscoverResult {
-  youtube: { name: string; channelId: string; description: string }[];
-  x: { username: string; description: string }[];
-  rss: { name: string; url: string; description: string }[];
+  youtube: { overseas: YoutubeItem[]; japan: YoutubeItem[] };
+  x: { overseas: XItem[]; japan: XItem[] };
+  rss: { overseas: RssItem[]; japan: RssItem[] };
 }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -430,8 +434,8 @@ export default function TabSubstackNews({ onUseItem }: Props) {
           {/* X */}
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-zinc-200">Xアカウント</h4>
-            <p className="text-xs text-zinc-500">
-              ※ Nitter経由のRSSで取得します。将来的に取得できなくなる可能性があります。
+            <p className="text-xs text-red-400/80 bg-red-900/10 border border-red-800/20 rounded-lg px-3 py-2">
+              ⚠️ 現在、Nitter（X RSSプロキシ）が全インスタンス停止中のため、Xからの収集は機能しません。登録はできますが取得はスキップされます。
             </p>
             <div className="flex gap-2">
               <input
@@ -556,86 +560,153 @@ export default function TabSubstackNews({ onUseItem }: Props) {
           )}
 
           {discoverResult && (
-            <div className="space-y-5">
-              {/* YouTube候補 */}
-              {discoverResult.youtube.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold text-zinc-400">YouTubeチャンネル</h4>
-                  {discoverResult.youtube.map((ch, i) => (
-                    <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-zinc-200">{ch.name}</p>
-                          <p className="text-xs text-zinc-500">{ch.description}</p>
-                          {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
+            <div className="space-y-6">
+
+              {/* ── YouTubeチャンネル ── */}
+              {(discoverResult.youtube.overseas.length > 0 || discoverResult.youtube.japan.length > 0) && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-zinc-200 border-b border-zinc-700 pb-1">YouTubeチャンネル</h4>
+
+                  {discoverResult.youtube.overseas.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">海外</p>
+                      {discoverResult.youtube.overseas.map((ch, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">{ch.name}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
+                              {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
+                            </div>
+                            <button
+                              onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId });
-                            setSection("sources");
-                          }}
-                          className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                        >
-                          追加
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {discoverResult.youtube.japan.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">日本</p>
+                      {discoverResult.youtube.japan.map((ch, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">{ch.name}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
+                              {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
+                            </div>
+                            <button
+                              onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* X候補 */}
-              {discoverResult.x.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold text-zinc-400">Xアカウント</h4>
-                  {discoverResult.x.map((acc, i) => (
-                    <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-zinc-200">@{acc.username}</p>
-                          <p className="text-xs text-zinc-500">{acc.description}</p>
+              {/* ── Xアカウント ── */}
+              {(discoverResult.x.overseas.length > 0 || discoverResult.x.japan.length > 0) && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-zinc-200 border-b border-zinc-700 pb-1">Xアカウント</h4>
+
+                  {discoverResult.x.overseas.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">海外</p>
+                      {discoverResult.x.overseas.map((acc, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">@{acc.username}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{acc.description}</p>
+                            </div>
+                            <button
+                              onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            addSource("x", { id: `x_${Date.now()}`, username: acc.username });
-                            setSection("sources");
-                          }}
-                          className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                        >
-                          追加
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {discoverResult.x.japan.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">日本</p>
+                      {discoverResult.x.japan.map((acc, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">@{acc.username}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{acc.description}</p>
+                            </div>
+                            <button
+                              onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc.username }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* RSS候補 */}
-              {discoverResult.rss.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold text-zinc-400">RSSフィード</h4>
-                  {discoverResult.rss.map((feed, i) => (
-                    <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3 space-y-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-zinc-200">{feed.name}</p>
-                          <p className="text-xs text-zinc-500">{feed.description}</p>
-                          <p className="text-xs text-zinc-600 truncate mt-0.5">{feed.url}</p>
+              {/* ── RSSフィード ── */}
+              {(discoverResult.rss.overseas.length > 0 || discoverResult.rss.japan.length > 0) && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-semibold text-zinc-200 border-b border-zinc-700 pb-1">RSSフィード</h4>
+
+                  {discoverResult.rss.overseas.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">海外</p>
+                      {discoverResult.rss.overseas.map((feed, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">{feed.name}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{feed.description}</p>
+                              <p className="text-xs text-zinc-600 truncate mt-0.5">{feed.url}</p>
+                            </div>
+                            <button
+                              onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url });
-                            setSection("sources");
-                          }}
-                          className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
-                        >
-                          追加
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
+
+                  {discoverResult.rss.japan.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-zinc-500 font-medium">日本</p>
+                      {discoverResult.rss.japan.map((feed, i) => (
+                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-200">{feed.name}</p>
+                              <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{feed.description}</p>
+                              <p className="text-xs text-zinc-600 truncate mt-0.5">{feed.url}</p>
+                            </div>
+                            <button
+                              onClick={() => { addSource("rss", { id: `rss_${Date.now()}`, name: feed.name, url: feed.url }); setSection("sources"); }}
+                              className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors shrink-0"
+                            >追加</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+
             </div>
           )}
         </div>

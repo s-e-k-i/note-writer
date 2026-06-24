@@ -4,26 +4,42 @@ const client = new Anthropic();
 
 export async function POST(request: Request) {
   const { query } = await request.json();
-  if (!query?.trim()) return Response.json({ youtube: [], x: [], rss: [] });
+  if (!query?.trim()) {
+    return Response.json({
+      youtube: { overseas: [], japan: [] },
+      x: { overseas: [], japan: [] },
+      rss: { overseas: [], japan: [] },
+    });
+  }
 
-  const prompt = `以下のキーワードに関連する、信頼できるYouTubeチャンネル・Xアカウント・ブログ/メディアをそれぞれ3〜5件提案してください。
-条件：個人の実践者・独立系クリエイター・研究者・メディアで、フォロワー数や登録者数が一定以上あり信頼性が高いもの。
-公式企業アカウントより個人の実践者を優先。
+  const prompt = `以下のキーワードに関連する、信頼できるYouTubeチャンネル・Xアカウント・ブログ/メディアを海外と日本に分けてそれぞれ提案してください。
+
+条件：
+- 個人の実践者・独立系クリエイター・研究者・メディアで、フォロワー数や登録者数が一定以上あり信頼性が高いもの
+- 公式企業アカウントより個人の実践者を優先
+- 日本枠は日本語で発信している日本人アカウントを優先
+- 各枠3〜5件
 
 キーワード：${query}
 
 出力形式（JSONのみ）：
-{"youtube":[{"name":"チャンネル名","channelId":"チャンネルID（UCから始まる22文字）","description":"説明（1行）"}],"x":[{"username":"ユーザー名（@なし）","description":"説明（1行）"}],"rss":[{"name":"サイト名","url":"RSS URL","description":"説明（1行）"}]}`;
+{"youtube":{"overseas":[{"name":"チャンネル名","channelId":"チャンネルID（UCから始まる22文字）","description":"説明（1行）"}],"japan":[{"name":"チャンネル名","channelId":"チャンネルID（UCから始まる22文字）","description":"説明（1行）"}]},"x":{"overseas":[{"username":"ユーザー名（@なし）","description":"説明（1行）"}],"japan":[{"username":"ユーザー名（@なし）","description":"説明（1行）"}]},"rss":{"overseas":[{"name":"サイト名","url":"RSS URL","description":"説明（1行）"}],"japan":[{"name":"サイト名","url":"RSS URL","description":"説明（1行）"}]}}`;
 
   try {
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 1200,
+      max_tokens: 2000,
       messages: [{ role: "user", content: prompt }],
     });
     const text = (response.content[0] as { text: string }).text;
     const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return Response.json({ youtube: [], x: [], rss: [] });
+    if (!m) {
+      return Response.json({
+        youtube: { overseas: [], japan: [] },
+        x: { overseas: [], japan: [] },
+        rss: { overseas: [], japan: [] },
+      });
+    }
     const result = JSON.parse(m[0]);
     return Response.json(result);
   } catch (e) {
