@@ -89,6 +89,17 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleDismiss = async (role: string) => {
+    setData((prev) =>
+      prev ? { ...prev, suggestions: prev.suggestions.filter((s) => s.role !== role) } : prev
+    );
+    fetch("/api/next-suggestions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }).catch(() => {});
+  };
+
   const formattedTime = data?.generatedAt
     ? new Date(data.generatedAt).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
     : null;
@@ -150,8 +161,15 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
                 return (
                   <div
                     key={i}
-                    className={`bg-zinc-800/60 border ${style.border} rounded-xl p-4 space-y-2.5 hover:border-opacity-60 transition-colors`}
+                    className={`relative bg-zinc-800/60 border ${style.border} rounded-xl p-4 space-y-2.5 hover:border-opacity-60 transition-colors`}
                   >
+                    <button
+                      onClick={() => handleDismiss(s.role)}
+                      className="absolute top-2.5 right-2.5 text-zinc-600 hover:text-zinc-300 transition-colors text-sm leading-none"
+                      aria-label="この案を削除"
+                    >
+                      ✕
+                    </button>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${style.badge}`}>
                       {s.roleLabel}
                     </span>

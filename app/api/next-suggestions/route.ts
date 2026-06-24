@@ -37,6 +37,22 @@ export async function GET() {
   }
 }
 
+export async function PATCH(request: Request) {
+  try {
+    const { role } = (await request.json()) as { role: string };
+    const cached = await redis.get<SuggestionCache>(REDIS_KEY);
+    if (!cached) return Response.json({ ok: true });
+    const updated: SuggestionCache = {
+      ...cached,
+      suggestions: cached.suggestions.filter((s) => s.role !== role),
+    };
+    await redis.set(REDIS_KEY, updated);
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ ok: false }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const { articles, notebookEntries } = await request.json() as {
