@@ -85,7 +85,7 @@ export default function NotebookPiPWidget({ onSave, onClose }: Props) {
     >
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-zinc-400 tracking-wide">ネタを書く（PiP常駐）</span>
+        <span className="text-xs font-semibold text-zinc-400 tracking-wide">ネタを書く</span>
         <button
           onClick={onClose}
           className="text-zinc-600 hover:text-zinc-300 transition-colors text-base leading-none"

@@ -60,11 +60,18 @@ export function useNotebookDB() {
   }, []);
 
   const removeEntry = useCallback((id: string) => {
+    // localStorageから即時削除
     setEntries((prev) => {
       const updated = prev.filter((e) => e.id !== id);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
+    // Redisからも削除（idea-engine由来エントリが対象、なければ無害）
+    fetch("/api/notebook-from-idea", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
   }, []);
 
   return { entries, loaded, addEntry, updateEntry, removeEntry };

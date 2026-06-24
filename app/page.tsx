@@ -161,7 +161,7 @@ export default function Home() {
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
           <div className="max-w-4xl mx-auto flex items-center">
             <div className="flex gap-1 flex-1">
-              {(["note", "newsletter", "notebook", "sns", "settings"] as Section[]).map((s) => (
+              {(["note", "newsletter", "sns", "notebook", "settings"] as Section[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSection(s)}
@@ -171,7 +171,7 @@ export default function Home() {
                       : "border-transparent text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : s === "notebook" ? "ネタ帳" : s === "sns" ? "発信" : "設定"}
+                  {s === "note" ? "note" : s === "newsletter" ? "メルマガ" : s === "notebook" ? "ネタ帳" : s === "sns" ? "SNS" : "設定"}
                 </button>
               ))}
             </div>
