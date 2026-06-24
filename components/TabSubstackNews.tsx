@@ -228,7 +228,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
   // ── フィルタリング ────────────────────────────────
   const filtered = items.filter((item) => {
     if (statusFilter !== "all" && item.status !== statusFilter) return false;
-    if (typeFilter !== "all" && item.sourceType !== typeFilter) return false;
+    if (typeFilter !== "all" && item.sourceType?.toLowerCase() !== typeFilter) return false;
     return true;
   });
 
@@ -259,8 +259,8 @@ export default function TabSubstackNews({ onUseItem }: Props) {
       {section === "items" && (
         <div className="space-y-4">
           {/* 収集コントロール */}
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-3">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={handleCollect}
                 disabled={collecting}
@@ -273,36 +273,44 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                   最終収集：{formatDateTime(lastCollected)}
                 </span>
               )}
+              {collectMsg && (
+                <span className={`text-xs ${collectMsg.includes("失敗") || collectMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
+                  {collectMsg}
+                </span>
+              )}
             </div>
-            {collectMsg && (
-              <span className={`text-xs ${collectMsg.includes("失敗") || collectMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
-                {collectMsg}
-              </span>
-            )}
+            <p className="text-xs text-zinc-600">登録済みの YouTube・X・RSS ソースから一括取得します</p>
           </div>
 
-          {/* URLから追加 */}
-          <div className="flex gap-2 items-center">
-            <input
-              value={addUrlInput}
-              onChange={(e) => setAddUrlInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddUrl()}
-              placeholder="URLを貼り付けて追加（X投稿・ブログ記事など）"
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
-            />
-            <button
-              onClick={handleAddUrl}
-              disabled={!addUrlInput.trim() || addingUrl}
-              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors shrink-0"
-            >
-              {addingUrl ? "処理中..." : "追加"}
-            </button>
+          {/* URLから個別追加 */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 border-t border-zinc-700/60" />
+              <span className="text-xs text-zinc-600 shrink-0">または URL から個別追加</span>
+              <div className="flex-1 border-t border-zinc-700/60" />
+            </div>
+            <div className="flex gap-2 items-center">
+              <input
+                value={addUrlInput}
+                onChange={(e) => setAddUrlInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAddUrl()}
+                placeholder="URL を貼り付けて追加（X 投稿・ブログ記事など）"
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                onClick={handleAddUrl}
+                disabled={!addUrlInput.trim() || addingUrl}
+                className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors shrink-0"
+              >
+                {addingUrl ? "処理中..." : "追加"}
+              </button>
+            </div>
+            {addUrlMsg && (
+              <p className={`text-xs ${addUrlMsg.includes("失敗") || addUrlMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
+                {addUrlMsg}
+              </p>
+            )}
           </div>
-          {addUrlMsg && (
-            <p className={`text-xs ${addUrlMsg.includes("失敗") || addUrlMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
-              {addUrlMsg}
-            </p>
-          )}
 
           {/* フィルター */}
           <div className="space-y-2">
@@ -365,11 +373,6 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${TYPE_BADGE[item.sourceType] ?? TYPE_BADGE.manual}`}>
                       {TYPE_LABEL[item.sourceType] ?? "手動"}
                     </span>
-                    {item.isManual && (
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-amber-900/30 text-amber-400 border border-amber-700/30">
-                        手動
-                      </span>
-                    )}
                     <span className="text-xs text-zinc-400">{item.sourceName}</span>
                     <span className="ml-auto text-xs text-zinc-600">{formatDateTime(item.collectedAt)}</span>
                   </div>
@@ -641,7 +644,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <a
-                                href={ch.channelId ? `https://www.youtube.com/channel/${ch.channelId}` : `https://www.youtube.com/@${ch.name}`}
+                                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(ch.name)}`}
                                 target="_blank" rel="noopener noreferrer"
                                 className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                               >↗ 確認する</a>
@@ -669,7 +672,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <a
-                                href={ch.channelId ? `https://www.youtube.com/channel/${ch.channelId}` : `https://www.youtube.com/@${ch.name}`}
+                                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(ch.name)}`}
                                 target="_blank" rel="noopener noreferrer"
                                 className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                               >↗ 確認する</a>
@@ -703,7 +706,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <a
-                                href={`https://x.com/${acc.username}`}
+                                href={`https://x.com/search?q=${encodeURIComponent(acc.username)}`}
                                 target="_blank" rel="noopener noreferrer"
                                 className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                               >↗ 確認する</a>
@@ -730,7 +733,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
                               <a
-                                href={`https://x.com/${acc.username}`}
+                                href={`https://x.com/search?q=${encodeURIComponent(acc.username)}`}
                                 target="_blank" rel="noopener noreferrer"
                                 className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
                               >↗ 確認する</a>

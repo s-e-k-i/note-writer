@@ -264,7 +264,8 @@ async function runCollect() {
 
   for (const acc of sources.x) {
     const items = await fetchXWithFallback(acc.username, `@${acc.username}`, existingUrls);
-    candidates.push(...items);
+    // sourceType を "x" に統一（大文字小文字ゆらぎ対策）
+    candidates.push(...items.map((i) => ({ ...i, sourceType: "x" as const })));
   }
 
   for (const feed of sources.rss) {
