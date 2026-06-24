@@ -139,8 +139,10 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
 
     if (cacheMatch) {
       setGenerated(cached!.generated);
-      setImprovedTitlesRaw(cached!.improvedTitlesRaw);
+      setImprovedTitlesRaw(cached!.improvedTitlesRaw ?? "");
       // 同じ提案に戻ってきたとき、ユーザーが編集したフォーム値を復元
+      if (cached!.articleType) setArticleType(cached!.articleType);
+      if (cached!.price !== undefined) setPrice(cached!.price);
       if (cached!.structureMemo !== undefined) setStructureMemo(cached!.structureMemo);
       if (cached!.magazine) setMagazine(cached!.magazine);
       if (cached!.purpose) setPurpose(cached!.purpose);
@@ -152,22 +154,23 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
     }
   }, [initialProposal]);
 
-  // Restore latest generation from cache when no proposal (direct Tab③ access)
+  // Restore all form fields from cache when no proposal (direct Tab③ access)
   useEffect(() => {
     if (initialProposal) return; // proposal case handled by the other effect
     const cached = loadGenerateCache();
-    if (cached?.generated) {
-      setTheme(cached.theme);
+    if (!cached) return;
+    if (cached.theme) setTheme(cached.theme);
+    if (cached.generated) {
       setGenerated(cached.generated);
-      setImprovedTitlesRaw(cached.improvedTitlesRaw);
-      if (cached.articleType) setArticleType(cached.articleType);
-      if (cached.price !== undefined) setPrice(cached.price);
-      if (cached.structureMemo !== undefined) setStructureMemo(cached.structureMemo);
-      if (cached.magazine) setMagazine(cached.magazine);
-      if (cached.purpose) setPurpose(cached.purpose);
-      if (cached.writingStyle) setWritingStyle(cached.writingStyle);
-      if (cached.wordCount) setWordCount(cached.wordCount);
+      setImprovedTitlesRaw(cached.improvedTitlesRaw ?? "");
     }
+    if (cached.articleType) setArticleType(cached.articleType);
+    if (cached.price !== undefined) setPrice(cached.price);
+    if (cached.structureMemo !== undefined) setStructureMemo(cached.structureMemo);
+    if (cached.magazine) setMagazine(cached.magazine);
+    if (cached.purpose) setPurpose(cached.purpose);
+    if (cached.writingStyle) setWritingStyle(cached.writingStyle);
+    if (cached.wordCount) setWordCount(cached.wordCount);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
