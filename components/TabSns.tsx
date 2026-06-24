@@ -4,14 +4,15 @@ import { useState, useRef } from "react";
 import { SnsPost, SnsDraft, NotebookEntry, Article } from "@/lib/types";
 import { useSnsDB } from "@/lib/useSnsDB";
 import DateInput from "@/components/DateInput";
+import TabSubstackNews from "@/components/TabSubstackNews";
 
 interface Props {
   notebookEntries?: NotebookEntry[];
   articles?: Article[];
 }
 
-type SubTab = "list" | "create" | "drafts";
-type Channel = "X" | "Facebook" | "Threads";
+type SubTab = "list" | "create" | "drafts" | "substack";
+type Channel = "X" | "Facebook" | "Threads" | "Substack";
 type SnsMode = "normal" | "note-update" | "note-article";
 
 // X → Threads → Facebook の順
@@ -21,6 +22,7 @@ const CHANNEL_COLORS: Record<string, string> = {
   X: "bg-zinc-700 text-zinc-200",
   Facebook: "bg-blue-900/50 text-blue-300",
   Threads: "bg-purple-900/50 text-purple-300",
+  Substack: "bg-orange-900/50 text-orange-300",
 };
 
 function formatDate(iso: string): string {
@@ -128,18 +130,18 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     console.log("[TabSns] setShowAddForm(false) called — form should close");
   };
 
-  // --- 作成：チャンネルトグル（X/Threads は複数可、Facebook は排他）---
+  // --- 作成：チャンネルトグル（X/Threads は複数可、Facebook/Substack は排他）---
   const handleChannelToggle = (ch: Channel) => {
     let next: Channel[];
-    if (ch === "Facebook") {
-      next = ["Facebook"];
+    if (ch === "Facebook" || ch === "Substack") {
+      next = [ch];
     } else {
-      const withoutFb = createChannels.filter((c) => c !== "Facebook");
-      if (withoutFb.includes(ch)) {
-        const filtered = withoutFb.filter((c) => c !== ch);
+      const withoutExclusive = createChannels.filter((c) => c !== "Facebook" && c !== "Substack");
+      if (withoutExclusive.includes(ch)) {
+        const filtered = withoutExclusive.filter((c) => c !== ch);
         next = filtered.length > 0 ? filtered : [ch]; // 最低1つ残す
       } else {
-        next = [...withoutFb, ch];
+        next = [...withoutExclusive, ch];
       }
     }
     setCreateChannels(next);
@@ -149,8 +151,9 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     setNoteArticleQuery("");
     // モードの整合性チェック
     const isFb = next.includes("Facebook");
-    if (isFb && snsMode === "note-update") setSnsMode("normal");
-    if (!isFb && snsMode === "note-article") setSnsMode("normal");
+    const isSubstack = next.includes("Substack");
+    if ((isFb || isSubstack) && snsMode === "note-update") setSnsMode("normal");
+    if (!isFb && !isSubstack && snsMode === "note-article") setSnsMode("normal");
   };
 
   const handleSnsModeChange = (m: SnsMode) => {
@@ -169,16 +172,21 @@ export default function TabSns({ notebookEntries, articles }: Props) {
   // 最も制約の厳しいチャンネルを代表として使う（API呼び出しや文字数カウント用）
   const primaryChannel: Channel = createChannels.includes("X") ? "X"
     : createChannels.includes("Threads") ? "Threads"
+    : createChannels.includes("Substack") ? "Substack"
     : "Facebook";
 
   const isFacebookSelected = createChannels.includes("Facebook");
+  const isSubstackSelected = createChannels.includes("Substack");
 
-  const currentModes: { value: SnsMode; label: string }[] = isFacebookSelected
+  const currentModes: { value: SnsMode; label: string }[] = isSubstackSelected
+    ? [{ value: "normal", label: "通常の作成" }]
+    : isFacebookSelected
     ? [{ value: "normal", label: "通常の投稿" }, { value: "note-article", label: "note記事から書く" }]
     : [{ value: "normal", label: "通常の投稿" }, { value: "note-update", label: "noteの更新を知らせる" }];
 
   const charLimitNote = createChannels.includes("X") ? "140字以内（Xの制限を優先）"
     : createChannels.includes("Threads") ? "140〜500字程度"
+    : createChannels.includes("Substack") ? "300〜500字程度（リード段落）"
     : "300〜600字程度";
 
   const canGenerate =
@@ -290,12 +298,24 @@ export default function TabSns({ notebookEntries, articles }: Props) {
     if (editDraftId === d.id) closeEditDraft();
   };
 
+  const handleUseSubstackItem = (memo: string) => {
+    setCreateChannels(["Substack"]);
+    setCreateMemo(memo);
+    setSnsMode("normal");
+    setGeneratedText("");
+    setSaveMode(null);
+    setNoteSelectedArticle(null);
+    setNoteArticleQuery("");
+    setSubTab("create");
+  };
+
   if (!loaded) return <div className="py-8 text-center text-zinc-500 text-sm">読み込み中...</div>;
 
   const SUB_TABS: { key: SubTab; label: string }[] = [
     { key: "list", label: "一覧" },
     { key: "create", label: "作成" },
     { key: "drafts", label: `下書き${drafts.length > 0 ? `（${drafts.length}）` : ""}` },
+    { key: "substack", label: "Substackネタ" },
   ];
 
   return (
@@ -490,10 +510,10 @@ export default function TabSns({ notebookEntries, articles }: Props) {
       {subTab === "create" && (
         <div className="space-y-4">
 
-          {/* チャンネル選択（X/Threads 複数可、Facebook 排他） */}
+          {/* チャンネル選択（X/Threads 複数可、Facebook/Substack 排他） */}
           <div className="space-y-2">
             <label className="block text-xs text-zinc-400">チャンネル</label>
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               {ALL_CHANNELS.map((ch) => (
                 <button
                   key={ch}
@@ -507,6 +527,16 @@ export default function TabSns({ notebookEntries, articles }: Props) {
                   {ch}
                 </button>
               ))}
+              <button
+                onClick={() => handleChannelToggle("Substack")}
+                className={`px-4 py-2 text-sm rounded-xl border transition-colors ${
+                  createChannels.includes("Substack")
+                    ? "border-orange-600 bg-orange-900/60 text-orange-200 font-medium"
+                    : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600"
+                }`}
+              >
+                Substack
+              </button>
             </div>
             <p className="text-xs text-zinc-600">{charLimitNote}</p>
           </div>
@@ -735,6 +765,11 @@ export default function TabSns({ notebookEntries, articles }: Props) {
             </div>
           )}
         </div>
+      )}
+
+      {/* ===== Substackネタ ===== */}
+      {subTab === "substack" && (
+        <TabSubstackNews onUseItem={handleUseSubstackItem} />
       )}
 
       {/* ===== 下書き ===== */}

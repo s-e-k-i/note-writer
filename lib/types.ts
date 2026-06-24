@@ -139,6 +139,41 @@ export interface ProposalHistoryEntry {
   proposal: ProposalContext;
 }
 
+export interface SubstackNewsItem {
+  id: string;
+  sourceType: "youtube" | "x" | "rss";
+  sourceName: string;
+  title: string;
+  url: string;
+  summary: string;
+  ideaSeed: string;
+  collectedAt: string;
+  status: "unread" | "use" | "skip";
+}
+
+export interface SubstackYouTubeSource {
+  id: string;
+  name: string;
+  channelId: string;
+}
+
+export interface SubstackXSource {
+  id: string;
+  username: string;
+}
+
+export interface SubstackRSSSource {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface SubstackSources {
+  youtube: SubstackYouTubeSource[];
+  x: SubstackXSource[];
+  rss: SubstackRSSSource[];
+}
+
 export interface ConsultSettings {
   articleType: ArticleType | null;
   price: number | "ai" | null;

@@ -69,6 +69,11 @@ export async function POST(request: Request) {
       channelInstruction = "X（旧Twitter）向けの投稿文を1つ作成してください。必ず140字以内にしてください。";
     } else if (channel === "Threads") {
       channelInstruction = "Threads向けの投稿文を1つ作成してください。140〜500字程度で、Xよりやや会話的・コミュニティ向けのトーンで書いてください。";
+    } else if (channel === "Substack") {
+      channelInstruction = `Substack記事のリード段落（冒頭部分）を作成してください。
+300〜500字程度で、読者が「続きを読みたい」と感じる導入を書いてください。
+完結した投稿ではなく、記事の始まりとして機能する文章にしてください。
+記事の核心は書かず、問いかけや体験談・気づきで読者を引き込む書き出しにしてください。`;
     } else {
       channelInstruction = "Facebook向けの投稿文を1つ作成してください。300〜600字程度にしてください。";
     }
