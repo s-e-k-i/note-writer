@@ -6,6 +6,7 @@ import {
   ProposalContext, ConsultSettings, ArticleType, ProposalHistoryEntry,
   NotebookEntry,
 } from "@/lib/types";
+import VideoModePanel from "@/components/VideoModePanel";
 
 interface Props {
   articles: Article[];
@@ -25,6 +26,7 @@ const MODE_LABELS: Record<ConsultMode, string> = {
   purpose: "🎯 目的から考えるモードの提案",
   memo: "📝 メモから考えるモードの提案",
   chat: "💬 壁打ちモードの提案",
+  video: "📹 動画から書く",
 };
 
 const MODE_SHORT: Record<ConsultMode, string> = {
@@ -32,6 +34,7 @@ const MODE_SHORT: Record<ConsultMode, string> = {
   purpose: "目的から",
   memo: "メモから",
   chat: "壁打ち",
+  video: "動画から",
 };
 
 const CHAT_OPENER: ConsultMessage = {
@@ -304,7 +307,7 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
   const handleModeSelect = async (m: ConsultMode) => {
     setMode(m);
     persist({ mode: m });
-    if (m === "memo") return;
+    if (m === "memo" || m === "video") return;
     const cached = cachedMessages[m];
     if (cached && cached.length > 0) {
       setMessages(cached);
@@ -710,6 +713,18 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
               <div className="text-xs text-amber-400 mt-2">前回の提案を表示する</div>
             )}
           </button>
+          <button
+            onClick={() => handleModeSelect("video")}
+            className="bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl p-5 text-left transition-colors"
+          >
+            <div className="mb-2">
+              <svg viewBox="0 0 24 24" className="w-6 h-6">
+                <path fill="#ef4444" d="M23.5 6.2s-.3-2-1.2-2.8c-1.1-1.2-2.4-1.2-3-1.3C16.8 2 12 2 12 2s-4.8 0-7.3.1c-.6.1-1.9.1-3 1.3C.8 4.2.5 6.2.5 6.2S.2 8.5.2 10.8v2.1c0 2.3.3 4.6.3 4.6s.3 2 1.2 2.8c1.1 1.2 2.6 1.1 3.3 1.2C7.2 21.7 12 21.8 12 21.8s4.8 0 7.3-.2c.6-.1 1.9-.1 3-1.3.9-.8 1.2-2.8 1.2-2.8s.3-2.3.3-4.6v-2.1c0-2.3-.3-4.6-.3-4.6zm-13.9 9.3V8.5l8.1 3.5-8.1 3.5z"/>
+              </svg>
+            </div>
+            <div className="font-medium text-zinc-100 mb-1">動画から書く</div>
+            <div className="text-zinc-400 text-sm">idea-engineで分析した動画の企画案をもとに記事を生成</div>
+          </button>
         </div>
 
         {/* Proposal history (⑥) */}
@@ -966,6 +981,20 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
           </button>
         </div>
       </div>
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // SCREEN 5b: Video mode
+  // ─────────────────────────────────────────────────────────────
+  if (mode === "video") {
+    return (
+      <VideoModePanel
+        onBack={handleBackToModeSelect}
+        onStartWriting={(theme, fullContext) =>
+          handleSelectProposal({ theme, fullContext })
+        }
+      />
     );
   }
 

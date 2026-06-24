@@ -108,7 +108,7 @@ export interface ConsultMessage {
   content: string;
 }
 
-export type ConsultMode = "auto" | "purpose" | "memo" | "chat";
+export type ConsultMode = "auto" | "purpose" | "memo" | "chat" | "video";
 
 export interface PurposeForm {
   goal: string;
