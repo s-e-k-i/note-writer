@@ -150,6 +150,7 @@ export interface SubstackNewsItem {
   collectedAt: string;
   status: "unread" | "use" | "skip";
   isManual?: boolean;
+  fullText?: string;
 }
 
 export interface SubstackYouTubeSource {

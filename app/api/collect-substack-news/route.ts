@@ -87,6 +87,7 @@ async function fetchRSSItems(
         ideaSeed: "",
         collectedAt: new Date().toISOString(),
         status: "unread",
+        fullText: (item.content ?? item.contentSnippet ?? item.summary ?? "").slice(0, 3000),
       });
     }
     return results;
@@ -104,17 +105,42 @@ async function fetchXViaSearch(
 ): Promise<SubstackNewsItem[]> {
   const q = `site:x.com/${username}/status ${SEARCH_KEYWORDS_EN.slice(0, 2).join(" OR ")}`;
   const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+  console.log(`[collect/X] @${username} DDG query: ${q}`);
   try {
     const res = await fetch(searchUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+      },
       signal: AbortSignal.timeout(10000),
     });
+    console.log(`[collect/X] @${username} DDG status: ${res.status}`);
     if (!res.ok) return [];
     const html = await res.text();
-    const re = new RegExp(`https://x\\.com/${username}/status/(\\d+)`, "gi");
-    const ids = [...new Set([...html.matchAll(re)].map((m) => m[1]))];
+    console.log(`[collect/X] @${username} HTML length: ${html.length}`);
+
+    // DDGはURLを2種類の形式で埋め込む:
+    // 1. 直接 href="https://x.com/..."
+    // 2. リダイレクト href="/l/?uddg=URL_ENCODED"
+    const statusIds = new Set<string>();
+    const userRe = new RegExp(`https?://(?:x|twitter)\\.com/${username}/status/(\\d+)`, "gi");
+    for (const m of html.matchAll(userRe)) statusIds.add(m[1]);
+
+    // uddg= からデコードしてx.com URLを探す
+    for (const m of html.matchAll(/uddg=([^&"'\s<>]+)/gi)) {
+      try {
+        const decoded = decodeURIComponent(m[1]);
+        const inner = decoded.match(new RegExp(`https?://(?:x|twitter)\\.com/${username}/status/(\\d+)`, "i"));
+        if (inner) statusIds.add(inner[1]);
+      } catch {}
+    }
+
+    const anyXLinks = [...html.matchAll(/(?:x|twitter)\.com\/[^\s"'<>&]+/gi)].slice(0, 5).map((m) => m[0]);
+    console.log(`[collect/X] @${username}: ${statusIds.size}件ヒット, x.comリンク例: ${JSON.stringify(anyXLinks)}`);
+
     const results: SubstackNewsItem[] = [];
-    for (const id of ids.slice(0, 5)) {
+    for (const id of [...statusIds].slice(0, 5)) {
       const url = `https://x.com/${username}/status/${id}`;
       if (existingUrls.has(url)) continue;
       results.push({
@@ -217,6 +243,7 @@ async function fetchYouTubeItems(
 
 async function enrichWithAI(item: SubstackNewsItem): Promise<SubstackNewsItem> {
   const client = new Anthropic();
+  const bodyExcerpt = item.fullText?.trim().slice(0, 600) ?? "";
   const prompt = `あなたは関達也の発信編集アシスタントです。
 以下のコンテンツについて、Substack発信のネタとして使えるかを判断してください。
 
@@ -230,10 +257,13 @@ async function enrichWithAI(item: SubstackNewsItem): Promise<SubstackNewsItem> {
 - AI時代のひとりビジネス・仕事術に関するトレンド
 
 タイトル：${item.title}
-ソース：${item.sourceName}
+ソース：${item.sourceName}${bodyExcerpt ? `\n本文抜粋：${bodyExcerpt}` : ""}
+
+⚠️ 厳守：summary と idea_seed は上記の情報（タイトル・本文抜粋）に書かれている事実のみを根拠にすること。
+記事に書かれていないことは絶対に書かない。不明な点は「詳細は元記事を参照」と記載する。憶測・創作・補完は禁止。
 
 出力（JSONのみ）：
-{"relevant":true/false,"summary":"2〜3行の要約（日本語）","idea_seed":"日本の個人がどう使えるか（1〜2行）","reason":"判断理由（1行）"}`;
+{"relevant":true/false,"summary":"2〜3行の要約（日本語・記事の内容のみ）","idea_seed":"日本の個人がどう使えるか（1〜2行・根拠がある場合のみ）","reason":"判断理由（1行）"}`;
 
   try {
     const response = await client.messages.create({
