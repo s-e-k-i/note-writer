@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useArticlesDB } from "@/lib/useArticlesDB";
 import { useNewsletterDB } from "@/lib/useNewsletterDB";
@@ -86,6 +86,38 @@ export default function Home() {
   const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; distributionTargets?: string[]; _t: number } | null>(null);
 
   const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded && notebookLoaded;
+
+  // Redis sync: drafts・ネタ帳・記事数が変わったら2秒後に同期
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!loaded) return;
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(() => {
+      const payload = {
+        drafts: drafts.map(d => ({
+          id: d.id,
+          title: d.title,
+          charCount: d.body?.length ?? 0,
+          isPaid: d.isPaid,
+          price: d.price,
+          status: d.status,
+          createdAt: d.createdAt,
+        })),
+        recentIdeas: notebookEntries.slice(0, 10).map(e => ({
+          id: e.id,
+          text: e.text.slice(0, 200),
+          createdAt: e.createdAt,
+        })),
+        articleCount: articles.length,
+      };
+      fetch('/api/sync-to-redis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    }, 2000);
+    return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
+  }, [drafts, notebookEntries, articles, loaded]);
 
   const handleRegisterDraftAsSent = (draft: NewsletterDraft) => {
     setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, distributionTargets: draft.distributionTargets, _t: Date.now() });
