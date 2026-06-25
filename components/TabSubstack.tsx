@@ -261,9 +261,13 @@ export default function TabSubstack() {
                 {collecting ? "収集中..." : "今すぐ収集"}
               </button>
               {lastCollected && !collecting && (
-                <span className="text-xs text-zinc-600">
+                <span className="text-sm text-zinc-400">
                   最終収集：{formatDateTime(lastCollected)}
-                  {lastNewCount !== null && `（${lastNewCount}件追加）`}
+                  {lastNewCount !== null && (
+                    lastNewCount === 0
+                      ? <span className="text-zinc-500">（新着なし）</span>
+                      : <span className="text-green-400">（{lastNewCount}件追加）</span>
+                  )}
                 </span>
               )}
               {collectMsg && (
@@ -477,8 +481,8 @@ export default function TabSubstack() {
           {/* X */}
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-zinc-200">Xアカウント</h4>
-            <p className="text-xs text-yellow-400/80 bg-yellow-900/10 border border-yellow-800/20 rounded-lg px-3 py-2">
-              ⚠️ Nitter は停止中のためスキップされますが、RSSHub・DuckDuckGo 検索経由での取得を試みます。取得できない場合もありますが登録は有効です。
+            <p className="text-xs text-red-400/90 bg-red-900/15 border border-red-800/30 rounded-lg px-3 py-2">
+              ❌ X収集は現在利用不可。Nitter・RSSHub・DuckDuckGoすべてブロック中（確認済み）。アカウント登録は可能ですが収集時はスキップされます。
             </p>
             <div className="flex gap-2">
               <input value={xUsername} onChange={(e) => setXUsername(e.target.value)} placeholder="ユーザー名（@なし）" className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500" />
@@ -563,21 +567,28 @@ export default function TabSubstack() {
                     }, []).map(({ region, items: regionItems }) => (
                       <div key={region} className="space-y-2">
                         <p className="text-xs text-zinc-500 font-medium">{region}</p>
-                        {regionItems.map((ch, i) => (
-                          <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-zinc-200">{ch.name}</p>
-                                <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
-                                {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">ID: {ch.channelId}</p>}
-                              </div>
-                              <div className="flex items-center gap-1.5 shrink-0">
-                                <a href={ch.channelId ? `https://www.youtube.com/channel/${ch.channelId}` : `https://www.youtube.com/results?search_query=${encodeURIComponent(ch.name)}`} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors">↗ 確認する</a>
-                                <button onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); }} className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">追加</button>
+                        {regionItems.map((ch, i) => {
+                          const ytUrl = !ch.channelId
+                            ? `https://www.youtube.com/results?search_query=${encodeURIComponent(ch.name)}`
+                            : ch.channelId.startsWith("UC")
+                              ? `https://www.youtube.com/channel/${ch.channelId}`
+                              : `https://www.youtube.com/${ch.channelId.startsWith("@") ? ch.channelId : "@" + ch.channelId}`;
+                          return (
+                            <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-zinc-200">{ch.name}</p>
+                                  <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{ch.description}</p>
+                                  {ch.channelId && <p className="text-xs text-zinc-600 mt-0.5">{ch.channelId.startsWith("UC") ? "ID: " : "handle: "}{ch.channelId}</p>}
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a href={ytUrl} target="_blank" rel="noopener noreferrer" className="text-xs px-2.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors">↗ 確認する</a>
+                                  <button onClick={() => { addSource("youtube", { id: `yt_${Date.now()}`, name: ch.name, channelId: ch.channelId }); }} className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">追加</button>
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ))}
                   </div>
@@ -596,7 +607,7 @@ export default function TabSubstack() {
                       <div key={region} className="space-y-2">
                         <p className="text-xs text-zinc-500 font-medium">{region}</p>
                         {regionItems.map((acc2, i) => (
-                          <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3">
+                          <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-xl p-3 space-y-2">
                             <div className="flex items-start justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-zinc-200">@{acc2.username}</p>
@@ -607,6 +618,7 @@ export default function TabSubstack() {
                                 <button onClick={() => { addSource("x", { id: `x_${Date.now()}`, username: acc2.username }); }} className="text-xs px-2.5 py-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors">追加</button>
                               </div>
                             </div>
+                            <p className="text-xs text-yellow-500/80">⚠️ 実在を確認してから追加してください</p>
                           </div>
                         ))}
                       </div>
