@@ -51,10 +51,10 @@ const DEFAULT_SOURCES: SubstackSources = {
     { id: "rss_verge",      name: "The Verge",     url: "https://www.theverge.com/rss/index.xml" },
     { id: "rss_tldr",       name: "TLDR AI",       url: "https://tldr.tech/api/rss/ai" },
     { id: "rss_mittr",      name: "MIT Tech Review", url: "https://www.technologyreview.com/feed/" },
-    { id: "rss_hn_solo",    name: "Hacker News: solopreneur", url: "https://hnrss.org/newest?q=solopreneur" },
     { id: "rss_hn_claude",  name: "Hacker News: claude code", url: "https://hnrss.org/newest?q=claude+code" },
+    { id: "rss_hn_ai",      name: "Hacker News: AI",          url: "https://hnrss.org/newest?q=AI+agent" },
     { id: "rss_producthunt", name: "Product Hunt", url: "https://www.producthunt.com/feed" },
-    { id: "rss_indiehackers", name: "Indie Hackers", url: "https://feeds.feedburner.com/indie-hackers" },
+    { id: "rss_smashingmag", name: "Smashing Magazine", url: "https://www.smashingmagazine.com/feed/" },
   ],
 };
 
