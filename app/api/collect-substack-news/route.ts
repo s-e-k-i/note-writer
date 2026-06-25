@@ -7,14 +7,14 @@ const ITEMS_KEY = "substack_news_items";
 const SOURCES_KEY = "substack_sources";
 const LAST_KEY = "substack_last_collected";
 const MAX_ITEMS = 100;
-const MAX_NEW_PER_RUN = 15;
+const MAX_NEW_PER_RUN = 20;
 
-const KEYWORDS = [
-  "ひとり起業", "ひとりビジネス", "個人で稼ぐ", "AI自動化", "Claude Code",
-  "副業", "一人会社", "自動化", "AI活用", "ひとりで", "個人事業",
-  "solopreneur", "one-person business", "solo founder", "indie hacker",
-  "AI automation", "passive income", "micro-saas", "build in public",
-  "claude code", "vibe coding", "AI agent", "one person company",
+// X収集フォールバック用のキーワード（広めのフレーズでX検索）
+const X_KEYWORDS = [
+  "ひとり起業", "ひとりビジネス", "AI自動化", "Claude Code",
+  "solopreneur", "solo founder", "indie hacker",
+  "AI automation", "micro-saas", "build in public",
+  "claude code", "vibe coding", "AI agent",
 ];
 
 const NITTER_INSTANCES = [
@@ -29,9 +29,9 @@ const RSSHUB_INSTANCES = [
 
 const SEARCH_KEYWORDS_EN = ["solopreneur", "AI automation", "Claude Code"];
 
-function matchesKeyword(text: string): boolean {
+function matchesXKeyword(text: string): boolean {
   const lower = text.toLowerCase();
-  return KEYWORDS.some((k) => lower.includes(k.toLowerCase()));
+  return X_KEYWORDS.some((k) => lower.includes(k.toLowerCase()));
 }
 
 function makeId(prefix: string): string {
@@ -48,21 +48,23 @@ const DEFAULT_SOURCES: SubstackSources = {
   x: [],
   rss: [
     { id: "rss_techcrunch", name: "TechCrunch AI", url: "https://techcrunch.com/category/artificial-intelligence/feed/" },
-    { id: "rss_verge", name: "The Verge AI", url: "https://www.theverge.com/ai-artificial-intelligence/rss/index.xml" },
-    { id: "rss_tldr", name: "TLDR AI", url: "https://tldr.tech/api/rss/ai" },
-    { id: "rss_anthropic", name: "Anthropic News", url: "https://www.anthropic.com/news/rss" },
-    { id: "rss_hn_solo", name: "Hacker News: solopreneur", url: "https://hnrss.org/newest?q=solopreneur" },
-    { id: "rss_hn_claude", name: "Hacker News: claude code", url: "https://hnrss.org/newest?q=claude+code" },
+    { id: "rss_verge",      name: "The Verge",     url: "https://www.theverge.com/rss/index.xml" },
+    { id: "rss_tldr",       name: "TLDR AI",       url: "https://tldr.tech/api/rss/ai" },
+    { id: "rss_mittr",      name: "MIT Tech Review", url: "https://www.technologyreview.com/feed/" },
+    { id: "rss_hn_solo",    name: "Hacker News: solopreneur", url: "https://hnrss.org/newest?q=solopreneur" },
+    { id: "rss_hn_claude",  name: "Hacker News: claude code", url: "https://hnrss.org/newest?q=claude+code" },
     { id: "rss_producthunt", name: "Product Hunt", url: "https://www.producthunt.com/feed" },
     { id: "rss_indiehackers", name: "Indie Hackers", url: "https://feeds.feedburner.com/indie-hackers" },
   ],
 };
 
+// skipKeywordFilter=true でキーワードフィルターをスキップ（RSS curated sources用）
 async function fetchRSSItems(
   url: string,
   sourceName: string,
   sourceType: "rss" | "x",
-  existingUrls: Set<string>
+  existingUrls: Set<string>,
+  skipKeywordFilter = false
 ): Promise<SubstackNewsItem[]> {
   const parser = new Parser({ timeout: 12000 });
   try {
@@ -71,8 +73,10 @@ async function fetchRSSItems(
     for (const item of (feed.items ?? []).slice(0, 15)) {
       const itemUrl = item.link ?? "";
       if (!itemUrl || existingUrls.has(itemUrl)) continue;
-      const text = `${item.title ?? ""} ${item.contentSnippet ?? item.content ?? item.summary ?? ""}`;
-      if (!matchesKeyword(text)) continue;
+      if (!skipKeywordFilter) {
+        const text = `${item.title ?? ""} ${item.contentSnippet ?? item.content ?? item.summary ?? ""}`;
+        if (!matchesXKeyword(text)) continue;
+      }
       results.push({
         id: makeId(sourceType),
         sourceType,
@@ -141,7 +145,7 @@ async function fetchXWithFallback(
   // Step 1: RSSHub
   for (const host of RSSHUB_INSTANCES) {
     const url = `${host}/twitter/user/${username}`;
-    const items = await fetchRSSItems(url, sourceName, "x", existingUrls);
+    const items = await fetchRSSItems(url, sourceName, "x", existingUrls, false);
     if (items.length > 0) {
       console.log(`[collect] ${username}: RSSHub経由で${items.length}件取得`);
       return items;
@@ -151,7 +155,7 @@ async function fetchXWithFallback(
   // Step 2: Nitter複数インスタンスを順番に試す
   for (const host of NITTER_INSTANCES) {
     const url = `${host}/${username}/rss`;
-    const items = await fetchRSSItems(url, sourceName, "x", existingUrls);
+    const items = await fetchRSSItems(url, sourceName, "x", existingUrls, false);
     if (items.length > 0) {
       console.log(`[collect] ${username}: Nitter(${host})で${items.length}件取得`);
       return items;
@@ -166,7 +170,7 @@ async function fetchXWithFallback(
   }
 
   // Step 4: スキップ
-  console.log(`[collect] ${username}: 取得失敗、スキップ`);
+  console.log(`[collect] ${username}: 全フォールバック失敗、スキップ`);
   return [];
 }
 
@@ -192,8 +196,6 @@ async function fetchYouTubeItems(
       const itemUrl = `https://www.youtube.com/watch?v=${videoId}`;
       if (existingUrls.has(itemUrl)) continue;
       const snippet = item.snippet ?? {};
-      const text = `${snippet.title ?? ""} ${snippet.description ?? ""}`;
-      if (!matchesKeyword(text)) continue;
       results.push({
         id: `yt_${videoId}`,
         sourceType: "youtube",
@@ -216,9 +218,16 @@ async function fetchYouTubeItems(
 async function enrichWithAI(item: SubstackNewsItem): Promise<SubstackNewsItem> {
   const client = new Anthropic();
   const prompt = `あなたは関達也の発信編集アシスタントです。
-以下のコンテンツがSubstack発信のネタとして使えるかを判断し、使える場合は要約と種を出力してください。
+以下のコンテンツについて、Substack発信のネタとして使えるかを判断してください。
 
 関達也のSubstackテーマ：AI×ひとりビジネスで個人が使えるアイデアの種を届ける
+
+【relevant:true とする基準（いずれか該当すればOK）】
+- AIツール・LLM・生成AIの最新動向
+- Claude・ChatGPT・Gemini等のAIサービスのアップデート
+- 個人開発・インディーハッカー・ソロプレナー向けのツールや手法
+- テクノロジーを活用した生産性向上・自動化・副業・フリーランス
+- AI時代のひとりビジネス・仕事術に関するトレンド
 
 タイトル：${item.title}
 ソース：${item.sourceName}
@@ -255,33 +264,44 @@ async function runCollect() {
   let candidates: SubstackNewsItem[] = [];
   const ytKey = process.env.YOUTUBE_API_KEY;
 
+  // YouTube
   if (ytKey) {
     for (const ch of sources.youtube) {
       const items = await fetchYouTubeItems(ch.channelId, ch.name, ytKey, existingUrls);
+      console.log(`[collect] YouTube ${ch.name}: ${items.length}件`);
       candidates.push(...items);
     }
+  } else {
+    console.log("[collect] YouTube: APIキー未設定のためスキップ");
   }
 
+  // X
   for (const acc of sources.x) {
     const items = await fetchXWithFallback(acc.username, `@${acc.username}`, existingUrls);
-    // sourceType を "x" に統一（大文字小文字ゆらぎ対策）
     candidates.push(...items.map((i) => ({ ...i, sourceType: "x" as const })));
   }
 
+  // RSS（キュレーション済みソースはキーワードフィルターをスキップ）
   for (const feed of sources.rss) {
-    const items = await fetchRSSItems(feed.url, feed.name, "rss", existingUrls);
+    const items = await fetchRSSItems(feed.url, feed.name, "rss", existingUrls, true);
+    console.log(`[collect] RSS ${feed.name}: ${items.length}件`);
     candidates.push(...items);
   }
 
+  console.log(`[collect] 候補合計: ${candidates.length}件 → 上位${MAX_NEW_PER_RUN}件をAI処理`);
   candidates = candidates.slice(0, MAX_NEW_PER_RUN);
 
+  // AI要約・関連性判定
   const enriched: SubstackNewsItem[] = [];
   for (const item of candidates) {
     const processed = await enrichWithAI(item);
+    console.log(`[collect] AI: ${processed.status === "skip" ? "skip" : "OK  "} ${item.title.slice(0, 60)}`);
     enriched.push(processed);
   }
 
-  const relevant = enriched.filter((i) => i.status !== "skip" || i.summary);
+  const relevant = enriched.filter((i) => i.status !== "skip");
+  console.log(`[collect] 関連あり: ${relevant.length}件 / ${enriched.length}件処理`);
+
   const merged = [...relevant, ...existing].slice(0, MAX_ITEMS);
 
   const now = new Date().toISOString();

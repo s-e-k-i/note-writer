@@ -498,8 +498,8 @@ export default function TabSubstackNews({ onUseItem }: Props) {
           {/* X */}
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-zinc-200">Xアカウント</h4>
-            <p className="text-xs text-red-400/80 bg-red-900/10 border border-red-800/20 rounded-lg px-3 py-2">
-              ⚠️ 現在、Nitter（X RSSプロキシ）が全インスタンス停止中のため、Xからの収集は機能しません。登録はできますが取得はスキップされます。
+            <p className="text-xs text-yellow-400/80 bg-yellow-900/10 border border-yellow-800/20 rounded-lg px-3 py-2">
+              ⚠️ Nitter は停止中のためスキップされますが、RSSHub・DuckDuckGo 検索経由での取得を試みます。取得できない場合もありますが登録は有効です。
             </p>
             <div className="flex gap-2">
               <input
