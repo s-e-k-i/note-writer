@@ -93,13 +93,15 @@ export async function POST(request: Request) {
     const [crossA, crossB] = pickRandom(crossoverPool, 2);
 
     // ── Build context sections ──
-    const recentArticles = [...(articles ?? [])]
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 20);
+    const sortedArticles = [...(articles ?? [])].sort((a, b) => b.date.localeCompare(a.date));
+    const recentArticles = sortedArticles.slice(0, 20);
 
     const recentArticleLines = recentArticles
       .map((a) => `・${a.date} 「${a.title}」（${a.magazine.split("──")[0].trim()}）${a.summary ? `\n  → ${a.summary}` : ""}`)
       .join("\n");
+
+    // 全記事タイトル（重複チェック用・タイトルのみ）
+    const allTitles = sortedArticles.map((a) => `「${a.title}」`).join("、");
 
     const sharedContextSection = [
       devLog?.content ? `【開発ログ】\n${devLog.content}` : null,
@@ -127,7 +129,12 @@ ${ACCURACY_RULES}
   ]
 }`;
 
-    const userMessage = `【直近の記事（最新${recentArticles.length}本）】
+    const userMessage = `【過去に書いた全記事タイトル（重複禁止リスト・計${sortedArticles.length}本）】
+${allTitles || "（なし）"}
+
+以下のタイトルと同じ・または内容が90%以上被る記事案は絶対に提案しないこと。
+
+【直近の記事（最新${recentArticles.length}本・流れ把握用）】
 ${recentArticleLines || "（なし）"}
 
 ${sharedContextSection ? `${sharedContextSection}\n\n` : ""}---
