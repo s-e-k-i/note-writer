@@ -25,6 +25,7 @@ import { usePiP } from "@/hooks/usePiP";
 import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
+import { useSnsDB } from "@/lib/useSnsDB";
 
 const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
 const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
@@ -81,11 +82,12 @@ export default function Home() {
   const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB();
   const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
   const { entries: notebookEntries, loaded: notebookLoaded, addEntry: addNotebookEntry, updateEntry: updateNotebookEntry, removeEntry: removeNotebookEntry } = useNotebookDB();
+  const { posts: snsPosts, loaded: snsLoaded } = useSnsDB();
 
   // draft → list の引き継ぎ
   const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; distributionTargets?: string[]; _t: number } | null>(null);
 
-  const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded && notebookLoaded;
+  const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded && notebookLoaded && snsLoaded;
 
   // Redis sync: drafts・ネタ帳・記事数が変わったら2秒後に同期
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -93,6 +95,48 @@ export default function Home() {
     if (!loaded) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
+      // メルマガ最新10件
+      const recentNewsletters = [...newsletters]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 10)
+        .map(n => ({
+          id: n.id,
+          issueNumber: n.issueNumber,
+          title: n.title,
+          date: n.date,
+          distributionTargets: n.distributionTargets ?? [],
+        }));
+
+      // 配信先ごとの最終投稿日
+      const lastNewsletterDate: Record<string, string> = {};
+      for (const n of newsletters) {
+        const target = n.distributionTargets?.[0] ?? "不明";
+        if (!lastNewsletterDate[target] || n.date > lastNewsletterDate[target]) {
+          lastNewsletterDate[target] = n.date;
+        }
+      }
+
+      // SNS投稿最新10件
+      const recentSnsPosts = [...snsPosts]
+        .sort((a, b) => b.postedDate.localeCompare(a.postedDate))
+        .slice(0, 10)
+        .map(p => ({
+          id: p.id,
+          channels: p.channels,
+          text: p.text.slice(0, 100),
+          postedDate: p.postedDate,
+        }));
+
+      // チャンネル別最終投稿日
+      const lastSnsDate: Record<string, string> = {};
+      for (const p of snsPosts) {
+        for (const ch of p.channels) {
+          if (!lastSnsDate[ch] || p.postedDate > lastSnsDate[ch]) {
+            lastSnsDate[ch] = p.postedDate;
+          }
+        }
+      }
+
       const payload = {
         drafts: drafts.map(d => ({
           id: d.id,
@@ -109,6 +153,16 @@ export default function Home() {
           createdAt: e.createdAt,
         })),
         articleCount: articles.length,
+        newsletters: {
+          recent: recentNewsletters,
+          totalCount: newsletters.length,
+          lastDateByTarget: lastNewsletterDate,
+        },
+        sns: {
+          recent: recentSnsPosts,
+          totalCount: snsPosts.length,
+          lastDateByChannel: lastSnsDate,
+        },
       };
       fetch('/api/sync-to-redis', {
         method: 'POST',
@@ -117,7 +171,7 @@ export default function Home() {
       }).catch(() => {});
     }, 2000);
     return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
-  }, [drafts, notebookEntries, articles, loaded]);
+  }, [drafts, notebookEntries, articles, newsletters, snsPosts, loaded]);
 
   const handleRegisterDraftAsSent = (draft: NewsletterDraft) => {
     setPendingDraft({ title: draft.title, body: draft.body, sourceNoteUrl: draft.sourceArticleUrl, distributionTargets: draft.distributionTargets, _t: Date.now() });
