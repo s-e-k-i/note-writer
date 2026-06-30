@@ -38,6 +38,7 @@ export interface NotebookEntry {
   id: string;
   text: string;
   createdAt: string;
+  sourceUrl?: string;
 }
 
 export interface BulletinPost {

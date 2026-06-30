@@ -103,7 +103,20 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
         {pagedEntries.map((e) => (
           <div key={e.id} className="bg-zinc-800 rounded-xl overflow-hidden">
             <div className="p-4">
-              <p className="text-xs text-zinc-500 mb-1">{formatDate(e.createdAt)}</p>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-xs text-zinc-500">{formatDate(e.createdAt)}</p>
+                {e.sourceUrl && (
+                  <a
+                    href={e.sourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-amber-500/80 hover:text-amber-400 transition-colors truncate max-w-[200px]"
+                    title={e.sourceUrl}
+                  >
+                    ↗ 元ページ
+                  </a>
+                )}
+              </div>
               <p className="text-sm text-zinc-300 leading-relaxed mb-3">{previewText(e.text)}</p>
 
               <div className="flex flex-wrap gap-2">
