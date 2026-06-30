@@ -152,6 +152,11 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
             <div className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 <p className="text-xs text-zinc-500">{formatDate(e.createdAt)}</p>
+                {e.id.startsWith("raindrop_") && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-teal-900/60 text-teal-300 border border-teal-700/50">
+                    Raindrop
+                  </span>
+                )}
                 {e.sourceUrl && (
                   <a
                     href={e.sourceUrl}
