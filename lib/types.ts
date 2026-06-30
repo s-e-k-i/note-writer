@@ -183,6 +183,18 @@ export interface BrightDataXSource {
   addedAt: string;
 }
 
+export interface Account {
+  id: string;
+  name: string;
+  ownerEmail?: string;
+  createdAt: string;
+}
+
+export interface AccountDNA {
+  content: string;
+  updatedAt: string;
+}
+
 export interface ConsultSettings {
   articleType: ArticleType | null;
   price: number | "ai" | null;

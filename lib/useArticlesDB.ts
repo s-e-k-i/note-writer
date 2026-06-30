@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Article } from "./types";
+import { SEKI_ID } from "./accountIds";
 
-const STORAGE_KEY = "note_articles_db";
+const BASE_KEY = "note_articles_db";
 
 const MAGAZINE_MIGRATIONS: Record<string, string> = {
   "生きるために走った日々。──自由な働き方へ戻るまで":
@@ -26,37 +27,51 @@ function migrateArticles(articles: Article[]): { articles: Article[]; changed: b
   return { articles: migrated, changed };
 }
 
-export function useArticlesDB() {
+export function useArticlesDB(accountId: string) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
+    setLoaded(false);
+    setArticles([]);
+    const storageKey = `${BASE_KEY}:${accountId}`;
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(storageKey);
       if (stored) {
         const parsed: Article[] = JSON.parse(stored);
         const { articles: migrated, changed } = migrateArticles(parsed);
-        if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+        if (changed) localStorage.setItem(storageKey, JSON.stringify(migrated));
         setArticles(migrated);
+      } else if (accountId === SEKI_ID) {
+        // SEKI_IDのみ旧キーから自動マイグレーション
+        const legacy = localStorage.getItem(BASE_KEY);
+        if (legacy) {
+          const parsed: Article[] = JSON.parse(legacy);
+          const { articles: migrated } = migrateArticles(parsed);
+          localStorage.setItem(storageKey, JSON.stringify(migrated));
+          setArticles(migrated);
+        }
       }
     } catch {}
     setLoaded(true);
-  }, []);
+  }, [accountId]);
+
+  const storageKey = `${BASE_KEY}:${accountId}`;
 
   const save = useCallback((newArticles: Article[]) => {
     setArticles(newArticles);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newArticles));
-  }, []);
+    localStorage.setItem(storageKey, JSON.stringify(newArticles));
+  }, [storageKey]);
 
   const addArticle = useCallback(
     (article: Article) => {
       setArticles((prev) => {
         const updated = [article, ...prev];
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
     },
-    []
+    [storageKey]
   );
 
   const exportJSON = useCallback(() => {
@@ -98,11 +113,11 @@ export function useArticlesDB() {
     (id: string, updates: Partial<Article>) => {
       setArticles((prev) => {
         const updated = prev.map((a) => (a.id === id ? { ...a, ...updates } : a));
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
     },
-    []
+    [storageKey]
   );
 
   const updateSummaries = useCallback(
@@ -112,11 +127,11 @@ export function useArticlesDB() {
         const updated = prev.map((a) =>
           map.has(a.id) ? { ...a, summary: map.get(a.id)! } : a
         );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
     },
-    []
+    [storageKey]
   );
 
   const bulkUpdateBodies = useCallback(
@@ -126,11 +141,11 @@ export function useArticlesDB() {
         const updated = prev.map((a) =>
           map.has(a.id) ? { ...a, body: map.get(a.id)! } : a
         );
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
     },
-    []
+    [storageKey]
   );
 
   return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };

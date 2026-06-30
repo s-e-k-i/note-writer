@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Article, Newsletter, NewsletterDraft, NotebookEntry } from "@/lib/types";
 
 interface Props {
+  accountId: string;
   articles: Article[];
   newsletters: Newsletter[];
   onSaveDraft: (draft: Omit<NewsletterDraft, "id" | "createdAt">) => void;
@@ -99,7 +100,7 @@ function ResetButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft, notebookEntries }: Props) {
+export default function TabNewsletterWrite({ accountId, articles, newsletters, onSaveDraft, notebookEntries }: Props) {
   const [mode, setMode] = useState<NlWriteMode | null>(null);
 
   const [memoText, setMemoText] = useState("");
@@ -244,7 +245,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
       const res = await fetch("/api/newsletter-auto", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles, newsletters, distributionTarget: effectiveTarget, notebookEntries: notebookEntries ?? [] }),
+        body: JSON.stringify({ account_id: accountId, articles, newsletters, distributionTarget: effectiveTarget, notebookEntries: notebookEntries ?? [] }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -273,7 +274,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
       const res = await fetch("/api/newsletter-memo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memoText, articles, newsletters, distributionTarget }),
+        body: JSON.stringify({ account_id: accountId, memoText, articles, newsletters, distributionTarget }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -301,6 +302,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          account_id: accountId,
           articleTitle: article.title,
           articleBody: article.body,
           articleSummary: article.summary,
@@ -366,6 +368,7 @@ export default function TabNewsletterWrite({ articles, newsletters, onSaveDraft,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          account_id: accountId,
           angleType: selectedIdea.angleType,
           ideaTitle: selectedIdea.title,
           description: selectedIdea.description,

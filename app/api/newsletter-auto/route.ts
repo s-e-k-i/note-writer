@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 import { Article, Newsletter } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
 
@@ -12,28 +13,34 @@ function magazineShort(mag: string): string {
 
 export async function POST(request: Request) {
   try {
-    const { articles, newsletters, distributionTarget, notebookEntries } = await request.json();
+    const { account_id, articles, newsletters, distributionTarget, notebookEntries } = await request.json();
 
-    const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
+
+    const { devLog, ideaMemo } = isOfficialAccount
+      ? await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }))
+      : { devLog: null, ideaMemo: null };
 
     const articleList: Article[] = articles || [];
     const newsletterList: Newsletter[] = newsletters || [];
 
     const targetCategory = distributionTarget && distributionTarget !== "ai" ? distributionTarget : null;
 
-    // 指定カテゴリがある場合はそのカテゴリのメルマガのみ使用
     const relevantNewsletters = targetCategory
       ? newsletterList.filter((n) => (n.distributionTargets ?? []).includes(targetCategory))
       : newsletterList;
 
-    // 直近記事リスト（重複チェック用）
     const recentArticleTitles = [...articleList]
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 40)
       .map((a) => `- [${a.date}] 【${magazineShort(a.magazine)}】${a.title}`)
       .join("\n");
 
-    // 直近メルマガリスト（重複チェック用・対象カテゴリのみ）
     const recentNewsletterTitles = [...relevantNewsletters]
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 15)
@@ -46,7 +53,6 @@ export async function POST(request: Request) {
       })
       .join("\n");
 
-    // 配信タイムライン（note記事＋対象カテゴリのメルマガを日付順で統合）
     type TimelineItem =
       | { date: string; kind: "note"; title: string; magazine: string }
       | { date: string; kind: "newsletter"; title: string; targets: string };
@@ -84,7 +90,6 @@ export async function POST(request: Request) {
       })
       .join("\n");
 
-    // 配信先カテゴリ別の最終配信日（対象カテゴリのみ）
     const categoryLastDate: Record<string, string> = {};
     for (const n of relevantNewsletters) {
       for (const t of n.distributionTargets ?? []) {
@@ -116,18 +121,17 @@ AIが全カテゴリを見て最適な提案をする。
       : "";
 
     const CONTEXT_LIMIT = 3000;
-    const sharedContextSection = (devLog || ideaMemo)
-      ? `\n【開発ログ・アイデアメモ（hitoribiz-osとの共有情報）】
+    const sharedContextSection = isOfficialAccount && (devLog || ideaMemo)
+      ? `\n【開発ログ・アイデアメモ（共有情報）】
 ${devLog ? `【開発ログ（直近の開発活動の記録）】\n${devLog.content.slice(0, CONTEXT_LIMIT)}${devLog.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
 ${ideaMemo ? `\n【アイデアメモ（開発・ビジネスアイデアのメモ）】\n${ideaMemo.content.slice(0, CONTEXT_LIMIT)}${ideaMemo.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
 
-特に「AIツールの進捗」に関するメルマガテーマを考える際は、関さん自身の記憶よりも上記の開発ログの実際の記録を優先して参照してください。\n`
+特に「AIツールの進捗」に関するメルマガテーマを考える際は、上記の開発ログの実際の記録を優先して参照してください。\n`
       : "";
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
+    const systemPrompt = `${contextBase}\n\n${NEWSLETTER_RULES}${isOfficialAccount ? `\n\n${ACCURACY_RULES}` : ""}`;
 
-    const userMessage = `今の関達也が次に配信すべきメルマガのテーマを2〜3案、配信リズムと戦略を踏まえて提案してください。
+    const userMessage = `次に配信すべきメルマガのテーマを2〜3案、配信リズムと戦略を踏まえて提案してください。
 
 ${targetInstruction}
 

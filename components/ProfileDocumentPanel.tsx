@@ -14,7 +14,7 @@ function formatDate(iso: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export default function ProfileDocumentPanel() {
+export default function ProfileDocumentPanel({ accountId }: { accountId: string }) {
   const [data, setData] = useState<ProfileDocumentData | null>(null);
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -23,7 +23,7 @@ export default function ProfileDocumentPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("/api/profile-document")
+    fetch(`/api/profile-document?account_id=${encodeURIComponent(accountId)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: ProfileDocumentData | null) => {
         if (d) {
@@ -32,7 +32,7 @@ export default function ProfileDocumentPanel() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [accountId]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -41,7 +41,7 @@ export default function ProfileDocumentPanel() {
       const res = await fetch("/api/profile-document", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        body: JSON.stringify({ account_id: accountId, content: text }),
       });
       if (!res.ok) throw new Error("保存失敗");
       const result = await res.json();
@@ -59,8 +59,8 @@ export default function ProfileDocumentPanel() {
     if (!data) return;
     if (!confirm("デフォルトのプロフィールドキュメントにリセットしますか？")) return;
     try {
-      await fetch("/api/profile-document", { method: "DELETE" });
-      const res = await fetch("/api/profile-document");
+      await fetch(`/api/profile-document?account_id=${encodeURIComponent(accountId)}`, { method: "DELETE" });
+      const res = await fetch(`/api/profile-document?account_id=${encodeURIComponent(accountId)}`);
       const d: ProfileDocumentData | null = res.ok ? await res.json() : null;
       if (d) {
         setData(d);

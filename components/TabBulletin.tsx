@@ -6,6 +6,7 @@ import { useBulletinDB } from "@/lib/useBulletinDB";
 import DateInput from "@/components/DateInput";
 
 interface Props {
+  accountId: string;
   notebookEntries?: NotebookEntry[];
 }
 
@@ -21,8 +22,8 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export default function TabBulletin({ notebookEntries }: Props) {
-  const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useBulletinDB();
+export default function TabBulletin({ accountId, notebookEntries }: Props) {
+  const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useBulletinDB(accountId);
   const [subTab, setSubTab] = useState<SubTab>("list");
 
   // --- 一覧 tab state ---
@@ -107,7 +108,7 @@ export default function TabBulletin({ notebookEntries }: Props) {
       const resp = await fetch("/api/bulletin-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memo: createMemo, notebookEntries: notebookEntries ?? [] }),
+        body: JSON.stringify({ account_id: accountId, memo: createMemo, notebookEntries: notebookEntries ?? [] }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) {

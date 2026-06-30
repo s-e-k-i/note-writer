@@ -7,6 +7,7 @@ import { MAGAZINES } from "@/lib/profile";
 type RewriteMode = "rewrite" | "polish";
 
 interface Props {
+  accountId: string;
   articles: Article[];
   drafts: Draft[];
   initialProposal?: ProposalContext | null;
@@ -55,7 +56,7 @@ function resolveInitialMagazine(name?: string): string {
   return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
 }
 
-export default function TabGenerate({ articles, drafts, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
+export default function TabGenerate({ accountId, articles, drafts, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
   const fromProposal = !!(initialProposal?.articleType);
   const fromSuggestions = !!(initialProposal?.fromSuggestions);
 
@@ -243,6 +244,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          account_id: accountId,
           theme,
           magazine,
           articleType,
@@ -299,7 +301,7 @@ export default function TabGenerate({ articles, drafts, initialProposal, onSaveD
       const res = await fetch("/api/improve-titles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body, existingTitles: parsedTitles }),
+        body: JSON.stringify({ account_id: accountId, body, existingTitles: parsedTitles }),
       });
 
       const reader = res.body?.getReader();

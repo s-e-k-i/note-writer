@@ -1,33 +1,37 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { BULLETIN_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
 import { getSharedContext } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { memo, notebookEntries } = await request.json();
-
+    const { account_id, memo, notebookEntries } = await request.json();
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
     const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
 
     const CONTEXT_LIMIT = 2000;
 
-    const notebookSection =
-      Array.isArray(notebookEntries) && notebookEntries.length > 0
-        ? `\n【ネタ帳（参考）】\n${(notebookEntries as NotebookEntry[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\nネタ帳の中で今の気分に合うものがあれば投稿のヒントにしてください。使う必要はありません。\n`
-        : "";
+    const notebookSection = Array.isArray(notebookEntries) && notebookEntries.length > 0
+      ? `\n【ネタ帳（参考）】\n${(notebookEntries as NotebookEntry[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\nネタ帳の中で今の気分に合うものがあれば投稿のヒントにしてください。使う必要はありません。\n`
+      : "";
 
-    const sharedContextSection =
-      devLog || ideaMemo
-        ? `\n【開発ログ・アイデアメモ（参考）】\n${devLog ? `開発ログ：${devLog.content.slice(0, CONTEXT_LIMIT)}\n` : ""}${ideaMemo ? `アイデアメモ：${ideaMemo.content.slice(0, CONTEXT_LIMIT)}\n` : ""}`
-        : "";
+    const sharedContextSection = isOfficialAccount && (devLog || ideaMemo)
+      ? `\n【開発ログ・アイデアメモ（参考）】\n${devLog ? `開発ログ：${devLog.content.slice(0, CONTEXT_LIMIT)}\n` : ""}${ideaMemo ? `アイデアメモ：${ideaMemo.content.slice(0, CONTEXT_LIMIT)}\n` : ""}`
+      : "";
 
     const memoSection = memo?.trim() ? `\n【参考にするメモ・ネタ】\n${memo.trim()}\n` : "";
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}\n\n${BULLETIN_RULES}\n\n${ACCURACY_RULES}`;
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
+
+    const systemPrompt = `${contextBase}\n\n${BULLETIN_RULES}${isOfficialAccount ? `\n\n${ACCURACY_RULES}` : ""}`;
 
     const userMessage = `noteメンバーシップ向けの掲示板投稿を1つ作成してください。
 ${memoSection}${notebookSection}${sharedContextSection}
