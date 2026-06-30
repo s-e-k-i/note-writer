@@ -3,8 +3,8 @@ import { BrightDataXSource } from "@/lib/types";
 
 const ACCOUNTS_KEY = "brightdata:watched_accounts";
 const COUNTER_KEY = "brightdata:monthly_counter";
-const DATASET_ID = process.env.BRIGHTDATA_DATASET_ID ?? "gd_lwxkxvnf131eq42sj";
-const LIMIT_PER_INPUT = 10;
+const DATASET_ID = process.env.BRIGHTDATA_DATASET_ID ?? "gd_lwxkxvnf1cynvib9co";
+const DAYS_BACK = 3;
 
 interface MonthlyCounter {
   month: string;
@@ -32,33 +32,37 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
     (process.env.VERCEL_PROJECT_PRODUCTION_URL
       ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
       : `https://${process.env.VERCEL_URL}`);
-  const webhookUrl = `${baseUrl}/api/webhooks/brightdata`;
+
   const secret = process.env.BRIGHTDATA_WEBHOOK_SECRET ?? "";
+  const notifyUrl = secret
+    ? `${baseUrl}/api/webhooks/brightdata?secret=${encodeURIComponent(secret)}`
+    : `${baseUrl}/api/webhooks/brightdata`;
 
-  const inputs = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
+  const endDate = new Date().toISOString().split("T")[0];
+  const startDate = new Date(Date.now() - DAYS_BACK * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
 
-  const body = {
-    discover_new: true,
-    discover_by: "profile_url",
-    endpoint: webhookUrl,
-    webhook_header_Authorization: secret,
-    limit_per_input: LIMIT_PER_INPUT,
-    inputs,
-  };
+  const input = accounts.map((a) => ({
+    url: `https://x.com/${a.username}`,
+    start_date: startDate,
+    end_date: endDate,
+  }));
 
-  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, webhook=${webhookUrl}`);
+  const apiUrl =
+    `https://api.brightdata.com/datasets/v3/scrape` +
+    `?dataset_id=${DATASET_ID}` +
+    `&notify=${encodeURIComponent(notifyUrl)}` +
+    `&include_errors=true`;
 
-  const res = await fetch(
-    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${DATASET_ID}&include_errors=true`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    }
-  );
+  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, notify=${notifyUrl}, date=${startDate}~${endDate}`);
+
+  const res = await fetch(apiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ input }),
+  });
 
   const text = await res.text();
   console.log(`[brightdata/trigger] response ${res.status}: ${text.slice(0, 300)}`);
@@ -86,9 +90,9 @@ export async function POST() {
       return Response.json({ ok: false, error: result.error }, { status: 500 });
     }
 
-    const estimated = accounts.length * LIMIT_PER_INPUT;
+    const estimated = accounts.length * 10;
     const counter = await incrementCounter(estimated);
-    console.log(`[brightdata/trigger] snapshot=${result.snapshotId}, estimated=${estimated}, month total=${counter.requested}`);
+    console.log(`[brightdata/trigger] snapshot=${result.snapshotId}, accounts=${accounts.length}, month total=${counter.requested}`);
 
     return Response.json({
       ok: true,
