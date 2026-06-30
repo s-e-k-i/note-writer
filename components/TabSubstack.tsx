@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   SubstackNewsItem, SubstackSources,
   SubstackYouTubeSource, SubstackXSource, SubstackRSSSource,
+  BrightDataXSource,
 } from "@/lib/types";
 
 type Section = "items" | "create" | "drafts" | "sources";
@@ -59,6 +60,14 @@ export default function TabSubstack() {
   const [rssUrl, setRssUrl] = useState("");
   const [sourceMsg, setSourceMsg] = useState<string | null>(null);
 
+  // ── Bright Data state ──────────────────────────────
+  const [bdAccounts, setBdAccounts] = useState<BrightDataXSource[]>([]);
+  const [bdLoaded, setBdLoaded] = useState(false);
+  const [bdUsername, setBdUsername] = useState("");
+  const [bdTriggering, setBdTriggering] = useState(false);
+  const [bdTriggerMsg, setBdTriggerMsg] = useState<string | null>(null);
+  const [bdMonthly, setBdMonthly] = useState<{ month: string; requested: number; received?: number } | null>(null);
+
   // ── 投稿作成 state ─────────────────────────────────
   const [discoverQuery, setDiscoverQuery] = useState("");
   const [discovering, setDiscovering] = useState(false);
@@ -78,7 +87,13 @@ export default function TabSubstack() {
     setItemsLoaded(true);
   }, []);
 
-  useEffect(() => { loadItems(); }, [loadItems]);
+  useEffect(() => {
+    loadItems();
+    fetch("/api/brightdata/accounts")
+      .then((r) => r.json())
+      .then((d) => setBdAccounts(d.accounts ?? []))
+      .catch(() => {});
+  }, [loadItems]);
 
   useEffect(() => {
     if (section === "sources" && !sourcesLoaded) {
@@ -88,7 +103,14 @@ export default function TabSubstack() {
         .catch(() => {})
         .finally(() => setSourcesLoaded(true));
     }
-  }, [section, sourcesLoaded]);
+    if (section === "sources" && !bdLoaded) {
+      fetch("/api/brightdata/accounts")
+        .then((r) => r.json())
+        .then((d) => { setBdAccounts(d.accounts ?? []); })
+        .catch(() => {})
+        .finally(() => setBdLoaded(true));
+    }
+  }, [section, sourcesLoaded, bdLoaded]);
 
   // ── 収集 ──────────────────────────────────────────
   const handleCollect = async () => {
@@ -108,6 +130,54 @@ export default function TabSubstack() {
     } finally {
       setCollecting(false);
     }
+  };
+
+  // ── Bright Data ───────────────────────────────────
+  const handleBdTrigger = async () => {
+    if (bdTriggering) return;
+    setBdTriggering(true);
+    setBdTriggerMsg(null);
+    try {
+      const res = await fetch("/api/brightdata/trigger", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setBdTriggerMsg(`収集リクエスト送信（${data.accounts}アカウント × 最大${data.estimatedRecords / data.accounts}件）。数分後にネタ一覧へ反映されます。`);
+        if (data.monthlyCounter) setBdMonthly(data.monthlyCounter);
+      } else {
+        setBdTriggerMsg(data.error ?? data.message ?? "エラーが発生しました");
+      }
+    } catch {
+      setBdTriggerMsg("トリガーに失敗しました");
+    } finally {
+      setBdTriggering(false);
+      setTimeout(() => setBdTriggerMsg(null), 8000);
+    }
+  };
+
+  const handleBdAddAccount = async () => {
+    if (!bdUsername.trim()) return;
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: bdUsername.trim() }),
+      });
+      const data = await res.json();
+      if (data.accounts) { setBdAccounts(data.accounts); setBdUsername(""); }
+    } catch {}
+  };
+
+  const handleBdDeleteAccount = async (id: string) => {
+    if (!confirm("このアカウントをBright Data監視対象から削除しますか？")) return;
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (data.accounts) setBdAccounts(data.accounts);
+    } catch {}
   };
 
   // ── URLから追加 ───────────────────────────────────
@@ -274,7 +344,34 @@ export default function TabSubstack() {
                 <span className="text-xs text-red-400">{collectMsg}</span>
               )}
             </div>
-            <p className="text-xs text-zinc-600">登録済みの YouTube・X・RSS ソースから一括取得します</p>
+            <p className="text-xs text-zinc-600">登録済みの YouTube・RSS ソースから一括取得します（X は Bright Data で別途収集）</p>
+          </div>
+
+          {/* Bright Data収集 */}
+          <div className="space-y-1 border-t border-zinc-700/50 pt-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={handleBdTrigger}
+                disabled={bdTriggering || bdAccounts.length === 0}
+                className="px-3 py-1.5 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-200 border border-sky-700/50 rounded-lg transition-colors"
+              >
+                {bdTriggering ? "リクエスト中..." : "Bright Data収集"}
+              </button>
+              {bdAccounts.length === 0 && (
+                <span className="text-xs text-zinc-600">※ ソース管理でBDアカウントを登録してください</span>
+              )}
+              {bdMonthly && (
+                <span className="text-xs text-zinc-600">
+                  今月推定: {bdMonthly.requested}{bdMonthly.received !== undefined ? ` / 受信: ${bdMonthly.received}` : ""}件
+                </span>
+              )}
+              {bdTriggerMsg && (
+                <span className={`text-xs ${bdTriggerMsg.includes("失敗") || bdTriggerMsg.includes("エラー") ? "text-red-400" : "text-sky-300"}`}>
+                  {bdTriggerMsg}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-zinc-600">Bright Data経由でXアカウントの投稿を収集します（毎日21:00 UTC に自動実行）</p>
           </div>
 
           {/* URLから個別追加 */}
@@ -361,6 +458,9 @@ export default function TabSubstack() {
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${TYPE_BADGE[item.sourceType] ?? TYPE_BADGE.manual}`}>
                       {TYPE_LABEL[item.sourceType] ?? "手動"}
                     </span>
+                    {item.id.startsWith("bd_") && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-sky-900/60 text-sky-300 border border-sky-700/50">BD</span>
+                    )}
                     <span className="text-xs text-zinc-400">{item.sourceName}</span>
                     <span className="ml-auto text-xs text-zinc-600">{formatDateTime(item.collectedAt)}</span>
                   </div>
@@ -478,28 +578,37 @@ export default function TabSubstack() {
             </div>
           </div>
 
-          {/* X */}
+          {/* Bright Data — Xアカウント */}
           <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-zinc-200">Xアカウント</h4>
-            <p className="text-xs text-red-400/90 bg-red-900/15 border border-red-800/30 rounded-lg px-3 py-2">
-              ❌ X収集は現在利用不可。Nitter・RSSHub・DuckDuckGoすべてブロック中（確認済み）。アカウント登録は可能ですが収集時はスキップされます。
+            <h4 className="text-sm font-semibold text-zinc-200">XアカウントをBright Dataで収集</h4>
+            <p className="text-xs text-sky-400/80 bg-sky-900/15 border border-sky-800/30 rounded-lg px-3 py-2">
+              ✅ Bright Data経由でXポストを収集します。ここで登録したアカウントが「Bright Data収集」ボタンの対象になります。毎日21:00 UTC（翌6:00 JST）に自動収集されます。
             </p>
             <div className="flex gap-2">
-              <input value={xUsername} onChange={(e) => setXUsername(e.target.value)} placeholder="ユーザー名（@なし）" className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500" />
-              <button onClick={handleAddX} disabled={!xUsername.trim()} className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors">追加</button>
+              <input value={bdUsername} onChange={(e) => setBdUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleBdAddAccount()} placeholder="ユーザー名（@なし）" className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-sky-500" />
+              <button onClick={handleBdAddAccount} disabled={!bdUsername.trim()} className="px-3 py-2 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-600 text-sky-200 border border-sky-700/50 rounded-lg transition-colors">追加</button>
             </div>
             <div className="space-y-1">
-              {sources.x.length === 0 ? <p className="text-xs text-zinc-600">登録済みアカウントなし</p>
-                : sources.x.map((acc) => (
+              {bdAccounts.length === 0 ? <p className="text-xs text-zinc-600">登録済みアカウントなし</p>
+                : bdAccounts.map((acc) => (
                   <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
                     <span className="text-xs text-zinc-200">@{acc.username}</span>
                     <div className="flex items-center gap-3">
                       <a href={`https://x.com/${acc.username}`} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors">↗ 確認</a>
-                      <button onClick={() => deleteSource("x", acc.id)} className="text-xs text-zinc-600 hover:text-red-400 transition-colors">削除</button>
+                      <button onClick={() => handleBdDeleteAccount(acc.id)} className="text-xs text-zinc-600 hover:text-red-400 transition-colors">削除</button>
                     </div>
                   </div>
                 ))}
             </div>
+            {bdAccounts.length > 0 && (
+              <button
+                onClick={handleBdTrigger}
+                disabled={bdTriggering}
+                className="w-full py-2 text-xs bg-sky-800/40 hover:bg-sky-700/50 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-300 border border-sky-700/40 rounded-lg transition-colors"
+              >
+                {bdTriggering ? "リクエスト中..." : "今すぐBright Data収集を実行"}
+              </button>
+            )}
           </div>
 
           {/* RSS */}
