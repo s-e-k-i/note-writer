@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/raindrop-sync",
-      "schedule": "0 * * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }
