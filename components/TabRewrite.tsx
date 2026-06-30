@@ -32,6 +32,7 @@ function saveCache(cache: RewriteCache) {
 }
 
 interface Props {
+  accountId: string;
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   initialText?: string;
   initialMode?: RewriteMode;
@@ -41,7 +42,7 @@ interface Props {
   onBackToGenerate?: () => void;
 }
 
-export default function TabRewrite({ onSaveDraft, initialText, initialMode, initialIsPaid, initialPrice, initialTitle, onBackToGenerate }: Props) {
+export default function TabRewrite({ accountId, onSaveDraft, initialText, initialMode, initialIsPaid, initialPrice, initialTitle, onBackToGenerate }: Props) {
   const [mode, setMode] = useState<RewriteMode | null>(null);
   const [articleText, setArticleText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -144,7 +145,7 @@ export default function TabRewrite({ onSaveDraft, initialText, initialMode, init
       const res = await fetch("/api/rewrite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articleText, mode }),
+        body: JSON.stringify({ account_id: accountId, articleText, mode }),
       });
 
       const reader = res.body?.getReader();

@@ -6,6 +6,7 @@ import { useSnsDB } from "@/lib/useSnsDB";
 import DateInput from "@/components/DateInput";
 
 interface Props {
+  accountId: string;
   notebookEntries?: NotebookEntry[];
   articles?: Article[];
 }
@@ -33,8 +34,8 @@ function formatDateTime(iso: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export default function TabSns({ notebookEntries, articles }: Props) {
-  const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB();
+export default function TabSns({ accountId, notebookEntries, articles }: Props) {
+  const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB(accountId);
   const [subTab, setSubTab] = useState<SubTab>("list");
 
   // --- 一覧 tab state ---
@@ -202,8 +203,8 @@ export default function TabSns({ notebookEntries, articles }: Props) {
 
     const isArticleMode = snsMode === "note-update" || snsMode === "note-article";
     const body = isArticleMode
-      ? { channel: primaryChannel, mode: snsMode, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "" }
-      : { channel: primaryChannel, mode: snsMode, memo: createMemo, notebookEntries: notebookEntries ?? [] };
+      ? { account_id: accountId, channel: primaryChannel, mode: snsMode, articleTitle: noteSelectedArticle!.title, articleUrl: noteSelectedArticle!.url ?? "" }
+      : { account_id: accountId, channel: primaryChannel, mode: snsMode, memo: createMemo, notebookEntries: notebookEntries ?? [] };
 
     try {
       const resp = await fetch("/api/sns-generate", {

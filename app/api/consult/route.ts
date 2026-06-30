@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
 import { Article, ConsultMessage } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
@@ -41,11 +42,22 @@ function buildArticlesSummary(articles: Article[]): string {
     .join("\n");
 }
 
-function buildSystemPrompt(articles: Article[], articleType?: string, profileDoc = ""): string {
+function buildSystemPrompt(
+  articles: Article[],
+  profileDocument: string,
+  dna: string,
+  isOfficialAccount: boolean,
+  articleType?: string
+): string {
   const articleCount = articles.length;
   const magazineCounts = buildMagazineCounts(articles);
   const articlesSummary = buildArticlesSummary(articles);
   const isPaid = articleType === "paid";
+
+  const contextParts: string[] = [];
+  if (profileDocument) contextParts.push(profileDocument);
+  if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+  const contextBase = contextParts.join("\n\n");
 
   const paidSystemNote = isPaid
     ? `\n━━━━━━━━━━━━━━━━━━━━━━━━\n【有料記事として提案する】\n━━━━━━━━━━━━━━━━━━━━━━━━\nこの依頼は有料記事の提案です。各提案に有料ライン位置と無料・有料の比率を必ず含めること。\n`
@@ -55,10 +67,7 @@ function buildSystemPrompt(articles: Article[], articleType?: string, profileDoc
     ? `\n**有料ライン位置**：（どこから有料にするか。「〇〇の見出しの後から」と具体的に）\n**無料と有料の比率**：（例：7割無料・3割有料）`
     : "";
 
-  return `${profileDoc}
-
-あなたは関達也（せきたつや）専属の記事テーマ壁打ち相手AIです。${paidSystemNote}
-
+  const officialContext = isOfficialAccount ? `
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【現在の発信フェーズ（2026年6月時点）】
 ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -66,8 +75,6 @@ function buildSystemPrompt(articles: Article[], articleType?: string, profileDoc
 - どん底・再起の記録フェーズから「ひとりビジネス・コンサル発信」フェーズへ移行中
 - 個別相談（スポットコンサル）の募集を開始したばかり
 - 読者をコンサル申込みへつなげる記事を増やしたい
-- ひとり起業・ひとりビジネスのノウハウ・哲学の発信比率を上げていく
-- 感情・体験談系の記事は書くが、必ずひとりビジネスの学びと接続させる
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【マガジン構成と投稿数】
@@ -81,15 +88,17 @@ ${magazineCounts}
 - 自由になるための読書。──やりなおしの途中で
 - 僕と娘のキャンピングカー旅。──1ヶ月のつもりが1年半に
 - 陽はまた昇る。──3度のどん底から1億円と自由へ
+` : "";
 
+  return `${contextBase}
+
+あなたはこのアカウント専属の記事テーマ壁打ち相手AIです。${paidSystemNote}
+${officialContext}
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【提案のルール】
 ━━━━━━━━━━━━━━━━━━━━━━━━
 - 既存の${articleCount}本を参照し、まだ書いていないテーマ・角度を提案する
-- 「ひとりビジネス・コンサル導線」になる記事を優先的に提案する
-- 体験談は必ずビジネスの学びと接続させる
-- タイトル案は関達也の文体（短文・体験談先出し・読者への問いかけ）に合わせる
-- 「〜なんですよね。」「でも、〜。」「正直、〜。」「振り返ると、〜。」「当時の僕は〜。」のトーン
+- タイトル案はこのアカウントの文体・トーンに合わせる
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【提案フォーマット（厳守）】
@@ -103,7 +112,7 @@ ${magazineCounts}
 2. （タイトル2）
 3. （タイトル3）
 
-**掲載マガジン**：（上記正式名から選択）
+**掲載マガジン**：${isOfficialAccount ? "（上記正式名から選択）" : "（適切なカテゴリ）"}
 **狙い・ターゲット**：
 **構成イメージ**：
 **コンサル導線設計**：
@@ -112,31 +121,26 @@ ${magazineCounts}
 <!-- PROPOSAL_META: {"magazine":"マガジン正式名","purpose":"コンサル導線"} -->
 
 【禁止事項】
-提案の末尾に以下を書かないこと：
-- 「いかがでしょうか？」
-- 「どれか気になるテーマはありましたか？」
-- 「別の角度で壁打ちしましょうか？」
-- 「一緒に次の一本を練りましょう」
-- その他、読者に問いかける締め文
-提案は提案で完結させること。
+提案の末尾に問いかける締め文を書かないこと。
 
 ━━━━━━━━━━━━━━━━━━━━━━━━
 【既存記事データベース（${articleCount}本）】
 ━━━━━━━━━━━━━━━━━━━━━━━━
 ${articlesSummary}
 
-${ACCURACY_RULES}`;
+${isOfficialAccount ? ACCURACY_RULES : ""}`;
 }
 
 export async function POST(request: Request) {
   try {
-    const { mode, messages, articles, purposeForm, articleType, notebookEntries } = await request.json();
+    const { account_id, mode, messages, articles, purposeForm, articleType, notebookEntries } = await request.json();
 
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
     const { devLog, ideaMemo } = await getSharedContext().catch(() => ({ devLog: null, ideaMemo: null }));
 
     const articleList: Article[] = articles || [];
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = buildSystemPrompt(articleList, articleType, profileDoc);
+    const systemPrompt = buildSystemPrompt(articleList, profileDocument, dna, isOfficialAccount, articleType);
 
     let userMessages: ConsultMessage[] = messages || [];
 
@@ -146,47 +150,36 @@ export async function POST(request: Request) {
         : "（記事なし）";
 
       const notebookSection = Array.isArray(notebookEntries) && notebookEntries.length > 0
-        ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。すべてを使う必要はなく、既存の記事・配信履歴との重複や、配信のタイミング・流れを考慮した上で、合うものだけを選んでください。\n`
+        ? `\n【ネタ帳（思いつき・未整理のアイデア）】\n${(notebookEntries as { text: string }[]).map((e, i) => `【ネタ${i + 1}】${e.text}`).join("\n")}\n\nネタ帳の中に今のタイミングで活かせそうなものがあれば、提案に取り入れてください。\n`
         : "";
 
       const CONTEXT_LIMIT = 3000;
-      const sharedContextSection = (devLog || ideaMemo)
-        ? `\n【開発ログ・アイデアメモ（hitoribiz-osとの共有情報）】
-${devLog ? `【開発ログ（直近の開発活動の記録）】\n${devLog.content.slice(0, CONTEXT_LIMIT)}${devLog.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
-${ideaMemo ? `\n【アイデアメモ（開発・ビジネスアイデアのメモ）】\n${ideaMemo.content.slice(0, CONTEXT_LIMIT)}${ideaMemo.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
-
-特に「AIツールの進捗」に関する記事テーマを考える際は、関さん自身の記憶よりも上記の開発ログの実際の記録を優先して参照してください。\n`
+      const sharedContextSection = isOfficialAccount && (devLog || ideaMemo)
+        ? `\n【開発ログ・アイデアメモ】
+${devLog ? `【開発ログ】\n${devLog.content.slice(0, CONTEXT_LIMIT)}${devLog.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}
+${ideaMemo ? `\n【アイデアメモ】\n${ideaMemo.content.slice(0, CONTEXT_LIMIT)}${ideaMemo.content.length > CONTEXT_LIMIT ? "\n...(以下省略)" : ""}` : ""}\n`
         : "";
 
-      userMessages = [
-        {
-          role: "user",
-          content: `上記のデータベースと現在のフェーズを踏まえて、今の僕（関達也）が次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。
+      userMessages = [{
+        role: "user",
+        content: `上記のデータベースと現在のフェーズを踏まえて、次に書くべき記事テーマを3〜5案、提案フォーマットに従って提案してください。
 
 【重要】以下の既存タイトルと重複・類似するテーマは絶対に避けてください：
 ${existingTitles}
 ${notebookSection}${sharedContextSection}
-「ひとりビジネス・コンサル導線」になる記事を優先し、上記にない新しい角度・切り口を選んでください。${articleType === "paid" ? "\n有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
-        },
-      ];
+上記にない新しい角度・切り口を選んでください。${articleType === "paid" ? "\n有料記事として設計し、各提案に有料ライン位置を含めること。" : ""}`,
+      }];
     } else if (mode === "purpose" && purposeForm) {
-      userMessages = [
-        {
-          role: "user",
-          content: `以下の目的と条件で、提案フォーマットに従って記事テーマを3案提案してください。
+      userMessages = [{
+        role: "user",
+        content: `以下の目的と条件で、提案フォーマットに従って記事テーマを3案提案してください。
 
 書く目的：${purposeForm.goal}
 届けたいターゲット：${purposeForm.target}
 方向性メモ：${purposeForm.notes || "（なし）"}${articleType === "paid" ? "\n\n有料記事として設計すること。各提案に有料ライン位置を含めること。" : ""}`,
-        },
-      ];
+      }];
     } else if (mode === "chat" && userMessages.length === 0) {
-      userMessages = [
-        {
-          role: "user",
-          content: "次の記事について一緒に考えたいです。",
-        },
-      ];
+      userMessages = [{ role: "user", content: "次の記事について一緒に考えたいです。" }];
     }
 
     const isChat = mode === "chat";
@@ -197,42 +190,21 @@ ${notebookSection}${sharedContextSection}
 【壁打ちモードのルール】
 ━━━━━━━━━━━━━━━━━━━━━━━━
 - 通常の返答は300文字以内にまとめること。続きは相手の反応を見てから返すこと。
-- テーマ・ターゲット・構成がある程度定まったと判断したら、会話を切り上げ、以下の提案フォーマット（厳守）で1案として出力すること。文字数制限なし。出力後は余分な文章を加えないこと。
-
-## 📌 提案1
-
-**タイトル案**：
-1. （タイトル1）
-2. （タイトル2）
-3. （タイトル3）
-
-**掲載マガジン**：（マガジンの正式名）
-**狙い・ターゲット**：（会話で固まったターゲット）
-**構成イメージ**：（会話で決まった構成）
-**コンサル導線設計**：（どう読者をコンサルに繋げるか）
-**なぜ今この記事か**：（会話で出た理由・タイミング）
-
-<!-- PROPOSAL_META: {"magazine":"マガジン正式名","purpose":"コンサル導線"} -->`
+- テーマ・ターゲット・構成がある程度定まったと判断したら、会話を切り上げ、提案フォーマットで1案として出力すること。`
       : systemPrompt;
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
       max_tokens: isChat ? 2000 : 4000,
       system: finalSystemPrompt,
-      messages: userMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
+      messages: userMessages.map((m) => ({ role: m.role, content: m.content })),
     });
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         for await (const chunk of stream) {
-          if (
-            chunk.type === "content_block_delta" &&
-            chunk.delta.type === "text_delta"
-          ) {
+          if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
             controller.enqueue(encoder.encode(chunk.delta.text));
           }
         }
@@ -240,9 +212,7 @@ ${notebookSection}${sharedContextSection}
       },
     });
 
-    return new Response(readable, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return new Response(readable, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   } catch (error) {
     console.error("Consult error:", error);
     return Response.json({ error: "処理中にエラーが発生しました" }, { status: 500 });

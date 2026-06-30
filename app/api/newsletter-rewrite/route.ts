@@ -1,22 +1,30 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { body, additionalInstructions } = await request.json() as {
+    const { account_id, body, additionalInstructions } = await request.json() as {
+      account_id?: string;
       body: string;
       additionalInstructions?: string;
     };
+
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
 
     const additionalNote = additionalInstructions?.trim()
       ? `\n【追加の指示・要望（最優先で反映すること）】\n${additionalInstructions.trim()}\n`
       : "";
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
+    const systemPrompt = `${contextBase}\n\n${NEWSLETTER_RULES}${isOfficialAccount ? `\n\n${ACCURACY_RULES}` : ""}`;
     const userMessage = `以下のメルマガ下書きをリライトしてください。
 
 【現在の下書き本文】

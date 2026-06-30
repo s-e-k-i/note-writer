@@ -1,22 +1,28 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { body, existingTitles } = await request.json();
+    const { account_id, body, existingTitles } = await request.json();
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
 
-${ACCURACY_RULES}
+    const systemPrompt = `${contextBase}
+${isOfficialAccount ? `\n${ACCURACY_RULES}` : ""}
 
-あなたは関達也（せきたつや）の記事タイトルを改善する専門家です。
+あなたはこのアカウントの記事タイトルを改善する専門家です。
 以下の条件を守ってタイトルを5案生成してください：
 - 記事本文の内容・体験談・数字・キーワードを必ず反映させる
-- ターゲット読者（ひとり起業・副業・再起を考えている人）が「これは自分のことだ」と感じる言葉を使う
+- ターゲット読者が「これは自分のことだ」と感じる言葉を使う
 - 「続きが気になる」「読まないと損」と思わせる引きの強さを意識する
 - 数字・対比・問いかけ・体験談の断片など、クリックされやすいパターンを意識して5案それぞれ違う型で作る
 - 各タイトルに一言コメント（どの読者に刺さるか・どのパターンか）を添える
@@ -55,9 +61,7 @@ ${(existingTitles as string[]).join("\n")}`;
       },
     });
 
-    return new Response(readable, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return new Response(readable, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   } catch (error) {
     console.error("Improve titles error:", error);
     return Response.json({ error: "処理中にエラーが発生しました" }, { status: 500 });

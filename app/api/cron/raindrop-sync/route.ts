@@ -1,9 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { redis } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
+import { SEKI_ID } from "@/lib/accountIds";
 
-const NOTEBOOK_KEY = "note-writer:notebook";
-const LAST_SYNCED_KEY = "raindrop:last_synced_id";
+// Raindrop sync always targets the official account
+const NOTEBOOK_KEY = `account:${SEKI_ID}:notebook`;
+const LAST_SYNCED_KEY = `account:${SEKI_ID}:raindrop:last_synced_id`;
 
 interface RaindropItem {
   _id: number;

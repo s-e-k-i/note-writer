@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 import { Newsletter } from "@/lib/types";
 
 const client = new Anthropic();
@@ -14,6 +15,7 @@ const WORD_COUNT_NOTE: Record<string, string> = {
 export async function POST(request: Request) {
   try {
     const {
+      account_id,
       angleType,
       ideaTitle,
       description,
@@ -29,6 +31,13 @@ export async function POST(request: Request) {
       distributionTarget,
     } = await request.json();
 
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
+
     const bodyText = articleBody ? articleBody.slice(0, 3000) : articleSummary ?? "";
 
     const recentSamples = ((recentNewsletters as Newsletter[]) ?? [])
@@ -36,12 +45,7 @@ export async function POST(request: Request) {
       .map((n, i) => `【配信${i + 1}・${n.date}】${n.title}\n${n.body.slice(0, 400)}`)
       .join("\n\n---\n\n");
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}
-
-${NEWSLETTER_RULES}
-
-${ACCURACY_RULES}`;
+    const systemPrompt = `${contextBase}\n\n${NEWSLETTER_RULES}${isOfficialAccount ? `\n\n${ACCURACY_RULES}` : ""}`;
 
     const distributionNote =
       distributionTarget && distributionTarget !== "ai"
@@ -82,7 +86,7 @@ ${ideaTitle}：${description}
 【文字数】
 ${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
 
-${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
+${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまでこのアカウントの現在の文体で書くこと。\n` : ""}
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
 ${distributionNote}
 ${additionalNote}
@@ -105,7 +109,7 @@ ${bodyText || "（本文データなし）"}
 【文字数】
 ${WORD_COUNT_NOTE[wordCountMode] ?? WORD_COUNT_NOTE.standard}
 
-${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・エピソード・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまで関達也の現在の文体で書くこと。\n` : ""}
+${referenceSample ? `【参考にしたいエピソード・過去の文章】\n${referenceSample}\n\n※この文章に含まれる出来事・エピソード・事実は参考にしてよい。ただし文体・言い回しはそのまま真似しないこと。あくまでこのアカウントの現在の文体で書くこと。\n` : ""}
 ${recentSamples ? `【直近の配信済みメルマガ（文体参考）】\n${recentSamples}\n` : ""}
 ${distributionNote}
 ${additionalNote}

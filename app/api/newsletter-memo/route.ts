@@ -1,13 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 import { Article, Newsletter } from "@/lib/types";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { memoText, articles, newsletters, distributionTarget } = await request.json();
+    const { account_id, memoText, articles, newsletters, distributionTarget } = await request.json();
+
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
 
     const articleList: Article[] = articles || [];
     const newsletterList: Newsletter[] = newsletters || [];
@@ -30,10 +38,9 @@ export async function POST(request: Request) {
       ? `【配信先】この提案は「${targetCategory}」の読者向けに最適化すること。その読者の関心・知識レベル・求めているものを意識した角度・内容・トーンにする。\n`
       : `【配信先】AIが最も適切な配信先カテゴリを判断すること。各提案のdescriptionの末尾に「※〇〇向け」（メルマガ読者（通常）/メルマガ読者（note経由）/ChatGPTの学校/ひとりビジネス診断のいずれか）と一言明記する。\n`;
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}\n\n${NEWSLETTER_RULES}\n\n${ACCURACY_RULES}`;
+    const systemPrompt = `${contextBase}\n\n${NEWSLETTER_RULES}${isOfficialAccount ? `\n\n${ACCURACY_RULES}` : ""}`;
 
-    const userMessage = `以下は関達也が書いたメモです。殴り書き・バラバラでも構いません。
+    const userMessage = `以下は執筆者が書いたメモです。殴り書き・バラバラでも構いません。
 
 ---
 ${memoText}

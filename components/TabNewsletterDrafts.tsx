@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { NewsletterDraft } from "@/lib/types";
 
 interface Props {
+  accountId: string;
   drafts: NewsletterDraft[];
   onUpdate: (id: string, updates: Partial<NewsletterDraft>) => void;
   onRemove: (id: string) => void;
@@ -25,7 +26,7 @@ interface RewriteState {
   isGenerating: boolean;
 }
 
-export default function TabNewsletterDrafts({ drafts, onUpdate, onRemove, onRegisterAsSent }: Props) {
+export default function TabNewsletterDrafts({ accountId, drafts, onUpdate, onRemove, onRegisterAsSent }: Props) {
   const [editState, setEditState] = useState<EditState | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [rewriteState, setRewriteState] = useState<RewriteState | null>(null);
@@ -75,7 +76,7 @@ export default function TabNewsletterDrafts({ drafts, onUpdate, onRemove, onRegi
       const resp = await fetch("/api/newsletter-rewrite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: rewriteState.sourceBody, additionalInstructions: rewriteState.instructions }),
+        body: JSON.stringify({ account_id: accountId, body: rewriteState.sourceBody, additionalInstructions: rewriteState.instructions }),
         signal: abortRef.current.signal,
       });
       if (!resp.ok || !resp.body) {

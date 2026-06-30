@@ -10,6 +10,7 @@ type SuggestionData = {
 };
 
 interface Props {
+  accountId: string;
   articles: Article[];
   notebookEntries?: NotebookEntry[];
   onStartWriting: (suggestion: Suggestion) => void;
@@ -31,7 +32,7 @@ function loadCollapsed(): boolean {
   }
 }
 
-export default function NextSuggestionsPanel({ articles, notebookEntries, onStartWriting }: Props) {
+export default function NextSuggestionsPanel({ accountId, articles, notebookEntries, onStartWriting }: Props) {
   const [data, setData] = useState<SuggestionData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +58,7 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
     setError(null);
     try {
       if (!forceRegenerate) {
-        const res = await fetch("/api/next-suggestions");
+        const res = await fetch(`/api/next-suggestions?account_id=${encodeURIComponent(accountId)}`);
         if (res.ok) {
           const d: SuggestionData = await res.json();
           if (d.date === today && d.suggestions?.length > 0) {
@@ -70,7 +71,7 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
       const res = await fetch("/api/next-suggestions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ articles, notebookEntries }),
+        body: JSON.stringify({ account_id: accountId, articles, notebookEntries }),
       });
       if (!res.ok) throw new Error("生成に失敗しました");
       const d: SuggestionData = await res.json();
@@ -96,7 +97,7 @@ export default function NextSuggestionsPanel({ articles, notebookEntries, onStar
     fetch("/api/next-suggestions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
+      body: JSON.stringify({ account_id: accountId, role }),
     }).catch(() => {});
   };
 

@@ -19,6 +19,8 @@ import TabSns from "@/components/TabSns";
 import TabSubstack from "@/components/TabSubstack";
 import ProfileDocumentPanel from "@/components/ProfileDocumentPanel";
 import NextSuggestionsPanel from "@/components/NextSuggestionsPanel";
+import AccountSwitcher from "@/components/AccountSwitcher";
+import AccountDNAPanel from "@/components/AccountDNAPanel";
 import NotebookPiPWidget from "@/components/NotebookPiPWidget";
 import PasswordGate from "@/components/PasswordGate";
 import { usePiP } from "@/hooks/usePiP";
@@ -26,6 +28,7 @@ import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 import { useSnsDB } from "@/lib/useSnsDB";
+import { SEKI_ID, CURRENT_ACCOUNT_LS_KEY } from "@/lib/accountIds";
 
 const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
 const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
@@ -51,11 +54,30 @@ const NEWSLETTER_TABS: { id: NewsletterTab; label: string }[] = [
 ];
 
 export default function Home() {
+  const [currentAccountId, setCurrentAccountId] = useState<string>(SEKI_ID);
   const [section, setSection] = useState<Section>("note");
   const [noteTab, setNoteTab] = useState<NoteTab>("database");
   const [newsletterTab, setNewsletterTab] = useState<NewsletterTab>("list");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number; title?: string } | null>(null);
+
+  // Load saved account from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(CURRENT_ACCOUNT_LS_KEY);
+      if (saved) setCurrentAccountId(saved);
+    } catch {}
+  }, []);
+
+  const handleSwitchAccount = (accountId: string) => {
+    setCurrentAccountId(accountId);
+    try { localStorage.setItem(CURRENT_ACCOUNT_LS_KEY, accountId); } catch {}
+    // Reset tab state on switch
+    setSection("note");
+    setNoteTab("database");
+  };
+
+  const isOfficialAccount = currentAccountId === SEKI_ID;
 
   // notebook modal
   const [notebookModalOpen, setNotebookModalOpen] = useState(false);
@@ -77,22 +99,22 @@ export default function Home() {
     }
   }, [notebookModalText]);
 
-  const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB();
-  const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB();
-  const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB();
-  const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB();
-  const { entries: notebookEntries, loaded: notebookLoaded, addEntry: addNotebookEntry, updateEntry: updateNotebookEntry, removeEntry: removeNotebookEntry } = useNotebookDB();
-  const { posts: snsPosts, loaded: snsLoaded } = useSnsDB();
+  const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB(currentAccountId);
+  const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB(currentAccountId);
+  const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB(currentAccountId);
+  const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB(currentAccountId);
+  const { entries: notebookEntries, loaded: notebookLoaded, addEntry: addNotebookEntry, updateEntry: updateNotebookEntry, removeEntry: removeNotebookEntry } = useNotebookDB(currentAccountId);
+  const { posts: snsPosts, loaded: snsLoaded } = useSnsDB(currentAccountId);
 
   // draft → list の引き継ぎ
   const [pendingDraft, setPendingDraft] = useState<{ title: string; body: string; sourceNoteUrl?: string; distributionTargets?: string[]; _t: number } | null>(null);
 
   const loaded = articlesLoaded && newslettersLoaded && nlDraftsLoaded && notebookLoaded && snsLoaded;
 
-  // Redis sync: drafts・ネタ帳・記事数が変わったら2秒後に同期
+  // Redis sync: オフィシャルアカウントのみ、drafts・ネタ帳・記事数が変わったら2秒後に同期
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !isOfficialAccount) return;
     if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(() => {
       // メルマガ最新10件
@@ -239,8 +261,10 @@ export default function Home() {
         <header className="border-b border-zinc-800 px-6 py-4">
           <div className="max-w-4xl mx-auto flex items-center gap-3">
             <div className="text-lg font-bold text-zinc-100">note-writer</div>
-            <div className="text-zinc-500 text-sm">関達也の声でnote記事を書く</div>
-            {todayStr && <div className="ml-auto text-sm text-zinc-400">{todayStr}</div>}
+            {todayStr && <div className="text-sm text-zinc-400">{todayStr}</div>}
+            <div className="ml-auto flex items-center gap-2">
+              <AccountSwitcher currentAccountId={currentAccountId} onSwitch={handleSwitchAccount} />
+            </div>
           </div>
         </header>
 
@@ -248,7 +272,7 @@ export default function Home() {
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
           <div className="max-w-4xl mx-auto flex items-center">
             <div className="flex gap-1 flex-1">
-              {(["note", "newsletter", "sns", "substack", "notebook", "settings"] as Section[]).map((s) => (
+              {(["note", "newsletter", "sns", ...(isOfficialAccount ? ["substack"] : []), "notebook", "settings"] as Section[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSection(s)}
@@ -357,6 +381,7 @@ export default function Home() {
                   {/* Keep TabConsult mounted so cached proposals survive tab switches */}
                   <div className={noteTab === "consult" ? "" : "hidden"}>
                     <NextSuggestionsPanel
+                      accountId={currentAccountId}
                       articles={articles}
                       notebookEntries={notebookEntries}
                       onStartWriting={(suggestion) =>
@@ -370,10 +395,11 @@ export default function Home() {
                         })
                       }
                     />
-                    <TabConsult articles={articles} onSelectTheme={handleSelectTheme} notebookEntries={notebookEntries} />
+                    <TabConsult accountId={currentAccountId} articles={articles} onSelectTheme={handleSelectTheme} notebookEntries={notebookEntries} />
                   </div>
                   {noteTab === "generate" && (
                     <TabGenerate
+                      accountId={currentAccountId}
                       articles={articles}
                       drafts={drafts}
                       initialProposal={pendingProposal}
@@ -384,6 +410,7 @@ export default function Home() {
                   )}
                   {noteTab === "rewrite" && (
                     <TabRewrite
+                      accountId={currentAccountId}
                       onSaveDraft={handleSaveDraftFromRewrite}
                       initialText={pendingRewrite?.text}
                       initialMode={pendingRewrite?.mode}
@@ -403,7 +430,7 @@ export default function Home() {
                     />
                   )}
                   {noteTab === "bulletin" && (
-                    <TabBulletin notebookEntries={notebookEntries} />
+                    <TabBulletin accountId={currentAccountId} notebookEntries={notebookEntries} />
                   )}
                 </>
               )}
@@ -423,6 +450,7 @@ export default function Home() {
                   )}
                   {newsletterTab === "write" && (
                     <TabNewsletterWrite
+                      accountId={currentAccountId}
                       articles={articles}
                       newsletters={newsletters}
                       onSaveDraft={addNewsletterDraft}
@@ -431,6 +459,7 @@ export default function Home() {
                   )}
                   {newsletterTab === "drafts" && (
                     <TabNewsletterDrafts
+                      accountId={currentAccountId}
                       drafts={newsletterDrafts}
                       onUpdate={updateNewsletterDraft}
                       onRemove={removeNewsletterDraft}
@@ -451,7 +480,7 @@ export default function Home() {
 
               {/* sns section */}
               {section === "sns" && (
-                <TabSns notebookEntries={notebookEntries} articles={articles} />
+                <TabSns accountId={currentAccountId} notebookEntries={notebookEntries} articles={articles} />
               )}
 
               {/* substack section */}
@@ -461,9 +490,14 @@ export default function Home() {
 
               {/* settings section */}
               {section === "settings" && (
-                <div>
-                  <h2 className="text-sm font-semibold text-zinc-300 mb-4">プロフィールドキュメント</h2>
-                  <ProfileDocumentPanel />
+                <div className="space-y-8">
+                  <div>
+                    <h2 className="text-sm font-semibold text-zinc-300 mb-4">プロフィールドキュメント</h2>
+                    <ProfileDocumentPanel accountId={currentAccountId} />
+                  </div>
+                  <div>
+                    <AccountDNAPanel accountId={currentAccountId} />
+                  </div>
                 </div>
               )}
             </>

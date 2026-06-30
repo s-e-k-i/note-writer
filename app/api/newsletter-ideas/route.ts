@@ -1,25 +1,30 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
   try {
-    const { articleTitle, articleBody, articleSummary } = await request.json();
+    const { account_id, articleTitle, articleBody, articleSummary } = await request.json();
+
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
 
     const bodyText = articleBody
       ? articleBody.slice(0, 2000)
       : articleSummary ?? "";
 
-    const profileDoc = await getProfileDocument();
-    const systemPrompt = `${profileDoc}
+    const systemPrompt = `${contextBase}
 
 ${NEWSLETTER_RULES}
-
-${ACCURACY_RULES}
-
-あなたは関達也のメルマガ編集者として、note記事をメルマガ向けダイジェストに仕立てるアイデアを提案します。`;
+${isOfficialAccount ? `\n${ACCURACY_RULES}\n` : ""}
+あなたはこのアカウントのメルマガ編集者として、note記事をメルマガ向けダイジェストに仕立てるアイデアを提案します。`;
 
     const userMessage = `以下のnote記事を、メルマガのダイジェスト＋note誘導という形式で届けるとしたら、どんな「書き出し方」が効果的か、3パターン提案してください。
 
@@ -41,7 +46,7 @@ ${bodyText || "（本文データなし）"}
 パターンの例：
 - 問いかけから始める（読者に問いを投げかける冒頭）
 - 記事の核心となる一文から始める（記事中の最も強い言葉や概念から入る）
-- 関達也の心情から始める（「これを書いていてあらためて思ったのは」のような入り）
+- 執筆者の心情から始める（「これを書いていてあらためて思ったのは」のような入り）
 
 【出力形式（厳守）】
 以下のJSON配列のみを出力すること。前後に説明文・コードブロック記号は一切不要：

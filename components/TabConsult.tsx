@@ -9,6 +9,7 @@ import {
 import VideoModePanel from "@/components/VideoModePanel";
 
 interface Props {
+  accountId: string;
   articles: Article[];
   onSelectTheme: (proposal: ProposalContext) => void;
   notebookEntries?: NotebookEntry[];
@@ -148,7 +149,7 @@ function displayContext(context: string): string {
 }
 
 // ── Component ────────────────────────────────────────────────────
-export default function TabConsult({ articles, onSelectTheme, notebookEntries }: Props) {
+export default function TabConsult({ accountId, articles, onSelectTheme, notebookEntries }: Props) {
   // Settings (persisted)
   const [articleType, setArticleType] = useState<ArticleType | null>(null);
   const [price, setPrice] = useState<number | "ai" | null>(null);
@@ -237,6 +238,7 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          account_id: accountId,
           mode: currentMode,
           messages: currentMessages,
           articles,
@@ -274,7 +276,7 @@ export default function TabConsult({ articles, onSelectTheme, notebookEntries }:
       const res = await fetch("/api/memo", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memoText, articleType, price, articles }),
+        body: JSON.stringify({ account_id: accountId, memoText, articleType, price, articles }),
       });
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();

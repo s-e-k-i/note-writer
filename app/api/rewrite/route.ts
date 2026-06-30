@@ -1,17 +1,17 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ACCURACY_RULES } from "@/lib/profile";
-import { getProfileDocument } from "@/lib/getProfileDocument";
+import { getAccountContext } from "@/lib/getAccountContext";
+import { SEKI_ID } from "@/lib/accountIds";
 
 const client = new Anthropic();
 
-function buildRewritePrompt(articleText: string, profileDoc: string): { system: string; user: string } {
+function buildRewritePrompt(articleText: string, context: string, isOfficial: boolean) {
   return {
-    system: `${profileDoc}
+    system: `${context}
 
-あなたは関達也さんの編集者として、記事を改善するアドバイスを行います。
+あなたはこのアカウントの編集者として、記事を改善するアドバイスを行います。
 以下の観点で分析し、具体的な改善提案とリライト全文を提供してください。
-
-${ACCURACY_RULES}`,
+${isOfficial ? `\n${ACCURACY_RULES}` : ""}`,
     user: `以下の記事を分析してください。
 
 ${articleText}
@@ -23,7 +23,7 @@ ${articleText}
 ## 分析結果
 
 **文体について**
-（関達也らしさの評価と具体的な改善点）
+（このアカウントらしさの評価と具体的な改善点）
 
 **構成について**
 （導入→体験談→気づき→読者へ渡す の型になっているか）
@@ -35,18 +35,17 @@ ${articleText}
 
 ## リライト全文
 
-（関達也の文体・構成に合わせた全文リライト）`,
+（アカウントの文体・構成に合わせた全文リライト）`,
   };
 }
 
-function buildPolishPrompt(articleText: string, profileDoc: string): { system: string; user: string } {
+function buildPolishPrompt(articleText: string, context: string, isOfficial: boolean) {
   return {
-    system: `${profileDoc}
+    system: `${context}
 
-あなたは関達也さんの専属校正者です。
+あなたはこのアカウントの専属校正者です。
 記事の最終チェックを行い、指摘と修正案を出したあと、修正後の全文を出力してください。
-
-${ACCURACY_RULES}`,
+${isOfficial ? `\n${ACCURACY_RULES}` : ""}`,
     user: `以下の記事を仕上げチェックしてください。
 
 ${articleText}
@@ -74,7 +73,7 @@ ${articleText}
 ### ⑤ 結論が曖昧・伝わりにくい箇所
 （指摘と修正案 or「問題なし」）
 
-### ⑥ 関達也らしくない言葉・表現
+### ⑥ このアカウントらしくない言葉・表現
 （指摘と修正案 or「問題なし」）
 
 ---
@@ -87,17 +86,22 @@ ${articleText}
 
 export async function POST(request: Request) {
   try {
-    const { articleText, mode } = await request.json();
+    const { account_id, articleText, mode } = await request.json();
 
-    if (!articleText) {
-      return Response.json({ error: "articleText is required" }, { status: 400 });
-    }
+    if (!articleText) return Response.json({ error: "articleText is required" }, { status: 400 });
 
-    const profileDoc = await getProfileDocument();
+    const accountId = account_id ?? SEKI_ID;
+    const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
+
+    const contextParts: string[] = [];
+    if (profileDocument) contextParts.push(profileDocument);
+    if (dna) contextParts.push(`【アカウント運営方針・文体】\n${dna}`);
+    const contextBase = contextParts.join("\n\n");
+
     const { system, user } =
       mode === "polish"
-        ? buildPolishPrompt(articleText, profileDoc)
-        : buildRewritePrompt(articleText, profileDoc);
+        ? buildPolishPrompt(articleText, contextBase, isOfficialAccount)
+        : buildRewritePrompt(articleText, contextBase, isOfficialAccount);
 
     const stream = await client.messages.stream({
       model: "claude-sonnet-4-5",
@@ -110,10 +114,7 @@ export async function POST(request: Request) {
     const readable = new ReadableStream({
       async start(controller) {
         for await (const chunk of stream) {
-          if (
-            chunk.type === "content_block_delta" &&
-            chunk.delta.type === "text_delta"
-          ) {
+          if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
             controller.enqueue(encoder.encode(chunk.delta.text));
           }
         }
@@ -121,9 +122,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return new Response(readable, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    return new Response(readable, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
   } catch (error) {
     console.error("Rewrite error:", error);
     return Response.json({ error: "処理中にエラーが発生しました" }, { status: 500 });
