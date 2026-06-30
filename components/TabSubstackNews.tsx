@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   SubstackNewsItem, SubstackSources,
   SubstackYouTubeSource, SubstackXSource, SubstackRSSSource,
+  BrightDataXSource,
 } from "@/lib/types";
 
 interface Props {
@@ -60,6 +61,14 @@ export default function TabSubstackNews({ onUseItem }: Props) {
   const [rssUrl, setRssUrl] = useState("");
   const [sourceMsg, setSourceMsg] = useState<string | null>(null);
 
+  // ── Bright Data state ──────────────────────────────
+  const [bdAccounts, setBdAccounts] = useState<BrightDataXSource[]>([]);
+  const [bdLoaded, setBdLoaded] = useState(false);
+  const [bdUsername, setBdUsername] = useState("");
+  const [bdTriggering, setBdTriggering] = useState(false);
+  const [bdTriggerMsg, setBdTriggerMsg] = useState<string | null>(null);
+  const [bdMonthly, setBdMonthly] = useState<{ month: string; requested: number; received?: number } | null>(null);
+
   // ── おすすめ発見 state ─────────────────────────────
   const [discoverQuery, setDiscoverQuery] = useState("");
   const [discovering, setDiscovering] = useState(false);
@@ -82,7 +91,13 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     setItemsLoaded(true);
   }, []);
 
-  useEffect(() => { loadItems(); }, [loadItems]);
+  useEffect(() => {
+    loadItems();
+    fetch("/api/brightdata/accounts")
+      .then((r) => r.json())
+      .then((d) => setBdAccounts(d.accounts ?? []))
+      .catch(() => {});
+  }, [loadItems]);
 
   useEffect(() => {
     if (section === "sources" && !sourcesLoaded) {
@@ -92,7 +107,14 @@ export default function TabSubstackNews({ onUseItem }: Props) {
         .catch(() => {})
         .finally(() => setSourcesLoaded(true));
     }
-  }, [section, sourcesLoaded]);
+    if (section === "sources" && !bdLoaded) {
+      fetch("/api/brightdata/accounts")
+        .then((r) => r.json())
+        .then((d) => { setBdAccounts(d.accounts ?? []); })
+        .catch(() => {})
+        .finally(() => setBdLoaded(true));
+    }
+  }, [section, sourcesLoaded, bdLoaded]);
 
   // ── 収集 ──────────────────────────────────────────
   const handleCollect = async () => {
@@ -113,6 +135,63 @@ export default function TabSubstackNews({ onUseItem }: Props) {
       setCollecting(false);
       setTimeout(() => setCollectMsg(null), 5000);
     }
+  };
+
+  // ── Bright Data ───────────────────────────────────
+  const handleBdTrigger = async () => {
+    if (bdTriggering) return;
+    setBdTriggering(true);
+    setBdTriggerMsg(null);
+    try {
+      const res = await fetch("/api/brightdata/trigger", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setBdTriggerMsg(`収集リクエスト送信済み（${data.accounts}件 × ${data.estimatedRecords / data.accounts}件 = 推定${data.estimatedRecords}レコード）。数分後にネタ一覧に反映されます。`);
+        if (data.monthlyCounter) setBdMonthly(data.monthlyCounter);
+      } else {
+        setBdTriggerMsg(data.error ?? data.message ?? "エラーが発生しました");
+      }
+    } catch {
+      setBdTriggerMsg("トリガーに失敗しました");
+    } finally {
+      setBdTriggering(false);
+      setTimeout(() => setBdTriggerMsg(null), 8000);
+    }
+  };
+
+  const handleBdAddAccount = async () => {
+    if (!bdUsername.trim()) return;
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: bdUsername.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBdAccounts(data.accounts ?? []);
+        setBdUsername("");
+        setSourceMsg("Bright Data監視アカウントを追加しました");
+        setTimeout(() => setSourceMsg(null), 2000);
+      } else {
+        setSourceMsg(data.error ?? "追加に失敗しました");
+      }
+    } catch {
+      setSourceMsg("追加に失敗しました");
+    }
+  };
+
+  const handleBdDeleteAccount = async (id: string) => {
+    if (!confirm("このアカウントの監視を停止しますか？")) return;
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (res.ok) setBdAccounts(data.accounts ?? []);
+    } catch {}
   };
 
   // ── URLから追加 ───────────────────────────────────
@@ -259,27 +338,56 @@ export default function TabSubstackNews({ onUseItem }: Props) {
       {section === "items" && (
         <div className="space-y-4">
           {/* 収集コントロール */}
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-3 flex-wrap">
-              <button
-                onClick={handleCollect}
-                disabled={collecting}
-                className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors"
-              >
-                {collecting ? "収集中..." : "今すぐ収集"}
-              </button>
-              {lastCollected && !collecting && (
-                <span className="text-xs text-zinc-600">
-                  最終収集：{formatDateTime(lastCollected)}
-                </span>
-              )}
-              {collectMsg && (
-                <span className={`text-xs ${collectMsg.includes("失敗") || collectMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
-                  {collectMsg}
-                </span>
-              )}
+          <div className="space-y-2">
+            {/* 通常収集 */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={handleCollect}
+                  disabled={collecting}
+                  className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors"
+                >
+                  {collecting ? "収集中..." : "今すぐ収集"}
+                </button>
+                {lastCollected && !collecting && (
+                  <span className="text-xs text-zinc-600">
+                    最終収集：{formatDateTime(lastCollected)}
+                  </span>
+                )}
+                {collectMsg && (
+                  <span className={`text-xs ${collectMsg.includes("失敗") || collectMsg.includes("エラー") ? "text-red-400" : "text-green-400"}`}>
+                    {collectMsg}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-600">登録済みの YouTube・X・RSS ソースから一括取得します</p>
             </div>
-            <p className="text-xs text-zinc-600">登録済みの YouTube・X・RSS ソースから一括取得します</p>
+
+            {/* Bright Data収集 */}
+            <div className="space-y-1 border-t border-zinc-700/50 pt-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={handleBdTrigger}
+                  disabled={bdTriggering || bdAccounts.length === 0}
+                  className="px-3 py-1.5 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-200 border border-sky-700/50 rounded-lg transition-colors"
+                >
+                  {bdTriggering ? "リクエスト中..." : "Bright Data収集"}
+                </button>
+                {bdMonthly && (
+                  <span className="text-xs text-zinc-600">
+                    今月推定: {bdMonthly.requested}レコード{bdMonthly.received !== undefined ? ` / 受信: ${bdMonthly.received}` : ""}
+                  </span>
+                )}
+                {bdTriggerMsg && (
+                  <span className={`text-xs ${bdTriggerMsg.includes("失敗") || bdTriggerMsg.includes("エラー") ? "text-red-400" : "text-sky-300"}`}>
+                    {bdTriggerMsg}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-zinc-600">
+                Bright Data経由で X の監視アカウント（{bdAccounts.length}件）から投稿を収集します。数分後に反映されます。
+              </p>
+            </div>
           </div>
 
           {/* URLから個別追加 */}
@@ -373,6 +481,11 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                     <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${TYPE_BADGE[item.sourceType] ?? TYPE_BADGE.manual}`}>
                       {TYPE_LABEL[item.sourceType] ?? "手動"}
                     </span>
+                    {item.id.startsWith("bd_") && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-sky-900/60 text-sky-300 border border-sky-700/50">
+                        BD
+                      </span>
+                    )}
                     <span className="text-xs text-zinc-400">{item.sourceName}</span>
                     <span className="ml-auto text-xs text-zinc-600">{formatDateTime(item.collectedAt)}</span>
                   </div>
@@ -533,6 +646,64 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 ))
               )}
             </div>
+          </div>
+
+          {/* Bright Data Xアカウント */}
+          <div className="space-y-3 border-t border-zinc-700/50 pt-4">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold text-zinc-200">Bright Data 監視Xアカウント</h4>
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-sky-900/60 text-sky-300 border border-sky-700/50">BD</span>
+            </div>
+            <p className="text-xs text-sky-300/70 bg-sky-900/10 border border-sky-800/20 rounded-lg px-3 py-2">
+              Bright Data経由でXに直接アクセスし、特定アカウントの最新投稿を取得します。無料枠：月5,000レコード。
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={bdUsername}
+                onChange={(e) => setBdUsername(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleBdAddAccount()}
+                placeholder="ユーザー名（@なし）"
+                className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-sky-500"
+              />
+              <button
+                onClick={handleBdAddAccount}
+                disabled={!bdUsername.trim()}
+                className="px-3 py-2 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-600 text-sky-200 border border-sky-700/50 rounded-lg transition-colors"
+              >
+                追加
+              </button>
+            </div>
+            <div className="space-y-1">
+              {!bdLoaded ? (
+                <p className="text-xs text-zinc-600">読み込み中...</p>
+              ) : bdAccounts.length === 0 ? (
+                <p className="text-xs text-zinc-600">監視対象アカウントなし</p>
+              ) : (
+                bdAccounts.map((acc) => (
+                  <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
+                    <div>
+                      <span className="text-xs text-zinc-200">@{acc.username}</span>
+                      <span className="text-xs text-zinc-600 ml-2">追加: {formatDateTime(acc.addedAt)}</span>
+                    </div>
+                    <button
+                      onClick={() => handleBdDeleteAccount(acc.id)}
+                      className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            {bdAccounts.length > 0 && (
+              <button
+                onClick={handleBdTrigger}
+                disabled={bdTriggering}
+                className="w-full py-2 text-xs bg-sky-800/40 hover:bg-sky-700/50 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-300 border border-sky-700/40 rounded-lg transition-colors"
+              >
+                {bdTriggering ? "リクエスト中..." : "今すぐBright Data収集を実行"}
+              </button>
+            )}
           </div>
 
           {/* RSS */}

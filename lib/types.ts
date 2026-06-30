@@ -177,6 +177,12 @@ export interface SubstackSources {
   rss: SubstackRSSSource[];
 }
 
+export interface BrightDataXSource {
+  id: string;
+  username: string;
+  addedAt: string;
+}
+
 export interface ConsultSettings {
   articleType: ArticleType | null;
   price: number | "ai" | null;
