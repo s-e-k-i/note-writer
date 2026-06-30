@@ -31,6 +31,34 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
   const [page, setPage] = useState(1);
   const listTopRef = useRef<HTMLDivElement>(null);
 
+  // Raindrop同期
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+
+  const handleRaindropSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/cron/raindrop-sync", { method: "POST" });
+      const data = await res.json() as { ok?: boolean; added?: number; message?: string; error?: string };
+      if (!res.ok || data.error) {
+        setSyncMsg(data.error ?? "同期に失敗しました");
+      } else if (data.added === 0) {
+        setSyncMsg("新しい保存はありませんでした");
+      } else {
+        setSyncMsg(`${data.added}件追加しました`);
+        // Redisに追加された新規エントリをUIに反映
+        window.dispatchEvent(new Event("focus"));
+      }
+    } catch {
+      setSyncMsg("同期に失敗しました");
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 5000);
+    }
+  };
+
   const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pagedEntries = entries.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -66,9 +94,27 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
     if (editingId === id) closeEdit();
   };
 
+  const syncControls = (
+    <div className="flex items-center gap-3 mb-4">
+      <button
+        onClick={handleRaindropSync}
+        disabled={syncing}
+        className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors"
+      >
+        {syncing ? "同期中..." : "Raindrop 今すぐ同期"}
+      </button>
+      {syncMsg && (
+        <span className={`text-xs ${syncMsg.includes("失敗") ? "text-red-400" : syncMsg.includes("ありません") ? "text-zinc-500" : "text-green-400"}`}>
+          {syncMsg}
+        </span>
+      )}
+    </div>
+  );
+
   if (entries.length === 0) {
     return (
       <div>
+        {syncControls}
         <div className="text-center py-16 text-zinc-500 text-sm">
           <p className="mb-1">ネタ帳はまだ空です</p>
           <p>ヘッダーの「＋ ネタを書く」ボタンから登録できます</p>
@@ -80,6 +126,7 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
 
   return (
     <div>
+      {syncControls}
       <div ref={listTopRef} className="space-y-3">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-medium text-zinc-400">ネタ帳（{entries.length}件）</h3>
