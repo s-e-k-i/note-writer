@@ -187,11 +187,15 @@ export default function TabSubstackNews({ onUseItem }: Props) {
             if (pollData.added > 0) {
               setBdPollMsg(`${pollData.added}件追加しました（関連: ${pollData.relevant}件）`);
               await loadItems();
-              // 追加されたアイテムが見えるようフィルターを切り替え
+            } else if ((pollData.received ?? 0) > 0) {
+              setBdPollMsg(`${pollData.received}件確認（すでに保存済み）`);
+            } else {
+              setBdPollMsg("新しい投稿はありませんでした");
+            }
+            // received > 0 なら X フィルターに切り替えて BD 投稿を表示
+            if ((pollData.received ?? 0) > 0) {
               setStatusFilter("all");
               setTypeFilter("x");
-            } else {
-              setBdPollMsg(`新しい投稿はありませんでした（受信: ${pollData.received}件）`);
             }
           } else {
             setBdPollMsg(pollData.message ?? "エラーが発生しました");
