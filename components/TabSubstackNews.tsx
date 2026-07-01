@@ -66,7 +66,9 @@ export default function TabSubstackNews({ onUseItem }: Props) {
   const [bdLoaded, setBdLoaded] = useState(false);
   const [bdUsername, setBdUsername] = useState("");
   const [bdTriggering, setBdTriggering] = useState(false);
-  const [bdTriggerMsg, setBdTriggerMsg] = useState<string | null>(null);
+  const [bdPolling, setBdPolling] = useState(false);
+  const [bdPollMsg, setBdPollMsg] = useState<string | null>(null);
+  const [bdElapsed, setBdElapsed] = useState(0);
   const [bdMonthly, setBdMonthly] = useState<{ month: string; requested: number; received?: number } | null>(null);
 
   // ── おすすめ発見 state ─────────────────────────────
@@ -139,23 +141,72 @@ export default function TabSubstackNews({ onUseItem }: Props) {
 
   // ── Bright Data ───────────────────────────────────
   const handleBdTrigger = async () => {
-    if (bdTriggering) return;
+    if (bdTriggering || bdPolling) return;
     setBdTriggering(true);
-    setBdTriggerMsg(null);
+    setBdPollMsg(null);
+    setBdElapsed(0);
     try {
       const res = await fetch("/api/brightdata/trigger", { method: "POST" });
       const data = await res.json();
-      if (data.ok) {
-        setBdTriggerMsg(`収集リクエスト送信済み（${data.accounts}件 × ${data.estimatedRecords / data.accounts}件 = 推定${data.estimatedRecords}レコード）。数分後にネタ一覧に反映されます。`);
-        if (data.monthlyCounter) setBdMonthly(data.monthlyCounter);
-      } else {
-        setBdTriggerMsg(data.error ?? data.message ?? "エラーが発生しました");
+      if (!data.ok) {
+        setBdPollMsg(data.error ?? data.message ?? "エラーが発生しました");
+        setTimeout(() => setBdPollMsg(null), 8000);
+        return;
       }
+      if (data.monthlyCounter) setBdMonthly(data.monthlyCounter);
+      setBdTriggering(false);
+      setBdPolling(true);
+
+      // ── ポーリング（5秒間隔、最大3分）────────────────
+      const TIMEOUT = 180_000;
+      const INTERVAL = 5_000;
+      const startTime = Date.now();
+
+      const poll = async () => {
+        const elapsed = Date.now() - startTime;
+        setBdElapsed(Math.floor(elapsed / 1000));
+
+        if (elapsed > TIMEOUT) {
+          setBdPolling(false);
+          setBdPollMsg("タイムアウトしました（3分）。しばらく後に再試行してください。");
+          setTimeout(() => setBdPollMsg(null), 10_000);
+          return;
+        }
+
+        try {
+          const pollRes = await fetch("/api/brightdata/poll");
+          const pollData = await pollRes.json();
+
+          if (pollData.status === "running") {
+            setTimeout(poll, INTERVAL);
+            return;
+          }
+
+          setBdPolling(false);
+
+          if (pollData.status === "ready") {
+            if (pollData.added > 0) {
+              setBdPollMsg(`${pollData.added}件追加しました（関連: ${pollData.relevant}件）`);
+              await loadItems();
+            } else {
+              setBdPollMsg(`新しい投稿はありませんでした（受信: ${pollData.received}件）`);
+            }
+          } else {
+            setBdPollMsg(pollData.message ?? "エラーが発生しました");
+          }
+        } catch {
+          setBdPolling(false);
+          setBdPollMsg("ポーリング中にエラーが発生しました");
+        }
+        setTimeout(() => setBdPollMsg(null), 8000);
+      };
+
+      setTimeout(poll, INTERVAL);
     } catch {
-      setBdTriggerMsg("トリガーに失敗しました");
+      setBdPollMsg("トリガーに失敗しました");
+      setTimeout(() => setBdPollMsg(null), 8000);
     } finally {
       setBdTriggering(false);
-      setTimeout(() => setBdTriggerMsg(null), 8000);
     }
   };
 
@@ -181,8 +232,20 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     }
   };
 
+  const handleBdTogglePause = async (id: string, paused: boolean) => {
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, paused }),
+      });
+      const data = await res.json();
+      if (res.ok) setBdAccounts(data.accounts ?? []);
+    } catch {}
+  };
+
   const handleBdDeleteAccount = async (id: string) => {
-    if (!confirm("このアカウントの監視を停止しますか？")) return;
+    if (!confirm("このアカウントを削除しますか？")) return;
     try {
       const res = await fetch("/api/brightdata/accounts", {
         method: "DELETE",
@@ -368,24 +431,24 @@ export default function TabSubstackNews({ onUseItem }: Props) {
               <div className="flex items-center gap-3 flex-wrap">
                 <button
                   onClick={handleBdTrigger}
-                  disabled={bdTriggering || bdAccounts.length === 0}
+                  disabled={bdTriggering || bdPolling || bdAccounts.filter((a) => !a.paused).length === 0}
                   className="px-3 py-1.5 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-200 border border-sky-700/50 rounded-lg transition-colors"
                 >
-                  {bdTriggering ? "リクエスト中..." : "Bright Data収集"}
+                  {bdTriggering ? "送信中..." : bdPolling ? `収集中... (${bdElapsed}s)` : "Bright Data収集"}
                 </button>
                 {bdMonthly && (
                   <span className="text-xs text-zinc-600">
                     今月推定: {bdMonthly.requested}レコード{bdMonthly.received !== undefined ? ` / 受信: ${bdMonthly.received}` : ""}
                   </span>
                 )}
-                {bdTriggerMsg && (
-                  <span className={`text-xs ${bdTriggerMsg.includes("失敗") || bdTriggerMsg.includes("エラー") ? "text-red-400" : "text-sky-300"}`}>
-                    {bdTriggerMsg}
+                {bdPollMsg && (
+                  <span className={`text-xs ${bdPollMsg.includes("失敗") || bdPollMsg.includes("エラー") || bdPollMsg.includes("タイムアウト") ? "text-red-400" : bdPollMsg.includes("ありません") ? "text-zinc-500" : "text-sky-300"}`}>
+                    {bdPollMsg}
                   </span>
                 )}
               </div>
               <p className="text-xs text-zinc-600">
-                Bright Data経由で X の監視アカウント（{bdAccounts.length}件）から投稿を収集します。数分後に反映されます。
+                Bright Data経由で X の監視アカウント（アクティブ: {bdAccounts.filter((a) => !a.paused).length}件）から投稿を収集します。
               </p>
             </div>
           </div>
@@ -680,28 +743,52 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 <p className="text-xs text-zinc-600">監視対象アカウントなし</p>
               ) : (
                 bdAccounts.map((acc) => (
-                  <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
-                    <div>
-                      <span className="text-xs text-zinc-200">@{acc.username}</span>
-                      <span className="text-xs text-zinc-600 ml-2">追加: {formatDateTime(acc.addedAt)}</span>
+                  <div
+                    key={acc.id}
+                    className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${acc.paused ? "opacity-50" : ""}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${acc.paused ? "text-zinc-500" : "text-zinc-200"}`}>
+                        @{acc.username}
+                      </span>
+                      {acc.paused && (
+                        <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>
+                      )}
+                      <span className="text-xs text-zinc-600">追加: {formatDateTime(acc.addedAt)}</span>
                     </div>
-                    <button
-                      onClick={() => handleBdDeleteAccount(acc.id)}
-                      className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
-                    >
-                      削除
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={`https://x.com/${acc.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors"
+                      >
+                        ↗確認
+                      </a>
+                      <button
+                        onClick={() => handleBdTogglePause(acc.id, !acc.paused)}
+                        className="text-xs text-zinc-500 hover:text-sky-400 transition-colors"
+                      >
+                        {acc.paused ? "再開" : "停止"}
+                      </button>
+                      <button
+                        onClick={() => handleBdDeleteAccount(acc.id)}
+                        className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                      >
+                        削除
+                      </button>
+                    </div>
                   </div>
                 ))
               )}
             </div>
-            {bdAccounts.length > 0 && (
+            {bdAccounts.filter((a) => !a.paused).length > 0 && (
               <button
                 onClick={handleBdTrigger}
-                disabled={bdTriggering}
+                disabled={bdTriggering || bdPolling}
                 className="w-full py-2 text-xs bg-sky-800/40 hover:bg-sky-700/50 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-300 border border-sky-700/40 rounded-lg transition-colors"
               >
-                {bdTriggering ? "リクエスト中..." : "今すぐBright Data収集を実行"}
+                {bdTriggering ? "送信中..." : bdPolling ? `収集中... (${bdElapsed}s)` : "今すぐBright Data収集を実行"}
               </button>
             )}
           </div>

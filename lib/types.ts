@@ -181,6 +181,7 @@ export interface BrightDataXSource {
   id: string;
   username: string;
   addedAt: string;
+  paused?: boolean;
 }
 
 export interface Account {

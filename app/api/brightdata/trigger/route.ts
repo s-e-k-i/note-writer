@@ -3,6 +3,7 @@ import { BrightDataXSource } from "@/lib/types";
 
 const ACCOUNTS_KEY = "brightdata:watched_accounts";
 const COUNTER_KEY = "brightdata:monthly_counter";
+const SNAPSHOT_KEY = "brightdata:current_snapshot_id";
 const DATASET_ID = process.env.BRIGHTDATA_DATASET_ID ?? "gd_lwxkxvnf1cynvib9co";
 
 interface MonthlyCounter {
@@ -22,23 +23,11 @@ async function incrementCounter(delta: number) {
   return counter;
 }
 
-async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snapshotId?: string; error?: string }> {
+async function triggerBrightData(
+  accounts: BrightDataXSource[],
+): Promise<{ snapshotId?: string; error?: string }> {
   const token = process.env.BRIGHTDATA_API_TOKEN;
   if (!token) return { error: "BRIGHTDATA_API_TOKEN not set" };
-
-  const baseUrl =
-    process.env.BRIGHTDATA_WEBHOOK_BASE_URL ??
-    (process.env.VERCEL_PROJECT_PRODUCTION_URL
-      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-      : `https://${process.env.VERCEL_URL}`);
-
-  const secret = process.env.BRIGHTDATA_WEBHOOK_SECRET ?? "";
-  const bypass = process.env.VERCEL_PROTECTION_BYPASS_SECRET ?? "";
-  const webhookBase = `${baseUrl}/api/webhooks/brightdata`;
-  const params = new URLSearchParams();
-  if (bypass) params.set("x-vercel-protection-bypass", bypass);
-  if (secret) params.set("secret", secret);
-  const notifyUrl = params.toString() ? `${webhookBase}?${params.toString()}` : webhookBase;
 
   const endDate = new Date().toISOString();
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -54,9 +43,11 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
     `&format=json` +
     `&start_date=${encodeURIComponent(startDate)}` +
     `&end_date=${encodeURIComponent(endDate)}` +
-    `&notify=${encodeURIComponent(notifyUrl)}`;
+    `&notify=false`;
 
-  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0,10)}~${endDate.slice(0,10)}, notify=${notifyUrl}`);
+  console.log(
+    `[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0, 10)}~${endDate.slice(0, 10)}`,
+  );
 
   const res = await fetch(apiUrl, {
     method: "POST",
@@ -82,9 +73,17 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
 
 export async function POST() {
   try {
-    const accounts = (await redis.get<BrightDataXSource[]>(ACCOUNTS_KEY)) ?? [];
+    const allAccounts = (await redis.get<BrightDataXSource[]>(ACCOUNTS_KEY)) ?? [];
+    const accounts = allAccounts.filter((a) => !a.paused);
+
     if (accounts.length === 0) {
-      return Response.json({ ok: false, message: "監視対象アカウントが登録されていません" });
+      return Response.json({
+        ok: false,
+        message:
+          allAccounts.length > 0
+            ? "すべてのアカウントが停止中です"
+            : "監視対象アカウントが登録されていません",
+      });
     }
 
     const result = await triggerBrightData(accounts);
@@ -93,9 +92,13 @@ export async function POST() {
       return Response.json({ ok: false, error: result.error }, { status: 500 });
     }
 
-    const estimated = accounts.length * 10;
+    await redis.set(SNAPSHOT_KEY, result.snapshotId);
+
+    const estimated = accounts.length * 20;
     const counter = await incrementCounter(estimated);
-    console.log(`[brightdata/trigger] snapshot=${result.snapshotId}, accounts=${accounts.length}, month total=${counter.requested}`);
+    console.log(
+      `[brightdata/trigger] snapshot=${result.snapshotId}, accounts=${accounts.length}, month total=${counter.requested}`,
+    );
 
     return Response.json({
       ok: true,

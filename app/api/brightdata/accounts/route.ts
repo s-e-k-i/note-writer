@@ -40,6 +40,19 @@ export async function POST(req: Request) {
   }
 }
 
+export async function PATCH(req: Request) {
+  try {
+    const { id, paused } = (await req.json()) as { id?: string; paused?: boolean };
+    if (!id) return Response.json({ error: "id is required" }, { status: 400 });
+    const accounts = await load();
+    const updated = accounts.map((a) => (a.id === id ? { ...a, paused } : a));
+    await redis.set(KEY, updated);
+    return Response.json({ accounts: updated });
+  } catch (e) {
+    return Response.json({ error: String(e) }, { status: 500 });
+  }
+}
+
 export async function DELETE(req: Request) {
   try {
     const { id } = (await req.json()) as { id?: string };
