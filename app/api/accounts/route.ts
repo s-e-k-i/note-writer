@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
+import { redis } from "@/lib/redis";
 import { listAccounts, createAccount, updateAccountName, SEKI_ID } from "@/lib/accounts";
+
+const ACCOUNT_KEYS = ["dna", "notebook", "profile_document", "suggestions", "suggestion_used_ids"] as const;
 
 export async function GET() {
   try {
@@ -35,6 +38,29 @@ export async function PATCH(req: Request) {
     const ok = await updateAccountName(id, name.trim());
     if (!ok) return NextResponse.json({ error: "Account not found" }, { status: 404 });
     return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+    if (id === SEKI_ID) return NextResponse.json({ error: "Official account cannot be deleted" }, { status: 403 });
+
+    const accounts = await listAccounts();
+    const filtered = accounts.filter((a) => a.id !== id);
+    if (filtered.length === accounts.length) {
+      return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+    const keysToDelete = ACCOUNT_KEYS.map((k) => `account:${id}:${k}`);
+    await Promise.all([
+      redis.set("accounts", filtered),
+      ...keysToDelete.map((k) => redis.del(k)),
+    ]);
+    return NextResponse.json({ ok: true, deleted: { account: id, keys: keysToDelete } });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
