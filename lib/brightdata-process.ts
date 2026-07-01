@@ -90,17 +90,22 @@ async function updateCounter(delta: number) {
   await redis.set(COUNTER_KEY, { ...base, received: base.received + delta });
 }
 
-export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
+export async function processBrightDataPosts(
+  rawPosts: unknown[],
+  options?: { maxNew?: number },
+): Promise<{
   received: number;
   processed: number;
   added: number;
   relevant: number;
+  skippedOverLimit: number;
 }> {
   const posts = rawPosts as BrightDataPost[];
-  console.log(`[brightdata/process] received ${posts.length} records`);
+  const maxNew = options?.maxNew;
+  console.log(`[brightdata/process] received ${posts.length} records${maxNew !== undefined ? ` (maxNew=${maxNew})` : ""}`);
 
   if (posts.length === 0) {
-    return { received: 0, processed: 0, added: 0, relevant: 0 };
+    return { received: 0, processed: 0, added: 0, relevant: 0, skippedOverLimit: 0 };
   }
 
   const [existingItems, seenIdsRaw] = await Promise.all([
@@ -112,11 +117,12 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
   const seenIds = new Set(seenIdsRaw ?? []);
   const existingUrls = new Set(existing.map((i) => i.url));
 
-  const newItems: SubstackNewsItem[] = [];
-  const newSeenIds: string[] = [];
-
   const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
   const cutoff = Date.now() - NINETY_DAYS_MS;
+
+  // First pass: collect all valid candidates (not seen, not old, has text)
+  type Candidate = { raw: BrightDataPost; id: string; text: string; createdAt: string; username: string; displayName: string; url: string };
+  const candidates: Candidate[] = [];
 
   for (const raw of posts) {
     const { id, text, createdAt, username, displayName, url } = extractPost(raw);
@@ -132,7 +138,30 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
       seenIds.add(id);
       continue;
     }
+    candidates.push({ raw, id, text, createdAt, username, displayName, url });
+  }
 
+  // Sort newest first so we prioritize recent posts when truncating
+  candidates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  // Apply maxNew limit: overflow posts are added to seenIds without AI processing
+  let skippedOverLimit = 0;
+  let toProcess = candidates;
+  if (maxNew !== undefined && candidates.length > maxNew) {
+    const overflow = candidates.slice(maxNew);
+    skippedOverLimit = overflow.length;
+    for (const c of overflow) {
+      seenIds.add(c.id);
+    }
+    console.log(`[brightdata/process] maxNew limit hit: processing ${maxNew}/${candidates.length}, dropping ${skippedOverLimit} oldest (added to seenIds)`);
+    toProcess = candidates.slice(0, maxNew);
+  }
+
+  // Second pass: AI processing for candidates within limit
+  const newItems: SubstackNewsItem[] = [];
+  const newSeenIds: string[] = [];
+
+  for (const { id, text, createdAt, username, displayName, url } of toProcess) {
     seenIds.add(id);
     newSeenIds.push(id);
 
@@ -154,22 +183,18 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
     newItems.push(item);
   }
 
-  if (newItems.length > 0) {
-    const merged = [...newItems, ...existing].slice(0, MAX_ITEMS);
+  // Save results
+  if (newItems.length > 0 || skippedOverLimit > 0 || newSeenIds.length > 0) {
     const allSeenIds = [...seenIds].slice(-MAX_SEEN_IDS);
-    await Promise.all([
-      redis.set(ITEMS_KEY, merged),
-      redis.set(SEEN_IDS_KEY, allSeenIds),
-      updateCounter(posts.length),
-    ]);
-    console.log(
-      `[brightdata/process] saved ${newItems.length} new items (${newItems.filter((i) => i.status !== "skip").length} relevant)`,
-    );
-  } else {
-    if (newSeenIds.length > 0) {
-      const allSeenIds = [...seenIds].slice(-MAX_SEEN_IDS);
-      await redis.set(SEEN_IDS_KEY, allSeenIds);
+    const ops: Promise<unknown>[] = [redis.set(SEEN_IDS_KEY, allSeenIds), updateCounter(posts.length)];
+    if (newItems.length > 0) {
+      const merged = [...newItems, ...existing].slice(0, MAX_ITEMS);
+      ops.push(redis.set(ITEMS_KEY, merged));
     }
+    await Promise.all(ops);
+    console.log(
+      `[brightdata/process] saved ${newItems.length} new items (${newItems.filter((i) => i.status !== "skip").length} relevant), dropped ${skippedOverLimit} over limit`,
+    );
   }
 
   return {
@@ -177,5 +202,6 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
     processed: newSeenIds.length,
     added: newItems.length,
     relevant: newItems.filter((i) => i.status !== "skip").length,
+    skippedOverLimit,
   };
 }
