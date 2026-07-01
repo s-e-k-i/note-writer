@@ -11,6 +11,7 @@ interface Props {
 }
 
 const PAGE_SIZE = 10;
+const IDEA_ENGINE_MARKER = "【idea-engine生成アイデア】";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -147,7 +148,10 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
           </button>
         </div>
 
-        {pagedEntries.map((e) => (
+        {pagedEntries.map((e) => {
+          const isIdeaEngine = e.text.includes(IDEA_ENGINE_MARKER);
+          const displayText = isIdeaEngine ? e.text.replace(IDEA_ENGINE_MARKER, "").trim() : e.text;
+          return (
           <div key={e.id} className="bg-zinc-800 rounded-xl overflow-hidden">
             <div className="p-4">
               <div className="flex items-center gap-2 mb-1">
@@ -155,6 +159,11 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
                 {e.id.startsWith("raindrop_") && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-teal-900/60 text-teal-300 border border-teal-700/50">
                     Raindrop
+                  </span>
+                )}
+                {isIdeaEngine && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-900/60 text-orange-300 border border-orange-700/50">
+                    idea-engine
                   </span>
                 )}
                 {e.sourceUrl && (
@@ -169,7 +178,7 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
                   </a>
                 )}
               </div>
-              <p className="text-sm text-zinc-300 leading-relaxed mb-3">{previewText(e.text)}</p>
+              <p className="text-sm text-zinc-300 leading-relaxed mb-3">{previewText(displayText)}</p>
 
               <div className="flex flex-wrap gap-2">
                 <button
@@ -235,7 +244,8 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between mt-4 pt-3 border-t border-zinc-700">
