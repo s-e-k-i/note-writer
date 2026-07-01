@@ -33,9 +33,12 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
       : `https://${process.env.VERCEL_URL}`);
 
   const secret = process.env.BRIGHTDATA_WEBHOOK_SECRET ?? "";
-  const notifyUrl = secret
-    ? `${baseUrl}/api/webhooks/brightdata?secret=${encodeURIComponent(secret)}`
-    : `${baseUrl}/api/webhooks/brightdata`;
+  const bypass = process.env.VERCEL_PROTECTION_BYPASS_SECRET ?? "";
+  const webhookBase = `${baseUrl}/api/webhooks/brightdata`;
+  const params = new URLSearchParams();
+  if (bypass) params.set("x-vercel-protection-bypass", bypass);
+  if (secret) params.set("secret", secret);
+  const notifyUrl = params.toString() ? `${webhookBase}?${params.toString()}` : webhookBase;
 
   const input = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
 
