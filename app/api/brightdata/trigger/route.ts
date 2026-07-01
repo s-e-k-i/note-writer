@@ -4,7 +4,6 @@ import { BrightDataXSource } from "@/lib/types";
 const ACCOUNTS_KEY = "brightdata:watched_accounts";
 const COUNTER_KEY = "brightdata:monthly_counter";
 const DATASET_ID = process.env.BRIGHTDATA_DATASET_ID ?? "gd_lwxkxvnf1cynvib9co";
-const DAYS_BACK = 3;
 
 interface MonthlyCounter {
   month: string;
@@ -38,22 +37,19 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
     ? `${baseUrl}/api/webhooks/brightdata?secret=${encodeURIComponent(secret)}`
     : `${baseUrl}/api/webhooks/brightdata`;
 
-  const endDate = new Date().toISOString().split("T")[0];
-  const startDate = new Date(Date.now() - DAYS_BACK * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-
-  const input = accounts.map((a) => ({
-    url: `https://x.com/${a.username}`,
-    start_date: startDate,
-    end_date: endDate,
-  }));
+  const input = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
 
   const apiUrl =
-    `https://api.brightdata.com/datasets/v3/scrape` +
+    `https://api.brightdata.com/datasets/v3/trigger` +
     `?dataset_id=${DATASET_ID}` +
-    `&notify=${encodeURIComponent(notifyUrl)}` +
-    `&include_errors=true`;
+    `&type=discover_new` +
+    `&discover_by=profile_url` +
+    `&limit_per_input=10` +
+    `&include_errors=true` +
+    `&format=json` +
+    `&notify=${encodeURIComponent(notifyUrl)}`;
 
-  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, notify=${notifyUrl}, date=${startDate}~${endDate}`);
+  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, notify=${notifyUrl}`);
 
   const res = await fetch(apiUrl, {
     method: "POST",
@@ -61,7 +57,7 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ input }),
+    body: JSON.stringify(input),
   });
 
   const text = await res.text();
