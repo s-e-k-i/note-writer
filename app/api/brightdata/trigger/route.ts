@@ -25,12 +25,15 @@ async function incrementCounter(delta: number) {
 
 async function triggerBrightData(
   accounts: BrightDataXSource[],
+  testMode: boolean,
 ): Promise<{ snapshotId?: string; error?: string }> {
   const token = process.env.BRIGHTDATA_API_TOKEN;
   if (!token) return { error: "BRIGHTDATA_API_TOKEN not set" };
 
   const endDate = new Date().toISOString();
-  const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const daysBack = testMode ? 7 : 30;
+  const limitPerInput = testMode ? 5 : 20;
+  const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString();
   const input = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
 
   const apiUrl =
@@ -38,7 +41,7 @@ async function triggerBrightData(
     `?dataset_id=${DATASET_ID}` +
     `&type=discover_new` +
     `&discover_by=profile_url` +
-    `&limit_per_input=20` +
+    `&limit_per_input=${limitPerInput}` +
     `&include_errors=true` +
     `&format=json` +
     `&start_date=${encodeURIComponent(startDate)}` +
@@ -46,7 +49,7 @@ async function triggerBrightData(
     `&notify=false`;
 
   console.log(
-    `[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0, 10)}~${endDate.slice(0, 10)}`,
+    `[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0, 10)}~${endDate.slice(0, 10)}, testMode=${testMode}, limitPerInput=${limitPerInput}`,
   );
 
   const res = await fetch(apiUrl, {
@@ -71,8 +74,11 @@ async function triggerBrightData(
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    const body = await request.json().catch(() => ({}));
+    const testMode = body.testMode === true;
+
     const allAccounts = (await redis.get<BrightDataXSource[]>(ACCOUNTS_KEY)) ?? [];
     const accounts = allAccounts.filter((a) => !a.paused);
 
@@ -86,7 +92,7 @@ export async function POST() {
       });
     }
 
-    const result = await triggerBrightData(accounts);
+    const result = await triggerBrightData(accounts, testMode);
     if (result.error) {
       console.error("[brightdata/trigger] error:", result.error);
       return Response.json({ ok: false, error: result.error }, { status: 500 });
@@ -94,10 +100,11 @@ export async function POST() {
 
     await redis.set(SNAPSHOT_KEY, result.snapshotId);
 
-    const estimated = accounts.length * 20;
+    const limitPerInput = testMode ? 5 : 20;
+    const estimated = accounts.length * limitPerInput;
     const counter = await incrementCounter(estimated);
     console.log(
-      `[brightdata/trigger] snapshot=${result.snapshotId}, accounts=${accounts.length}, month total=${counter.requested}`,
+      `[brightdata/trigger] snapshot=${result.snapshotId}, accounts=${accounts.length}, testMode=${testMode}, month total=${counter.requested}`,
     );
 
     return Response.json({
@@ -105,6 +112,7 @@ export async function POST() {
       snapshotId: result.snapshotId,
       accounts: accounts.length,
       estimatedRecords: estimated,
+      testMode,
       monthlyCounter: counter,
     });
   } catch (e) {
