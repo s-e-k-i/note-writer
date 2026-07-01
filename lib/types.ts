@@ -170,6 +170,7 @@ export interface SubstackRSSSource {
   id: string;
   name: string;
   url: string;
+  paused?: boolean;
 }
 
 export interface SubstackSources {

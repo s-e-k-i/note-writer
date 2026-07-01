@@ -46,6 +46,8 @@ export async function PATCH(request: Request) {
   const sources = await loadSources();
   if (type === "x") {
     sources.x = sources.x.map((s) => (s.id === id ? { ...s, paused } : s));
+  } else if (type === "rss") {
+    sources.rss = sources.rss.map((s) => (s.id === id ? { ...s, paused } : s));
   }
   await redis.set(KEY, sources);
   return Response.json(sources);

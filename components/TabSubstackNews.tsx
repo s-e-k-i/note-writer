@@ -356,6 +356,18 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     } catch {}
   };
 
+  const toggleRssPause = async (id: string, paused: boolean) => {
+    try {
+      const res = await fetch("/api/substack-sources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "rss", id, paused }),
+      });
+      const data = await res.json();
+      setSources(data);
+    } catch {}
+  };
+
   const handleAddRss = () => {
     if (!rssUrl.trim()) return;
     addSource("rss", { id: `rss_${Date.now()}`, name: rssName.trim() || rssUrl.trim(), url: rssUrl.trim() });
@@ -868,17 +880,28 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 <p className="text-xs text-zinc-600">登録済みフィードなし</p>
               ) : (
                 sources.rss.map((feed) => (
-                  <div key={feed.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
+                  <div key={feed.id} className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${feed.paused ? "opacity-50" : ""}`}>
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs text-zinc-200">{feed.name}</span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs ${feed.paused ? "text-zinc-500" : "text-zinc-200"}`}>{feed.name}</span>
+                        {feed.paused && <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>}
+                      </div>
                       <p className="text-xs text-zinc-600 truncate">{feed.url}</p>
                     </div>
-                    <button
-                      onClick={() => deleteSource("rss", feed.id)}
-                      className="ml-3 text-xs text-zinc-600 hover:text-red-400 transition-colors shrink-0"
-                    >
-                      削除
-                    </button>
+                    <div className="flex items-center gap-3 ml-3 shrink-0">
+                      <button
+                        onClick={() => toggleRssPause(feed.id, !feed.paused)}
+                        className="text-xs text-zinc-500 hover:text-sky-400 transition-colors"
+                      >
+                        {feed.paused ? "再開" : "停止"}
+                      </button>
+                      <button
+                        onClick={() => deleteSource("rss", feed.id)}
+                        className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                      >
+                        削除
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

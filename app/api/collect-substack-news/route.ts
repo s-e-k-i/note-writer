@@ -313,6 +313,7 @@ async function runCollect() {
 
   // RSS（キュレーション済みソースはキーワードフィルターをスキップ）
   for (const feed of sources.rss) {
+    if (feed.paused) { console.log(`[collect] RSS ${feed.name}: 停止中のためスキップ`); continue; }
     const items = await fetchRSSItems(feed.url, feed.name, "rss", existingUrls, true);
     console.log(`[collect] RSS ${feed.name}: ${items.length}件`);
     candidates.push(...items);
