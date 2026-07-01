@@ -120,7 +120,17 @@ async function triggerAndWait(
   return { error: `Timeout after ${POLL_TIMEOUT_MS / 1000}s` };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Vercel Cron sends Authorization: Bearer <CRON_SECRET>
+  // Reject any request that doesn't carry the secret
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const auth = request.headers.get("authorization");
+    if (auth !== `Bearer ${cronSecret}`) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const token = process.env.BRIGHTDATA_API_TOKEN;
   if (!token) {
     return Response.json({ ok: false, error: "BRIGHTDATA_API_TOKEN not set" }, { status: 500 });

@@ -141,19 +141,16 @@ export async function processBrightDataPosts(
     candidates.push({ raw, id, text, createdAt, username, displayName, url });
   }
 
-  // Sort newest first so we prioritize recent posts when truncating
-  candidates.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // Sort oldest first: ensures unprocessed posts from previous runs get priority
+  candidates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-  // Apply maxNew limit: overflow posts are added to seenIds without AI processing
+  // Apply maxNew limit: overflow posts are NOT added to seenIds so they remain
+  // candidates on the next run (natural FIFO — oldest always processed first)
   let skippedOverLimit = 0;
   let toProcess = candidates;
   if (maxNew !== undefined && candidates.length > maxNew) {
-    const overflow = candidates.slice(maxNew);
-    skippedOverLimit = overflow.length;
-    for (const c of overflow) {
-      seenIds.add(c.id);
-    }
-    console.log(`[brightdata/process] maxNew limit hit: processing ${maxNew}/${candidates.length}, dropping ${skippedOverLimit} oldest (added to seenIds)`);
+    skippedOverLimit = candidates.length - maxNew;
+    console.log(`[brightdata/process] maxNew limit hit: processing ${maxNew}/${candidates.length}, deferring ${skippedOverLimit} (not added to seenIds)`);
     toProcess = candidates.slice(0, maxNew);
   }
 
@@ -193,7 +190,7 @@ export async function processBrightDataPosts(
     }
     await Promise.all(ops);
     console.log(
-      `[brightdata/process] saved ${newItems.length} new items (${newItems.filter((i) => i.status !== "skip").length} relevant), dropped ${skippedOverLimit} over limit`,
+      `[brightdata/process] saved ${newItems.length} new items (${newItems.filter((i) => i.status !== "skip").length} relevant), deferred ${skippedOverLimit} to next run`,
     );
   }
 
