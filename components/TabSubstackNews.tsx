@@ -97,7 +97,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     loadItems();
     fetch("/api/brightdata/accounts")
       .then((r) => r.json())
-      .then((d) => setBdAccounts(d.accounts ?? []))
+      .then((d) => { setBdAccounts(d.accounts ?? []); setBdLoaded(true); })
       .catch(() => {});
   }, [loadItems]);
 
@@ -109,14 +109,13 @@ export default function TabSubstackNews({ onUseItem }: Props) {
         .catch(() => {})
         .finally(() => setSourcesLoaded(true));
     }
-    if (section === "sources" && !bdLoaded) {
+    if (section === "sources") {
       fetch("/api/brightdata/accounts")
         .then((r) => r.json())
-        .then((d) => { setBdAccounts(d.accounts ?? []); })
-        .catch(() => {})
-        .finally(() => setBdLoaded(true));
+        .then((d) => { setBdAccounts(d.accounts ?? []); setBdLoaded(true); })
+        .catch(() => {});
     }
-  }, [section, sourcesLoaded, bdLoaded]);
+  }, [section, sourcesLoaded]);
 
   // ── 収集 ──────────────────────────────────────────
   const handleCollect = async () => {
@@ -188,6 +187,9 @@ export default function TabSubstackNews({ onUseItem }: Props) {
             if (pollData.added > 0) {
               setBdPollMsg(`${pollData.added}件追加しました（関連: ${pollData.relevant}件）`);
               await loadItems();
+              // 追加されたアイテムが見えるようフィルターを切り替え
+              setStatusFilter("all");
+              setTypeFilter("x");
             } else {
               setBdPollMsg(`新しい投稿はありませんでした（受信: ${pollData.received}件）`);
             }
