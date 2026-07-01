@@ -48,7 +48,7 @@ export default function TabSubstackNews({ onUseItem }: Props) {
   const [itemsLoaded, setItemsLoaded] = useState(false);
   const [collecting, setCollecting] = useState(false);
   const [collectMsg, setCollectMsg] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("unread");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 
   // ── ソース管理 state ───────────────────────────────
@@ -342,6 +342,18 @@ export default function TabSubstackNews({ onUseItem }: Props) {
     if (!xUsername.trim()) return;
     addSource("x", { id: `x_${Date.now()}`, username: xUsername.trim().replace(/^@/, "") });
     setXUsername("");
+  };
+
+  const toggleXPause = async (id: string, paused: boolean) => {
+    try {
+      const res = await fetch("/api/substack-sources", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "x", id, paused }),
+      });
+      const data = await res.json();
+      setSources(data);
+    } catch {}
   };
 
   const handleAddRss = () => {
@@ -703,14 +715,40 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 <p className="text-xs text-zinc-600">登録済みアカウントなし</p>
               ) : (
                 sources.x.map((acc) => (
-                  <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
-                    <span className="text-xs text-zinc-200">@{acc.username}</span>
-                    <button
-                      onClick={() => deleteSource("x", acc.id)}
-                      className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
-                    >
-                      削除
-                    </button>
+                  <div
+                    key={acc.id}
+                    className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${acc.paused ? "opacity-50" : ""}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${acc.paused ? "text-zinc-500" : "text-zinc-200"}`}>
+                        @{acc.username}
+                      </span>
+                      {acc.paused && (
+                        <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <a
+                        href={`https://x.com/${acc.username}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors"
+                      >
+                        ↗確認
+                      </a>
+                      <button
+                        onClick={() => toggleXPause(acc.id, !acc.paused)}
+                        className="text-xs text-zinc-500 hover:text-sky-400 transition-colors"
+                      >
+                        {acc.paused ? "再開" : "停止"}
+                      </button>
+                      <button
+                        onClick={() => deleteSource("x", acc.id)}
+                        className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+                      >
+                        削除
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

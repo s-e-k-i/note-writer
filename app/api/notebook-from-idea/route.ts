@@ -46,8 +46,7 @@ export async function POST(req: Request) {
   if (!redis) return Response.json({ ok: true });
   try {
     const body = await req.json() as { account_id?: string; entry?: NotebookEntry; entries?: NotebookEntry[] };
-    const accountId = body.account_id;
-    if (!accountId) return missingAccountId();
+    const accountId = body.account_id ?? SEKI_ID;
 
     const incoming = body.entries ?? (body.entry ? [body.entry] : []);
     if (!incoming.length) return Response.json({ ok: true });

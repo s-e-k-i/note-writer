@@ -41,6 +41,16 @@ export async function POST(request: Request) {
   return Response.json(sources);
 }
 
+export async function PATCH(request: Request) {
+  const { type, id, paused } = await request.json();
+  const sources = await loadSources();
+  if (type === "x") {
+    sources.x = sources.x.map((s) => (s.id === id ? { ...s, paused } : s));
+  }
+  await redis.set(KEY, sources);
+  return Response.json(sources);
+}
+
 export async function DELETE(request: Request) {
   const { type, id } = await request.json();
   const sources = await loadSources();

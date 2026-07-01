@@ -163,6 +163,7 @@ export interface SubstackYouTubeSource {
 export interface SubstackXSource {
   id: string;
   username: string;
+  paused?: boolean;
 }
 
 export interface SubstackRSSSource {
