@@ -375,7 +375,7 @@ export default function TabSubstack() {
     }
     if (typeFilter !== "all" && item.sourceType?.toLowerCase() !== typeFilter) return false;
     return true;
-  });
+  }).sort((a, b) => new Date(b.collectedAt).getTime() - new Date(a.collectedAt).getTime());
 
   const SECTIONS: { key: Section; label: string }[] = [
     { key: "items", label: "ネタ一覧" },
@@ -675,11 +675,11 @@ export default function TabSubstack() {
             <div className="space-y-1">
               {bdAccounts.length === 0 ? <p className="text-xs text-zinc-600">登録済みアカウントなし</p>
                 : bdAccounts.map((acc) => (
-                  <div key={acc.id} className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${acc.paused ? "opacity-50" : ""}`}>
+                  <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs ${acc.paused ? "text-zinc-500" : "text-zinc-200"}`}>@{acc.username}</span>
+                      <span className="text-xs text-zinc-200">@{acc.username}</span>
                       {acc.paused && (
-                        <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>
+                        <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">【停止中】</span>
                       )}
                     </div>
                     <div className="flex items-center gap-3">

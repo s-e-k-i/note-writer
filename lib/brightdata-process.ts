@@ -115,6 +115,9 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
   const newItems: SubstackNewsItem[] = [];
   const newSeenIds: string[] = [];
 
+  const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - NINETY_DAYS_MS;
+
   for (const raw of posts) {
     const { id, text, createdAt, username, displayName, url } = extractPost(raw);
     if (!id || seenIds.has(id)) continue;
@@ -123,6 +126,12 @@ export async function processBrightDataPosts(rawPosts: unknown[]): Promise<{
       continue;
     }
     if (!text.trim()) continue;
+    const postedAt = new Date(createdAt).getTime();
+    if (!isNaN(postedAt) && postedAt < cutoff) {
+      console.log(`[brightdata/process] skip: older than 90 days id=${id} date=${createdAt}`);
+      seenIds.add(id);
+      continue;
+    }
 
     seenIds.add(id);
     newSeenIds.push(id);
