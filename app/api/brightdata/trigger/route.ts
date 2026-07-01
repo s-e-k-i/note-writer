@@ -40,19 +40,22 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
   if (secret) params.set("secret", secret);
   const notifyUrl = params.toString() ? `${webhookBase}?${params.toString()}` : webhookBase;
 
-  const input = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
+  const endDate = new Date().toISOString();
+  const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const urls = accounts.map((a) => `https://x.com/${a.username}`);
+  const input = [{ urls, start_date: startDate, end_date: endDate }];
 
   const apiUrl =
     `https://api.brightdata.com/datasets/v3/trigger` +
     `?dataset_id=${DATASET_ID}` +
     `&type=discover_new` +
-    `&discover_by=profile_url` +
-    `&limit_per_input=10` +
+    `&discover_by=profiles_array` +
+    `&limit_per_input=20` +
     `&include_errors=true` +
     `&format=json` +
     `&notify=${encodeURIComponent(notifyUrl)}`;
 
-  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, notify=${notifyUrl}`);
+  console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0,10)}~${endDate.slice(0,10)}, notify=${notifyUrl}`);
 
   const res = await fetch(apiUrl, {
     method: "POST",

@@ -101,7 +101,7 @@ export default function TabNotebook({ entries, onUpdate, onRemove }: Props) {
         disabled={syncing}
         className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-zinc-200 rounded-lg transition-colors"
       >
-        {syncing ? "同期中..." : "Raindrop 今すぐ同期"}
+        {syncing ? "同期中..." : "ブックマーク同期"}
       </button>
       {syncMsg && (
         <span className={`text-xs ${syncMsg.includes("失敗") ? "text-red-400" : syncMsg.includes("ありません") ? "text-zinc-500" : "text-green-400"}`}>

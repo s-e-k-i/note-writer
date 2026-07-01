@@ -371,7 +371,7 @@ export default function TabSubstack() {
                 </span>
               )}
             </div>
-            <p className="text-xs text-zinc-600">Bright Data経由でXアカウントの投稿を収集します（毎日21:00 UTC に自動実行）</p>
+            <p className="text-xs text-zinc-600">Bright Data経由でXアカウントの投稿を収集します（毎朝6:00 JST に自動収集）</p>
           </div>
 
           {/* URLから個別追加 */}
@@ -582,7 +582,7 @@ export default function TabSubstack() {
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-zinc-200">XアカウントをBright Dataで収集</h4>
             <p className="text-xs text-sky-400/80 bg-sky-900/15 border border-sky-800/30 rounded-lg px-3 py-2">
-              ✅ Bright Data経由でXポストを収集します。ここで登録したアカウントが「Bright Data収集」ボタンの対象になります。毎日21:00 UTC（翌6:00 JST）に自動収集されます。
+              ✅ Bright Data経由でXポストを収集します。ここで登録したアカウントが「Bright Data収集」ボタンの対象になります。毎朝6:00 JST に自動収集されます。
             </p>
             <div className="flex gap-2">
               <input value={bdUsername} onChange={(e) => setBdUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && handleBdAddAccount()} placeholder="ユーザー名（@なし）" className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-sky-500" />
