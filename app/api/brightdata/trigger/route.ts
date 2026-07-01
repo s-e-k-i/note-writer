@@ -42,17 +42,18 @@ async function triggerBrightData(accounts: BrightDataXSource[]): Promise<{ snaps
 
   const endDate = new Date().toISOString();
   const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const urls = accounts.map((a) => `https://x.com/${a.username}`);
-  const input = [{ urls, start_date: startDate, end_date: endDate }];
+  const input = accounts.map((a) => ({ url: `https://x.com/${a.username}` }));
 
   const apiUrl =
     `https://api.brightdata.com/datasets/v3/trigger` +
     `?dataset_id=${DATASET_ID}` +
     `&type=discover_new` +
-    `&discover_by=profiles_array` +
+    `&discover_by=profile_url` +
     `&limit_per_input=20` +
     `&include_errors=true` +
     `&format=json` +
+    `&start_date=${encodeURIComponent(startDate)}` +
+    `&end_date=${encodeURIComponent(endDate)}` +
     `&notify=${encodeURIComponent(notifyUrl)}`;
 
   console.log(`[brightdata/trigger] accounts=${accounts.map((a) => a.username).join(",")}, period=${startDate.slice(0,10)}~${endDate.slice(0,10)}, notify=${notifyUrl}`);
