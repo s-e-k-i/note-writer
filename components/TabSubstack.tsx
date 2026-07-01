@@ -180,6 +180,18 @@ export default function TabSubstack() {
     } catch {}
   };
 
+  const handleBdTogglePause = async (id: string, paused: boolean) => {
+    try {
+      const res = await fetch("/api/brightdata/accounts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, paused }),
+      });
+      const data = await res.json();
+      if (res.ok) setBdAccounts(data.accounts ?? []);
+    } catch {}
+  };
+
   // ── URLから追加 ───────────────────────────────────
   const handleAddUrl = async () => {
     if (!addUrlInput.trim() || addingUrl) return;
@@ -288,7 +300,11 @@ export default function TabSubstack() {
 
   // ── フィルタリング ────────────────────────────────
   const filtered = items.filter((item) => {
-    if (statusFilter !== "all" && item.status !== statusFilter) return false;
+    if (typeFilter === "x") {
+      // Xフィルター時はstatusによる絞り込みを無効にして全件表示
+    } else if (statusFilter !== "all" && item.status !== statusFilter) {
+      return false;
+    }
     if (typeFilter !== "all" && item.sourceType?.toLowerCase() !== typeFilter) return false;
     return true;
   });
@@ -591,16 +607,24 @@ export default function TabSubstack() {
             <div className="space-y-1">
               {bdAccounts.length === 0 ? <p className="text-xs text-zinc-600">登録済みアカウントなし</p>
                 : bdAccounts.map((acc) => (
-                  <div key={acc.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
-                    <span className="text-xs text-zinc-200">@{acc.username}</span>
+                  <div key={acc.id} className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${acc.paused ? "opacity-50" : ""}`}>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs ${acc.paused ? "text-zinc-500" : "text-zinc-200"}`}>@{acc.username}</span>
+                      {acc.paused && (
+                        <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-3">
                       <a href={`https://x.com/${acc.username}`} target="_blank" rel="noopener noreferrer" className="text-xs text-zinc-600 hover:text-zinc-300 transition-colors">↗ 確認</a>
+                      <button onClick={() => handleBdTogglePause(acc.id, !acc.paused)} className="text-xs text-zinc-500 hover:text-sky-400 transition-colors">
+                        {acc.paused ? "再開" : "停止"}
+                      </button>
                       <button onClick={() => handleBdDeleteAccount(acc.id)} className="text-xs text-zinc-600 hover:text-red-400 transition-colors">削除</button>
                     </div>
                   </div>
                 ))}
             </div>
-            {bdAccounts.length > 0 && (
+            {bdAccounts.filter((a) => !a.paused).length > 0 && (
               <button
                 onClick={handleBdTrigger}
                 disabled={bdTriggering}
