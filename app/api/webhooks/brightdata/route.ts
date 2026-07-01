@@ -9,15 +9,19 @@ const MAX_ITEMS = 100;
 const MAX_SEEN_IDS = 500;
 
 interface BrightDataPost {
+  // Discovery mode (profile_url) fields
   id?: string;
+  user_posted?: string;
+  name?: string;
+  description?: string;
+  date_posted?: string;
+  url?: string;
+  // Legacy / alternate field names
   post_id?: string;
   text?: string;
   content?: string;
-  description?: string;
   created_at?: string;
-  date_posted?: string;
   timestamp?: string;
-  url?: string;
   post_url?: string;
   author?: { username?: string; name?: string };
   user?: { username?: string; screen_name?: string; name?: string };
@@ -26,10 +30,10 @@ interface BrightDataPost {
 
 function extractPost(raw: BrightDataPost) {
   const id = raw.id ?? raw.post_id ?? "";
-  const text = raw.text ?? raw.content ?? raw.description ?? "";
-  const createdAt = raw.created_at ?? raw.date_posted ?? raw.timestamp ?? new Date().toISOString();
-  const username = raw.author?.username ?? raw.user?.username ?? raw.user?.screen_name ?? raw.username ?? "unknown";
-  const displayName = raw.author?.name ?? raw.user?.name ?? username;
+  const text = raw.description ?? raw.text ?? raw.content ?? "";
+  const createdAt = raw.date_posted ?? raw.created_at ?? raw.timestamp ?? new Date().toISOString();
+  const username = raw.user_posted ?? raw.author?.username ?? raw.user?.username ?? raw.user?.screen_name ?? raw.username ?? "unknown";
+  const displayName = raw.name ?? raw.author?.name ?? raw.user?.name ?? username;
   const url = raw.url ?? raw.post_url ?? (id ? `https://x.com/${username}/status/${id}` : "");
   return { id, text, createdAt, username, displayName, url };
 }
