@@ -880,11 +880,11 @@ export default function TabSubstackNews({ onUseItem }: Props) {
                 <p className="text-xs text-zinc-600">登録済みフィードなし</p>
               ) : (
                 sources.rss.map((feed) => (
-                  <div key={feed.id} className={`flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2 ${feed.paused ? "opacity-50" : ""}`}>
+                  <div key={feed.id} className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`text-xs ${feed.paused ? "text-zinc-500" : "text-zinc-200"}`}>{feed.name}</span>
-                        {feed.paused && <span className="text-xs text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">停止中</span>}
+                        <span className="text-xs text-zinc-200">{feed.name}</span>
+                        {feed.paused && <span className="text-xs text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">【停止中】</span>}
                       </div>
                       <p className="text-xs text-zinc-600 truncate">{feed.url}</p>
                     </div>
