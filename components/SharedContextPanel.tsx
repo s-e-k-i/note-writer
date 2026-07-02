@@ -35,7 +35,7 @@ export default function SharedContextPanel() {
     <div className="mt-8 pt-6 border-t border-zinc-700">
       <h3 className="text-sm font-semibold text-zinc-300 mb-1">📂 開発ログ・アイデアメモ</h3>
       <p className="text-xs text-zinc-500 mb-3">
-        hitoribiz-osからアップロードされた共有データ。メルマガ・記事・掲示板・発信のおまかせ提案に使われます。
+        CEO-OSからアップロードされた共有データ。メルマガ・記事・掲示板・発信のおまかせ提案に使われます。
       </p>
 
       {data === null ? (
@@ -60,7 +60,7 @@ export default function SharedContextPanel() {
         </div>
       ) : (
         <div className="bg-zinc-800/60 border border-zinc-700 rounded-xl px-4 py-3 text-xs text-zinc-500">
-          未読み込み — hitoribiz-osからアップロードされると、ここに表示されます
+          未読み込み — CEO-OSからアップロードされると、ここに表示されます
         </div>
       )}
     </div>
