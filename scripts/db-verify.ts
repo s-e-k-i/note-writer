@@ -36,8 +36,13 @@ async function main() {
   if (!Array.isArray(jsonArticles)) throw new Error("JSON file must contain an array of articles");
 
   const sql = neon(process.env.DATABASE_URL);
+  // published_at is cast to text in SQL (not left as a JS Date object) —
+  // the neon driver parses DATE columns as local-midnight Date objects,
+  // which then serialize as a UTC timestamp one day off from the literal
+  // calendar date. Casting server-side avoids that JS-side artifact.
   const dbRows = (await sql`
-    SELECT * FROM note_articles WHERE note_account_id = ${account} AND deleted_at IS NULL
+    SELECT *, published_at::text AS published_at FROM note_articles
+    WHERE note_account_id = ${account} AND deleted_at IS NULL
   `) as DbArticleRow[];
 
   console.log(`JSON count: ${jsonArticles.length}`);
