@@ -5,6 +5,7 @@ export interface Article {
   title: string;
   magazine: string;
   summary: string;
+  summaryStatus?: "generating" | "done" | "failed";
   isPaid?: boolean;
   paidPrice?: number;
   magazines?: string[];

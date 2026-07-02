@@ -96,6 +96,20 @@ interface PastePreview {
   body: string;
 }
 
+// ── Summary status badge ──────────────────────────────────────────
+function summaryBadge(a: Article): { label: string; className: string } | null {
+  if (a.summaryStatus === "generating") {
+    return { label: "要約 生成中", className: "bg-blue-500/20 text-blue-300 border-blue-500/30 animate-pulse" };
+  }
+  if (a.summaryStatus === "failed") {
+    return { label: "要約 失敗", className: "bg-red-500/20 text-red-300 border-red-500/30" };
+  }
+  if (a.summary?.trim()) {
+    return { label: "要約 完了", className: "bg-green-500/20 text-green-300 border-green-500/30" };
+  }
+  return null;
+}
+
 export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
   const [summaryImportOpen, setSummaryImportOpen] = useState(false);
   const [summaryJSON, setSummaryJSON] = useState("");
@@ -136,6 +150,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
     autoSummarized.current = true;
     (async () => {
       for (const article of missing) {
+        onUpdateArticle(article.id, { summaryStatus: "generating" });
         try {
           const res = await fetch("/api/summarize", {
             method: "POST",
@@ -143,8 +158,11 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
             body: JSON.stringify({ title: article.title, body: article.body }),
           });
           const data = await res.json();
-          if (data.summary) onUpdateArticle(article.id, { summary: data.summary });
-        } catch {}
+          if (data.summary) onUpdateArticle(article.id, { summary: data.summary, summaryStatus: "done" });
+          else onUpdateArticle(article.id, { summaryStatus: "failed" });
+        } catch {
+          onUpdateArticle(article.id, { summaryStatus: "failed" });
+        }
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,11 +254,12 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
         // Step 4: generate AI summaries sequentially
         const total = articlesWithBodies.length;
-        const summaryUpdates: { id: string; summary: string }[] = [];
+        let generatedCount = 0;
         for (let i = 0; i < articlesWithBodies.length; i++) {
           const a = articlesWithBodies[i];
           setCompleteImportMsg(`要約を生成中...（${i + 1} / ${total}本）`);
           if (!a.body) continue;
+          onUpdateArticle(a.id, { summaryStatus: "generating" });
           try {
             const res = await fetch("/api/summarize", {
               method: "POST",
@@ -248,12 +267,18 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
               body: JSON.stringify({ title: a.title, body: a.body }),
             });
             const data = await res.json();
-            if (data.summary) summaryUpdates.push({ id: a.id, summary: data.summary });
-          } catch {}
+            if (data.summary) {
+              onUpdateArticle(a.id, { summary: data.summary, summaryStatus: "done" });
+              generatedCount++;
+            } else {
+              onUpdateArticle(a.id, { summaryStatus: "failed" });
+            }
+          } catch {
+            onUpdateArticle(a.id, { summaryStatus: "failed" });
+          }
         }
-        if (summaryUpdates.length > 0) onUpdateSummaries(summaryUpdates);
 
-        setCompleteImportMsg(`✓ ${total}本をインポート・要約${summaryUpdates.length}件を生成しました`);
+        setCompleteImportMsg(`✓ ${total}本をインポート・要約${generatedCount}件を生成しました`);
       } catch (err) {
         setCompleteImportMsg(`エラー：${err instanceof Error ? err.message : "不明なエラー"}`);
       }
@@ -284,6 +309,7 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
       magazine: pasteSelectedMags[0],
       magazines: pasteSelectedMags,
       summary: "",
+      summaryStatus: "generating",
       isPaid: pastePreview.isPaid || undefined,
       paidPrice: pastePreview.isPaid ? pastePreview.price : undefined,
       body: bodyForSummary,
@@ -301,11 +327,15 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
       .then((r) => r.json())
       .then((data) => {
         if (data.summary) {
-          onUpdateArticle(expectedId, { summary: data.summary });
+          onUpdateArticle(expectedId, { summary: data.summary, summaryStatus: "done" });
           setPasteMsg(`✓ 追加しました：「${addedTitle}」（要約生成完了）`);
+        } else {
+          onUpdateArticle(expectedId, { summaryStatus: "failed" });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        onUpdateArticle(expectedId, { summaryStatus: "failed" });
+      });
   };
 
   const toggleMag = (mag: string) => {
@@ -650,6 +680,14 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
                           noteで見る
                         </a>
                       )}
+                      {(() => {
+                        const badge = summaryBadge(a);
+                        return badge && (
+                          <span className={`text-xs border rounded px-1.5 py-0.5 shrink-0 ${badge.className}`}>
+                            {badge.label}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <p className="text-zinc-500 text-xs mt-0.5 truncate">
                       {(a.magazines ?? [a.magazine]).map((m) => m.split("──")[0].trim()).join("・")}

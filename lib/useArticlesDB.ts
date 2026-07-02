@@ -125,7 +125,7 @@ export function useArticlesDB(accountId: string) {
       setArticles((prev) => {
         const map = new Map(updates.map((u) => [u.id, u.summary]));
         const updated = prev.map((a) =>
-          map.has(a.id) ? { ...a, summary: map.get(a.id)! } : a
+          map.has(a.id) ? { ...a, summary: map.get(a.id)!, summaryStatus: "done" as const } : a
         );
         localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
