@@ -5,10 +5,14 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:migrate": "npx tsx scripts/db-migrate.ts",
+    "db:import": "npx tsx scripts/db-import.ts",
+    "db:verify": "npx tsx scripts/db-verify.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.101.0",
+    "@neondatabase/serverless": "^1.1.0",
     "@upstash/redis": "^1.38.0",
     "lucide-react": "^1.21.0",
     "next": "16.2.7",
@@ -21,7 +25,9 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }
