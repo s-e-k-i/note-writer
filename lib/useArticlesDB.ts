@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Article } from "./types";
 import { SEKI_ID } from "./accountIds";
+import { mirrorArticlesToDb } from "./articlesDbMirror";
 
 const BASE_KEY = "note_articles_db";
 
@@ -61,7 +62,8 @@ export function useArticlesDB(accountId: string) {
   const save = useCallback((newArticles: Article[]) => {
     setArticles(newArticles);
     localStorage.setItem(storageKey, JSON.stringify(newArticles));
-  }, [storageKey]);
+    mirrorArticlesToDb(accountId, newArticles);
+  }, [storageKey, accountId]);
 
   const addArticle = useCallback(
     (article: Article) => {
@@ -70,8 +72,9 @@ export function useArticlesDB(accountId: string) {
         localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
+      mirrorArticlesToDb(accountId, [article]);
     },
-    [storageKey]
+    [storageKey, accountId]
   );
 
   const exportJSON = useCallback(() => {
@@ -114,10 +117,12 @@ export function useArticlesDB(accountId: string) {
       setArticles((prev) => {
         const updated = prev.map((a) => (a.id === id ? { ...a, ...updates } : a));
         localStorage.setItem(storageKey, JSON.stringify(updated));
+        const changed = updated.find((a) => a.id === id);
+        if (changed) mirrorArticlesToDb(accountId, [changed]);
         return updated;
       });
     },
-    [storageKey]
+    [storageKey, accountId]
   );
 
   const updateSummaries = useCallback(
@@ -128,10 +133,11 @@ export function useArticlesDB(accountId: string) {
           map.has(a.id) ? { ...a, summary: map.get(a.id)!, summaryStatus: "done" as const } : a
         );
         localStorage.setItem(storageKey, JSON.stringify(updated));
+        mirrorArticlesToDb(accountId, updated.filter((a) => map.has(a.id)));
         return updated;
       });
     },
-    [storageKey]
+    [storageKey, accountId]
   );
 
   const bulkUpdateBodies = useCallback(
@@ -142,10 +148,11 @@ export function useArticlesDB(accountId: string) {
           map.has(a.id) ? { ...a, body: map.get(a.id)! } : a
         );
         localStorage.setItem(storageKey, JSON.stringify(updated));
+        mirrorArticlesToDb(accountId, updated.filter((a) => map.has(a.id)));
         return updated;
       });
     },
-    [storageKey]
+    [storageKey, accountId]
   );
 
   return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };
