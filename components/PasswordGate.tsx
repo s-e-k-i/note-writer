@@ -16,10 +16,26 @@ export default function PasswordGate({ children }: Props) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (sessionStorage.getItem(SESSION_KEY) === "1") {
-      setAuthenticated(true);
-    }
-    setChecked(true);
+    (async () => {
+      if (sessionStorage.getItem(SESSION_KEY) === "1") {
+        // Don't just trust the flag — confirm the session cookie it implies
+        // is actually still valid server-side. A stale flag with no (or an
+        // invalid) cookie would otherwise pass the UI gate here but silently
+        // fail every DB-backed API call afterward.
+        try {
+          const res = await fetch("/api/auth");
+          if (res.ok) {
+            setAuthenticated(true);
+          } else {
+            sessionStorage.removeItem(SESSION_KEY);
+          }
+        } catch {
+          // Network hiccup — don't lock the user out over a transient error.
+          setAuthenticated(true);
+        }
+      }
+      setChecked(true);
+    })();
   }, []);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
