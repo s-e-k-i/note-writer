@@ -6,6 +6,7 @@ import { MAGAZINES } from "@/lib/profile";
 
 interface Props {
   articles: Article[];
+  usingLocalFallback?: boolean;
   onImport: (articles: Article[]) => void;
   onExportJSON: () => void;
   onImportJSON: (file: File) => Promise<void>;
@@ -110,7 +111,7 @@ function summaryBadge(a: Article): { label: string; className: string } | null {
   return null;
 }
 
-export default function TabDatabase({ articles, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
+export default function TabDatabase({ articles, usingLocalFallback, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
   const [summaryImportOpen, setSummaryImportOpen] = useState(false);
   const [summaryJSON, setSummaryJSON] = useState("");
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
@@ -395,6 +396,11 @@ export default function TabDatabase({ articles, onImport, onExportJSON, onImport
 
   return (
     <div className="space-y-6">
+      {usingLocalFallback && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2.5 text-sm text-amber-300">
+          ⚠ DBに接続できなかったため、ローカルのデータを表示しています
+        </div>
+      )}
       {/* Complete import (prominent) */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 space-y-3">
         <div className="flex items-start gap-3">

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Article } from "./types";
 import { SEKI_ID } from "./accountIds";
 import { mirrorArticlesToDb } from "./articlesDbMirror";
+import { fetchArticlesFromDb } from "./articlesDbRead";
 
 const BASE_KEY = "note_articles_db";
 
@@ -31,30 +32,68 @@ function migrateArticles(articles: Article[]): { articles: Article[]; changed: b
 export function useArticlesDB(accountId: string) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loaded, setLoaded] = useState(false);
+  // Stage 2-2: true when this load fell back to localStorage because the
+  // DB read failed, or came back suspiciously empty (see below) — surfaced
+  // so the UI can let the user know they're seeing local data.
+  const [usingLocalFallback, setUsingLocalFallback] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setLoaded(false);
     setArticles([]);
+    setUsingLocalFallback(false);
     const storageKey = `${BASE_KEY}:${accountId}`;
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        const parsed: Article[] = JSON.parse(stored);
-        const { articles: migrated, changed } = migrateArticles(parsed);
-        if (changed) localStorage.setItem(storageKey, JSON.stringify(migrated));
-        setArticles(migrated);
-      } else if (accountId === SEKI_ID) {
-        // SEKI_IDのみ旧キーから自動マイグレーション
-        const legacy = localStorage.getItem(BASE_KEY);
-        if (legacy) {
-          const parsed: Article[] = JSON.parse(legacy);
-          const { articles: migrated } = migrateArticles(parsed);
-          localStorage.setItem(storageKey, JSON.stringify(migrated));
-          setArticles(migrated);
+
+    const readLocal = (): Article[] => {
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) {
+          const parsed: Article[] = JSON.parse(stored);
+          const { articles: migrated, changed } = migrateArticles(parsed);
+          if (changed) localStorage.setItem(storageKey, JSON.stringify(migrated));
+          return migrated;
         }
+        if (accountId === SEKI_ID) {
+          // SEKI_IDのみ旧キーから自動マイグレーション
+          const legacy = localStorage.getItem(BASE_KEY);
+          if (legacy) {
+            const parsed: Article[] = JSON.parse(legacy);
+            const { articles: migrated } = migrateArticles(parsed);
+            localStorage.setItem(storageKey, JSON.stringify(migrated));
+            return migrated;
+          }
+        }
+      } catch {}
+      return [];
+    };
+
+    (async () => {
+      const dbArticles = await fetchArticlesFromDb(accountId);
+      if (cancelled) return;
+
+      const localArticles = readLocal();
+      // Guard against an unmigrated/never-mirrored account silently showing
+      // as empty: if DB has nothing but localStorage has real data, that's
+      // a reason to distrust the DB result, not to display "0 articles".
+      const dbLooksTrustworthy = dbArticles !== null && !(dbArticles.length === 0 && localArticles.length > 0);
+
+      if (dbLooksTrustworthy && dbArticles) {
+        const { articles: migrated } = migrateArticles(dbArticles);
+        setArticles(migrated);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(migrated));
+        } catch {}
+        setUsingLocalFallback(false);
+      } else {
+        setArticles(localArticles);
+        setUsingLocalFallback(true);
       }
-    } catch {}
-    setLoaded(true);
+      setLoaded(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [accountId]);
 
   const storageKey = `${BASE_KEY}:${accountId}`;
@@ -155,5 +194,5 @@ export function useArticlesDB(accountId: string) {
     [storageKey, accountId]
   );
 
-  return { articles, loaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };
+  return { articles, loaded, usingLocalFallback, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };
 }

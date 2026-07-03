@@ -99,7 +99,7 @@ export default function Home() {
     }
   }, [notebookModalText]);
 
-  const { articles, loaded: articlesLoaded, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB(currentAccountId);
+  const { articles, loaded: articlesLoaded, usingLocalFallback: articlesUsingLocalFallback, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries } = useArticlesDB(currentAccountId);
   const { drafts, addDraft, updateDraft, removeDraft, restoreDraft } = useDraftsDB(currentAccountId);
   const { newsletters, loaded: newslettersLoaded, addNewsletter, updateNewsletter, removeNewsletter } = useNewsletterDB(currentAccountId);
   const { drafts: newsletterDrafts, loaded: nlDraftsLoaded, addDraft: addNewsletterDraft, updateDraft: updateNewsletterDraft, removeDraft: removeNewsletterDraft } = useNewsletterDraftDB(currentAccountId);
@@ -370,6 +370,7 @@ export default function Home() {
                   {noteTab === "database" && (
                     <TabDatabase
                       articles={articles}
+                      usingLocalFallback={articlesUsingLocalFallback}
                       onImport={save}
                       onExportJSON={exportJSON}
                       onImportJSON={importJSON}
