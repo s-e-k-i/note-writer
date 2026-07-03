@@ -2,8 +2,9 @@ import { getDb } from "@/lib/db";
 import { requireSitePassword, requireValidAccountId } from "@/lib/apiAuth";
 import { sha256, computeLegacyKey } from "@/lib/articlesDb";
 
-// NOTE: Not wired into the app UI yet (Phase 0/1). localStorage remains the
-// app's authoritative storage until Phase 2 explicitly switches it over.
+// Stage 2-2: read from here first (see lib/articlesDbRead.ts), falling back
+// to localStorage on failure. localStorage remains the write-authoritative
+// cache until Stage 2-3 switches that over too.
 
 export async function GET(request: Request) {
   const authError = requireSitePassword(request);
@@ -15,8 +16,12 @@ export async function GET(request: Request) {
   if (accountError) return accountError;
 
   const sql = getDb();
+  // published_at is cast to text: the neon driver otherwise parses the DATE
+  // column into a JS Date object, which serializes to a UTC timestamp that
+  // reads as the wrong calendar date in non-UTC timezones (same issue fixed
+  // in scripts/db-verify.ts's comparison logic).
   const rows = await sql`
-    SELECT * FROM note_articles
+    SELECT *, published_at::text AS published_at FROM note_articles
     WHERE note_account_id = ${noteAccountId} AND deleted_at IS NULL
     ORDER BY number NULLS LAST, created_at
   `;
@@ -57,7 +62,7 @@ export async function POST(request: Request) {
         ${article.isPaid ?? false}, ${article.paidPrice ?? null}, ${article.magazine ?? null},
         ${article.magazines ?? (article.magazine ? [article.magazine] : null)}, ${article.date ?? null}
       )
-      RETURNING *
+      RETURNING *, published_at::text AS published_at
     `;
     return Response.json({ article: rows[0] }, { status: 201 });
   } catch (err) {

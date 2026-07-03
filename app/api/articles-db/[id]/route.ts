@@ -20,7 +20,7 @@ export async function GET(request: Request, { params }: RouteParams) {
   // note_account_id is always part of the WHERE clause: a valid site
   // password alone must never be enough to read another account's article.
   const rows = await sql`
-    SELECT * FROM note_articles
+    SELECT *, published_at::text AS published_at FROM note_articles
     WHERE id = ${id} AND note_account_id = ${noteAccountId} AND deleted_at IS NULL
   `;
   if (rows.length === 0) return Response.json({ error: "not found" }, { status: 404 });
@@ -63,7 +63,7 @@ export async function PATCH(request: Request, { params }: RouteParams) {
       version = version + 1
     WHERE id = ${id} AND note_account_id = ${noteAccountId}
       AND version = ${expectedVersion} AND deleted_at IS NULL
-    RETURNING *
+    RETURNING *, published_at::text AS published_at
   `;
 
   if (rows.length === 0) {
