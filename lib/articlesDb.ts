@@ -24,6 +24,7 @@ export interface DbArticleRow {
   updated_at: string;
   version: number;
   deleted_at: string | null;
+  mirror_seq: number | null;
 }
 
 export function sha256(text: string): string {

@@ -57,11 +57,20 @@ async function migrate() {
       version         INTEGER NOT NULL DEFAULT 1,
       deleted_at      TIMESTAMPTZ,
 
+      -- Client-generated write timestamp (Date.now(), ms) from the browser's
+      -- dual-write mirror. Only set by the live mirror path, never by the
+      -- CLI migration/import tooling. Used to reject a stale mirror write
+      -- that arrives after a newer one due to network reordering — see
+      -- lib/articlesDbImport.ts's ON CONFLICT ... WHERE guard.
+      mirror_seq      BIGINT,
+
       -- Primary idempotency guard for migration/import: a given account's
       -- legacy id must map to exactly one row.
       UNIQUE (note_account_id, legacy_id)
     )
   `;
+
+  await sql`ALTER TABLE note_articles ADD COLUMN IF NOT EXISTS mirror_seq BIGINT`;
 
   await sql`
     CREATE INDEX IF NOT EXISTS note_articles_account_idx
