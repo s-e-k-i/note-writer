@@ -17,6 +17,7 @@ import TabNotebook from "@/components/TabNotebook";
 import TabBulletin from "@/components/TabBulletin";
 import TabSns from "@/components/TabSns";
 import TabSubstack from "@/components/TabSubstack";
+import TabResearch from "@/components/TabResearch";
 import ProfileDocumentPanel from "@/components/ProfileDocumentPanel";
 import NextSuggestionsPanel from "@/components/NextSuggestionsPanel";
 import AccountSwitcher from "@/components/AccountSwitcher";
@@ -33,7 +34,7 @@ import { SEKI_ID, CURRENT_ACCOUNT_LS_KEY } from "@/lib/accountIds";
 const NOTEBOOK_DRAFT_KEY = "note_notebook_modal_draft";
 const DAY_NAMES = ["日", "月", "火", "水", "木", "金", "土"];
 
-type Section = "note" | "newsletter" | "notebook" | "sns" | "substack" | "settings";
+type Section = "note" | "newsletter" | "notebook" | "sns" | "substack" | "research" | "settings";
 type NoteTab = "database" | "consult" | "generate" | "rewrite" | "drafts" | "bulletin";
 type NewsletterTab = "list" | "write" | "drafts";
 type RewriteMode = "rewrite" | "polish";
@@ -272,7 +273,7 @@ export default function Home() {
         <div className="border-b border-zinc-700 px-6 bg-zinc-900">
           <div className="max-w-4xl mx-auto flex items-center">
             <div className="flex gap-1 flex-1">
-              {(["note", "newsletter", "sns", ...(isOfficialAccount ? ["substack"] : []), "notebook", "settings"] as Section[]).map((s) => (
+              {(["note", "newsletter", "sns", ...(isOfficialAccount ? ["substack"] : []), "research", "notebook", "settings"] as Section[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSection(s)}
@@ -286,6 +287,7 @@ export default function Home() {
                     : s === "newsletter" ? "メルマガ"
                     : s === "sns" ? "SNS"
                     : s === "substack" ? "Substack"
+                    : s === "research" ? "リサーチ"
                     : s === "notebook" ? "ネタ帳"
                     : "設定"}
                 </button>
@@ -487,6 +489,11 @@ export default function Home() {
               {/* substack section */}
               {section === "substack" && (
                 <TabSubstack />
+              )}
+
+              {/* research section (Xリサーチ) — all note accounts, no isOfficialAccount gate */}
+              {section === "research" && (
+                <TabResearch noteAccountId={currentAccountId} />
               )}
 
               {/* settings section */}
