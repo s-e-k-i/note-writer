@@ -137,18 +137,18 @@ export async function listResearchPostsForAccount(
       rp.author_handle,
       rp.text,
       rp.is_text_truncated,
-      rp.posted_at::text AS posted_at,
+      to_char(rp.posted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS posted_at,
       rp.replies,
       rp.reposts,
       rp.likes,
       rp.bookmarks,
       rp.views,
-      rp.captured_at::text AS captured_at,
+      to_char(rp.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS captured_at,
       rpa.saved_reason,
       rpa.memo,
       rpa.tags,
       rpa.search_query,
-      rpa.created_at::text AS relation_created_at
+      to_char(rpa.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS relation_created_at
     FROM research_post_accounts rpa
     JOIN research_posts rp ON rp.id = rpa.research_post_id
     WHERE rpa.note_account_id = ${noteAccountId}
