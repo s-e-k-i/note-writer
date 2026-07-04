@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { redis } from "@/lib/redis";
 import { SubstackNewsItem } from "@/lib/types";
+import { excerptSummary } from "@/lib/brightdata-process";
 
 const ITEMS_KEY = "substack_news_items";
 const MAX_ITEMS = 100;
@@ -61,8 +62,18 @@ export async function POST(request: Request) {
   const sourceType = detectSourceType(cleanUrl);
   const sourceName = getSourceName(cleanUrl);
 
-  const client = new Anthropic();
-  const prompt = `あなたは関達也の発信編集アシスタントです。
+  try {
+    let summary: string;
+    let ideaSeed: string;
+
+    if (sourceType === "x") {
+      // X（twitter.com/x.com）はAI要約を一切使わない（Anthropicを呼ばない）。
+      // 取得できたOGP説明文、なければタイトルの冒頭抜粋をそのまま使う。
+      summary = excerptSummary(description || title);
+      ideaSeed = "";
+    } else {
+      const client = new Anthropic();
+      const prompt = `あなたは関達也の発信編集アシスタントです。
 以下のURLのコンテンツについて、Substack発信のネタとして要約と種を作成してください。
 
 URL：${cleanUrl}
@@ -74,15 +85,17 @@ ${description ? `説明：${description}` : ""}
 出力（JSONのみ）：
 {"summary":"2〜3行の要約（日本語）","idea_seed":"日本の個人がどう使えるか（1〜2行）"}`;
 
-  try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = (response.content[0] as { text: string }).text;
-    const m = text.match(/\{[\s\S]*\}/);
-    const parsed = m ? JSON.parse(m[0]) : {};
+      const response = await client.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const text = (response.content[0] as { text: string }).text;
+      const m = text.match(/\{[\s\S]*\}/);
+      const parsed = m ? JSON.parse(m[0]) : {};
+      summary = parsed.summary ?? description;
+      ideaSeed = parsed.idea_seed ?? "";
+    }
 
     const newItem: SubstackNewsItem = {
       id: `manual_${Date.now()}`,
@@ -90,8 +103,8 @@ ${description ? `説明：${description}` : ""}
       sourceName,
       title,
       url: cleanUrl,
-      summary: parsed.summary ?? description,
-      ideaSeed: parsed.idea_seed ?? "",
+      summary,
+      ideaSeed,
       collectedAt: new Date().toISOString(),
       status: "unread",
       isManual: true,

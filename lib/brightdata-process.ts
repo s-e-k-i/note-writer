@@ -38,7 +38,9 @@ export function extractPost(raw: BrightDataPost) {
 
 // X投稿はAI要約・関連性判定を行わない（撤廃済み）。本文冒頭をそのまま
 // summaryとして使う。ideaSeedは常に空文字列、statusは常にunread。
-function excerptSummary(text: string, maxLen = 180): string {
+// X関連の処理を行う全経路（Bright Data収集・collect-substack-news・
+// add-url-item手動追加）で共通利用する。
+export function excerptSummary(text: string, maxLen = 180): string {
   const trimmed = text.trim();
   if (trimmed.length <= maxLen) return trimmed;
   return trimmed.slice(0, maxLen).trimEnd() + "...";

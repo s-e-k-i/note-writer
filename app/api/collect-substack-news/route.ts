@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import Parser from "rss-parser";
 import { redis } from "@/lib/redis";
 import { SubstackNewsItem, SubstackSources } from "@/lib/types";
+import { excerptSummary } from "@/lib/brightdata-process";
 
 const ITEMS_KEY = "substack_news_items";
 const SOURCES_KEY = "substack_sources";
@@ -38,13 +39,6 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
-// X投稿はAI要約・関連性判定を行わない（撤廃済み）。本文冒頭をそのまま
-// summaryとして使う（YouTube・RSSは引き続きenrichWithAIで処理する）。
-function excerptSummary(text: string, maxLen = 180): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= maxLen) return trimmed;
-  return trimmed.slice(0, maxLen).trimEnd() + "...";
-}
 
 const DEFAULT_SOURCES: SubstackSources = {
   youtube: [
