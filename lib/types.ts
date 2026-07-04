@@ -206,3 +206,66 @@ export interface ConsultSettings {
   memoText: string;
   memoResult: string;
 }
+
+// Xリサーチ DB（research_posts / research_post_accounts）関連の型。
+// BIGSERIAL由来のID（研究投稿のid・関連行のid）はJSのnumberでは精度を
+// 保証できないため、すべてstringとして扱う（numberへ変換しない）。
+
+// Chrome拡張（research/x-research-extension/）のJSON出力そのままの形。
+export interface ResearchPostImportItem {
+  postId: string;
+  url: string;
+  authorName: string;
+  authorHandle: string;
+  postedAtRaw: string | null;
+  text: string;
+  isTextTruncated: boolean;
+  replies: number | null;
+  reposts: number | null;
+  likes: number | null;
+  bookmarks: number | null;
+  views: number | null;
+}
+
+// 一覧APIが返す表示用の型（research_posts と research_post_accounts の結合）。
+// ブックマーク率はここでは計算しない（bookmarks/viewsのみ返し、表示時にUI側で算出する）。
+export interface ResearchPostListItem {
+  relationId: string;
+  researchPostId: string;
+  platform: string;
+  postId: string;
+  url: string;
+  authorName: string | null;
+  authorHandle: string;
+  text: string | null;
+  isTextTruncated: boolean;
+  postedAt: string | null;
+  replies: number | null;
+  reposts: number | null;
+  likes: number | null;
+  bookmarks: number | null;
+  views: number | null;
+  capturedAt: string;
+  savedReason: string | null;
+  memo: string | null;
+  tags: string[];
+  searchQuery: string | null;
+  relationCreatedAt: string;
+}
+
+// PATCHの更新入力。undefinedのフィールドは既存値を維持し、nullは値を消す
+// （tagsのみnullを許容しない。空配列[]で全削除を表現する）。
+export interface ResearchPostRelationUpdate {
+  savedReason?: string | null;
+  memo?: string | null;
+  tags?: string[];
+  searchQuery?: string | null;
+}
+
+// upsertResearchPostForAccount() 1件分の結果。
+export interface ResearchPostImportDbResult {
+  researchPostId: string;
+  relationId: string;
+  postInserted: boolean;
+  relationInserted: boolean;
+}
