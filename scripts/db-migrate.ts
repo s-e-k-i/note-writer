@@ -89,6 +89,87 @@ async function migrate() {
   `;
 
   console.log("Migration completed: note_articles table is ready.");
+
+  // research_posts: master record of an external X post captured via the
+  // Chrome extension (research/x-research-extension/). Not tied to any note
+  // account by itself — the same post can be referenced by multiple accounts
+  // via research_post_accounts below. See docs/x-research-db-and-persona-
+  // design.md (section 7) for the full design rationale.
+  await sql`
+    CREATE TABLE IF NOT EXISTS research_posts (
+      id                BIGSERIAL PRIMARY KEY,
+
+      -- Reserved for future non-X platforms (e.g. Threads). Server-controlled;
+      -- Phase 1 only ever writes 'x' here (never trust client input for this).
+      platform          TEXT NOT NULL DEFAULT 'x',
+      -- X's post id. Exceeds JS's safe integer range, so this is TEXT, never
+      -- a numeric column.
+      post_id           TEXT NOT NULL,
+
+      url               TEXT NOT NULL,
+      author_name       TEXT,
+      author_handle     TEXT NOT NULL,
+      text              TEXT,
+      is_text_truncated BOOLEAN NOT NULL DEFAULT FALSE,
+
+      -- Chrome extension's postedAtRaw (ISO datetime), stored verbatim with
+      -- no JST conversion at write time. JST conversion happens only at
+      -- display time, in the UI.
+      posted_at         TIMESTAMPTZ,
+
+      -- Engagement counts. NULL means "not captured this time", distinct
+      -- from an actual 0. Never coerce a missing count to 0.
+      replies           INTEGER,
+      reposts           INTEGER,
+      likes             INTEGER,
+      bookmarks         INTEGER,
+      views             INTEGER,
+
+      -- When note-writer most recently imported/refreshed this row (not
+      -- when the post was originally published — see posted_at for that).
+      captured_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+      -- Primary idempotency guard: the same real-world post is never
+      -- duplicated, regardless of how many note accounts reference it.
+      UNIQUE (platform, post_id)
+    )
+  `;
+
+  // research_post_accounts: which note account(s) use a given research_posts
+  // row, plus per-account fields (saved_reason/memo/tags/search_query) that
+  // must never be clobbered by re-importing the same JSON. Deleting a row
+  // here only removes that one account's association — it never deletes the
+  // underlying research_posts row (Phase 1 implements no delete path for
+  // research_posts itself; orphaned rows are left in place by design).
+  await sql`
+    CREATE TABLE IF NOT EXISTS research_post_accounts (
+      id                BIGSERIAL PRIMARY KEY,
+      research_post_id  BIGINT NOT NULL REFERENCES research_posts(id) ON DELETE CASCADE,
+      note_account_id   TEXT NOT NULL,
+
+      saved_reason      TEXT,
+      memo              TEXT,
+      tags              TEXT[],
+      -- Optional, entered by hand at import time (the Chrome extension JSON
+      -- itself carries no search_query field).
+      search_query      TEXT,
+
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+      -- A given post is associated with a given note account at most once.
+      UNIQUE (research_post_id, note_account_id)
+    )
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS research_post_accounts_account_idx
+      ON research_post_accounts (note_account_id)
+  `;
+
+  console.log("Migration completed: research_posts / research_post_accounts tables are ready.");
 }
 
 migrate().catch((err) => {
