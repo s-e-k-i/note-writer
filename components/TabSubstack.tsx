@@ -70,8 +70,6 @@ export default function TabSubstack() {
   const [bdElapsed, setBdElapsed] = useState(0);
   const [bdMonthly, setBdMonthly] = useState<{ month: string; requested: number; received?: number } | null>(null);
   const [bdTestMode, setBdTestMode] = useState(true);
-  const [bdConfirm, setBdConfirm] = useState<{ received: number; newCount: number } | null>(null);
-  const [bdConfirming, setBdConfirming] = useState(false);
 
   // ── 投稿作成 state ─────────────────────────────────
   const [discoverQuery, setDiscoverQuery] = useState("");
@@ -138,43 +136,11 @@ export default function TabSubstack() {
   };
 
   // ── Bright Data ───────────────────────────────────
-  const handleBdConfirm = async () => {
-    setBdConfirming(true);
-    setBdConfirm(null);
-    setBdPollMsg(null);
-    try {
-      const res = await fetch("/api/brightdata/confirm", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        setBdPollMsg(data.error ?? "確認処理でエラーが発生しました");
-        setTimeout(() => setBdPollMsg(null), 8000);
-        return;
-      }
-      if (data.added > 0) {
-        setBdPollMsg(`${data.added}件追加しました`);
-        await loadItems();
-        setTypeFilter("x");
-      } else if ((data.received ?? 0) > 0) {
-        setBdPollMsg(`${data.received}件確認（すでに保存済み）`);
-        await loadItems();
-        setTypeFilter("x");
-      } else {
-        setBdPollMsg("新しい投稿はありませんでした");
-      }
-    } catch {
-      setBdPollMsg("確認処理中にエラーが発生しました");
-    } finally {
-      setBdConfirming(false);
-      setTimeout(() => setBdPollMsg(null), 8000);
-    }
-  };
-
   const handleBdTrigger = async () => {
     if (bdTriggering || bdPolling) return;
     setBdTriggering(true);
     setBdPollMsg(null);
     setBdElapsed(0);
-    setBdConfirm(null);
     try {
       const res = await fetch("/api/brightdata/trigger", {
         method: "POST",
@@ -217,11 +183,6 @@ export default function TabSubstack() {
           }
 
           setBdPolling(false);
-
-          if (pollData.status === "needs_confirm") {
-            setBdConfirm({ received: pollData.received, newCount: pollData.newCount });
-            return;
-          }
 
           if (pollData.status === "ready") {
             if (pollData.added > 0) {
@@ -480,7 +441,7 @@ export default function TabSubstack() {
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={handleBdTrigger}
-                disabled={bdTriggering || bdPolling || bdConfirming || bdAccounts.length === 0}
+                disabled={bdTriggering || bdPolling || bdAccounts.length === 0}
                 className="px-3 py-1.5 text-xs bg-sky-800/60 hover:bg-sky-700/70 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-200 border border-sky-700/50 rounded-lg transition-colors"
               >
                 {bdTriggering ? "リクエスト中..." : bdPolling ? `収集中... (${bdElapsed}s)` : "Bright Data収集"}
@@ -508,27 +469,6 @@ export default function TabSubstack() {
                 </span>
               )}
             </div>
-            {bdConfirm && (
-              <div className="flex items-center gap-3 bg-amber-900/20 border border-amber-700/40 rounded-lg px-3 py-2 flex-wrap">
-                <span className="text-xs text-amber-300">
-                  {bdConfirm.newCount}件の新規投稿を受信（合計 {bdConfirm.received}件）。AI処理を実行しますか？
-                </span>
-                <button
-                  onClick={handleBdConfirm}
-                  disabled={bdConfirming}
-                  className="px-2.5 py-1 text-xs bg-amber-700/60 hover:bg-amber-600/70 disabled:bg-zinc-800 disabled:text-zinc-500 text-amber-200 border border-amber-600/50 rounded-lg transition-colors"
-                >
-                  {bdConfirming ? "処理中..." : "実行する"}
-                </button>
-                <button
-                  onClick={() => setBdConfirm(null)}
-                  disabled={bdConfirming}
-                  className="px-2.5 py-1 text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-                >
-                  キャンセル
-                </button>
-              </div>
-            )}
             <p className="text-xs text-zinc-600">Bright Data経由でXアカウントの投稿を収集します（毎朝6:00 JST に自動収集）</p>
           </div>
 
@@ -769,7 +709,7 @@ export default function TabSubstack() {
             {bdAccounts.filter((a) => !a.paused).length > 0 && (
               <button
                 onClick={handleBdTrigger}
-                disabled={bdTriggering || bdPolling || bdConfirming}
+                disabled={bdTriggering || bdPolling}
                 className="w-full py-2 text-xs bg-sky-800/40 hover:bg-sky-700/50 disabled:bg-zinc-800 disabled:text-zinc-500 text-sky-300 border border-sky-700/40 rounded-lg transition-colors"
               >
                 {bdTriggering ? "送信中..." : bdPolling ? `収集中... (${bdElapsed}s)` : "今すぐBright Data収集を実行"}

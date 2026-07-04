@@ -1,4 +1,3 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { redis } from "./redis";
 import { SubstackNewsItem } from "./types";
 
@@ -37,49 +36,12 @@ export function extractPost(raw: BrightDataPost) {
   return { id, text, createdAt, username, displayName, url };
 }
 
-async function enrichWithAI(
-  text: string,
-  username: string,
-): Promise<{ summary: string; ideaSeed: string; relevant: boolean }> {
-  const client = new Anthropic();
-  const prompt = `あなたは関達也の発信編集アシスタントです。
-以下のXポスト（@${username}）が関達也のSubstackネタになるか判断してください。
-
-関達也のSubstackテーマ：AI×ひとりビジネスで個人が使えるアイデアの種を届ける
-
-【relevant:true の基準（いずれか該当すればOK）】
-- AIツール・LLM・生成AIの最新動向
-- Claude・ChatGPT等のAIサービスのアップデート
-- 個人開発・インディーハッカー・ソロプレナー向けのツールや手法
-- テクノロジーを活用した生産性向上・自動化・副業・フリーランス
-- AI時代のひとりビジネス・仕事術に関するトレンド
-
-ポスト本文：
-${text.slice(0, 800)}
-
-⚠️ 厳守：summary と idea_seed はポスト本文の事実のみを根拠にすること。憶測・補完は禁止。
-
-出力（JSONのみ）：
-{"relevant":true/false,"summary":"2〜3行の日本語要約","idea_seed":"日本の個人がどう使えるか（1〜2行、根拠がある場合のみ）","reason":"判断理由（1行）"}`;
-
-  try {
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const raw = (response.content[0] as { text: string }).text;
-    const m = raw.match(/\{[\s\S]*\}/);
-    if (!m) return { summary: text.slice(0, 100), ideaSeed: "", relevant: true };
-    const parsed = JSON.parse(m[0]);
-    return {
-      summary: parsed.summary ?? "",
-      ideaSeed: parsed.idea_seed ?? "",
-      relevant: parsed.relevant !== false,
-    };
-  } catch {
-    return { summary: text.slice(0, 100), ideaSeed: "", relevant: true };
-  }
+// X投稿はAI要約・関連性判定を行わない（撤廃済み）。本文冒頭をそのまま
+// summaryとして使う。ideaSeedは常に空文字列、statusは常にunread。
+function excerptSummary(text: string, maxLen = 180): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return trimmed.slice(0, maxLen).trimEnd() + "...";
 }
 
 async function updateCounter(delta: number) {
@@ -154,7 +116,8 @@ export async function processBrightDataPosts(
     toProcess = candidates.slice(0, maxNew);
   }
 
-  // Second pass: AI processing for candidates within limit
+  // Second pass: build items for candidates within limit (no AI — see
+  // excerptSummary above)
   const newItems: SubstackNewsItem[] = [];
   const newSeenIds: string[] = [];
 
@@ -162,19 +125,16 @@ export async function processBrightDataPosts(
     seenIds.add(id);
     newSeenIds.push(id);
 
-    const { summary, ideaSeed, relevant } = await enrichWithAI(text, username);
-    console.log(`[brightdata/process] @${username} id=${id} relevant=${relevant}`);
-
     const item: SubstackNewsItem = {
       id: `bd_${id}`,
       sourceType: "x",
       sourceName: `@${username}${displayName !== username ? ` (${displayName})` : ""}`,
-      title: text.slice(0, 120) + (text.length > 120 ? "..." : ""),
+      title: text.slice(0, 300) + (text.length > 300 ? "..." : ""),
       url: url || `https://x.com/${username}`,
-      summary,
-      ideaSeed,
+      summary: excerptSummary(text),
+      ideaSeed: "",
       collectedAt: createdAt,
-      status: relevant ? "unread" : "skip",
+      status: "unread",
       fullText: text,
     };
     newItems.push(item);
@@ -190,7 +150,7 @@ export async function processBrightDataPosts(
     }
     await Promise.all(ops);
     console.log(
-      `[brightdata/process] saved ${newItems.length} new items (${newItems.filter((i) => i.status !== "skip").length} relevant), deferred ${skippedOverLimit} to next run`,
+      `[brightdata/process] saved ${newItems.length} new items, deferred ${skippedOverLimit} to next run`,
     );
   }
 
@@ -198,7 +158,7 @@ export async function processBrightDataPosts(
     received: posts.length,
     processed: newSeenIds.length,
     added: newItems.length,
-    relevant: newItems.filter((i) => i.status !== "skip").length,
+    relevant: newItems.length,
     skippedOverLimit,
   };
 }

@@ -38,6 +38,14 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
+// X投稿はAI要約・関連性判定を行わない（撤廃済み）。本文冒頭をそのまま
+// summaryとして使う（YouTube・RSSは引き続きenrichWithAIで処理する）。
+function excerptSummary(text: string, maxLen = 180): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return trimmed.slice(0, maxLen).trimEnd() + "...";
+}
+
 const DEFAULT_SOURCES: SubstackSources = {
   youtube: [
     { id: "yt_ycombinator", name: "Y Combinator", channelId: "UCcefcZRL2oaA_uBNeo5UNqg" },
@@ -319,19 +327,27 @@ async function runCollect() {
     candidates.push(...items);
   }
 
-  console.log(`[collect] 候補合計: ${candidates.length}件 → 上位${MAX_NEW_PER_RUN}件をAI処理`);
+  console.log(`[collect] 候補合計: ${candidates.length}件 → 上位${MAX_NEW_PER_RUN}件を処理`);
   candidates = candidates.slice(0, MAX_NEW_PER_RUN);
 
-  // AI要約・関連性判定
-  const enriched: SubstackNewsItem[] = [];
-  for (const item of candidates) {
+  // X投稿はAI処理から分離：本文冒頭の抜粋をsummaryにするだけで、
+  // enrichWithAI（Anthropic呼び出し）は一切通さない。
+  const xCandidates = candidates
+    .filter((i) => i.sourceType === "x")
+    .map((i) => ({ ...i, summary: excerptSummary(i.fullText ?? i.title), ideaSeed: "" }));
+  const otherCandidates = candidates.filter((i) => i.sourceType !== "x");
+
+  // AI要約・関連性判定（YouTube・RSSのみ）
+  const enrichedOthers: SubstackNewsItem[] = [];
+  for (const item of otherCandidates) {
     const processed = await enrichWithAI(item);
     console.log(`[collect] AI: ${processed.status === "skip" ? "skip" : "OK  "} ${item.title.slice(0, 60)}`);
-    enriched.push(processed);
+    enrichedOthers.push(processed);
   }
 
+  const enriched = [...enrichedOthers, ...xCandidates];
   const relevant = enriched.filter((i) => i.status !== "skip");
-  console.log(`[collect] 関連あり: ${relevant.length}件 / ${enriched.length}件処理`);
+  console.log(`[collect] 関連あり: ${relevant.length}件 / ${enriched.length}件処理（うちX ${xCandidates.length}件はAI未使用）`);
 
   const merged = [...relevant, ...existing].slice(0, MAX_ITEMS);
 
