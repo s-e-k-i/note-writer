@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>X Research Extractor</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>X投稿抽出（手動実行）</h1>
+
+  <div id="statusBanner" class="status status-idle">
+    ステータス確認中...
+  </div>
+
+  <div class="controls">
+    <label for="countInput">取得件数（1〜20、初期値5）</label>
+    <input id="countInput" type="number" min="1" max="20" value="5" />
+    <button id="extractBtn" type="button">抽出する</button>
+  </div>
+
+  <div class="selectControls" id="selectControls" hidden>
+    <button id="selectAllBtn" type="button">全選択</button>
+    <button id="selectNoneBtn" type="button">全解除</button>
+    <span id="selectedCount" class="selected-count">選択: 0件</span>
+  </div>
+
+  <ul id="resultList" class="result-list"></ul>
+
+  <div class="outputControls" id="outputControls" hidden>
+    <button id="copyBtn" type="button" disabled>選択した投稿をJSONコピー</button>
+    <button id="downloadBtn" type="button" disabled>選択した投稿をJSONダウンロード</button>
+  </div>
+
+  <p class="footnote">
+    ネットワーク通信・自動操作は一切行いません。抽出は現在DOM上に表示されている投稿のみを対象にします。
+  </p>
+
+  <script src="extractor-core.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

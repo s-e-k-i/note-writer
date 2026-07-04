@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "X Research Extractor (Manual, Local Only)",
+  "version": "0.1.0",
+  "description": "手動実行のみ。ログイン済みXの検索結果ページに現在表示されている投稿をDOMから読み取り、選択したものだけをローカルでJSONコピー／ダウンロードする。自動化・定期実行・外部通信は一切行わない。Chromeウェブストアには公開しない。",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting"]
+}
