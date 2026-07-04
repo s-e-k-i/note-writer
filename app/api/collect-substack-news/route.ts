@@ -1,8 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
 import Parser from "rss-parser";
 import { redis } from "@/lib/redis";
 import { SubstackNewsItem, SubstackSources } from "@/lib/types";
 import { excerptSummary } from "@/lib/brightdata-process";
+import { requireCronSecret, requireSitePassword } from "@/lib/apiAuth";
 
 const ITEMS_KEY = "substack_news_items";
 const SOURCES_KEY = "substack_sources";
@@ -243,47 +243,9 @@ async function fetchYouTubeItems(
   }
 }
 
-async function enrichWithAI(item: SubstackNewsItem): Promise<SubstackNewsItem> {
-  const client = new Anthropic();
-  const bodyExcerpt = item.fullText?.trim().slice(0, 600) ?? "";
-  const prompt = `あなたは関達也の発信編集アシスタントです。
-以下のコンテンツについて、Substack発信のネタとして使えるかを判断してください。
-
-関達也のSubstackテーマ：AI×ひとりビジネスで個人が使えるアイデアの種を届ける
-
-【relevant:true とする基準（いずれか該当すればOK）】
-- AIツール・LLM・生成AIの最新動向
-- Claude・ChatGPT・Gemini等のAIサービスのアップデート
-- 個人開発・インディーハッカー・ソロプレナー向けのツールや手法
-- テクノロジーを活用した生産性向上・自動化・副業・フリーランス
-- AI時代のひとりビジネス・仕事術に関するトレンド
-
-タイトル：${item.title}
-ソース：${item.sourceName}${bodyExcerpt ? `\n本文抜粋：${bodyExcerpt}` : ""}
-
-⚠️ 厳守：summary と idea_seed は上記の情報（タイトル・本文抜粋）に書かれている事実のみを根拠にすること。
-記事に書かれていないことは絶対に書かない。不明な点は「詳細は元記事を参照」と記載する。憶測・創作・補完は禁止。
-
-出力（JSONのみ）：
-{"relevant":true/false,"summary":"2〜3行の要約（日本語・記事の内容のみ）","idea_seed":"日本の個人がどう使えるか（1〜2行・根拠がある場合のみ）","reason":"判断理由（1行）"}`;
-
-  try {
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 400,
-      messages: [{ role: "user", content: prompt }],
-    });
-    const text = (response.content[0] as { text: string }).text;
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return item;
-    const parsed = JSON.parse(m[0]);
-    if (!parsed.relevant) return { ...item, status: "skip" };
-    return { ...item, summary: parsed.summary ?? "", ideaSeed: parsed.idea_seed ?? "" };
-  } catch {
-    return item;
-  }
-}
-
+// 収集処理はAIを一切使わない。YouTube・RSS・Xいずれの候補も本文冒頭の
+// 非AI抜粋（excerptSummary）をsummaryにするだけで保存する。個別のAI要約
+// 機能は仕様が決まってから改めて実装する。
 async function runCollect() {
   const [existingRaw, sourcesRaw] = await Promise.all([
     redis.get<SubstackNewsItem[]>(ITEMS_KEY),
@@ -324,24 +286,13 @@ async function runCollect() {
   console.log(`[collect] 候補合計: ${candidates.length}件 → 上位${MAX_NEW_PER_RUN}件を処理`);
   candidates = candidates.slice(0, MAX_NEW_PER_RUN);
 
-  // X投稿はAI処理から分離：本文冒頭の抜粋をsummaryにするだけで、
-  // enrichWithAI（Anthropic呼び出し）は一切通さない。
-  const xCandidates = candidates
-    .filter((i) => i.sourceType === "x")
-    .map((i) => ({ ...i, summary: excerptSummary(i.fullText ?? i.title), ideaSeed: "" }));
-  const otherCandidates = candidates.filter((i) => i.sourceType !== "x");
-
-  // AI要約・関連性判定（YouTube・RSSのみ）
-  const enrichedOthers: SubstackNewsItem[] = [];
-  for (const item of otherCandidates) {
-    const processed = await enrichWithAI(item);
-    console.log(`[collect] AI: ${processed.status === "skip" ? "skip" : "OK  "} ${item.title.slice(0, 60)}`);
-    enrichedOthers.push(processed);
-  }
-
-  const enriched = [...enrichedOthers, ...xCandidates];
-  const relevant = enriched.filter((i) => i.status !== "skip");
-  console.log(`[collect] 関連あり: ${relevant.length}件 / ${enriched.length}件処理（うちX ${xCandidates.length}件はAI未使用）`);
+  // 非AI抜粋をsummaryにするだけ（YouTube・RSS・Xいずれも同じ扱い）。
+  const relevant = candidates.map((i) => ({
+    ...i,
+    summary: excerptSummary(i.fullText ?? i.title),
+    ideaSeed: "",
+  }));
+  console.log(`[collect] 処理: ${relevant.length}件（非AI抜粋のみ）`);
 
   const merged = [...relevant, ...existing].slice(0, MAX_ITEMS);
 
@@ -354,7 +305,10 @@ async function runCollect() {
   return { newCount: relevant.length, totalCount: merged.length, collectedAt: now };
 }
 
-export async function GET() {
+// Vercel Cronが叩く経路。CRON_SECRETで保護する（ブラウザのCookie認証とは別物）。
+export async function GET(request: Request) {
+  const authError = requireCronSecret(request);
+  if (authError) return authError;
   try {
     const result = await runCollect();
     return Response.json({ ok: true, ...result });
@@ -364,7 +318,11 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+// TabSubstack.tsxの「収集する」ボタンが叩く経路。サイトパスワード（Cookie）で保護する。
+// cronと同じ非AI抜粋のみの処理。
+export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const result = await runCollect();
     return Response.json({ ok: true, ...result });

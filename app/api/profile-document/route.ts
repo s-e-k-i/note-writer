@@ -3,6 +3,7 @@ import { redis } from "@/lib/redis";
 import { PROFILE_DOCUMENT } from "@/lib/profile";
 import { validateAccountId } from "@/lib/accounts";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 type ProfileDocumentEntry = {
   content: string;
@@ -15,6 +16,8 @@ function pdKey(accountId: string) {
 }
 
 export async function GET(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("account_id") ?? SEKI_ID;
 
@@ -38,6 +41,8 @@ export async function GET(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("account_id") ?? SEKI_ID;
   try {
@@ -49,6 +54,8 @@ export async function DELETE(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   try {
     const { content, account_id } = (await req.json()) as { content: string; account_id?: string };
     const accountId = account_id ?? SEKI_ID;

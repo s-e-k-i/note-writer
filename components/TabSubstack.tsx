@@ -34,6 +34,10 @@ function formatDateTime(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+// Bright Data撤退方針によりUIから無効化中。関連コード・APIルート・環境変数は
+// 将来確認できるよう削除せず残してある。再度有効化する場合はtrueに戻すだけでよい。
+const BRIGHTDATA_UI_ENABLED = false;
+
 export default function TabSubstack() {
   const [section, setSection] = useState<Section>("items");
 
@@ -433,10 +437,12 @@ export default function TabSubstack() {
                 <span className="text-xs text-red-400">{collectMsg}</span>
               )}
             </div>
-            <p className="text-xs text-zinc-600">登録済みの YouTube・RSS ソースから一括取得します（X は Bright Data で別途収集）</p>
+            <p className="text-xs text-zinc-600">登録済みの YouTube・RSS ソースから一括取得します</p>
           </div>
 
-          {/* Bright Data収集 */}
+          {/* Bright Data収集：Bright Data撤退方針によりUIから無効化中。
+              関連コード・APIルート・環境変数は将来確認できるよう削除せず残してある。 */}
+          {BRIGHTDATA_UI_ENABLED && (
           <div className="space-y-2 border-t border-zinc-700/50 pt-2">
             <div className="flex items-center gap-3 flex-wrap">
               <button
@@ -471,6 +477,7 @@ export default function TabSubstack() {
             </div>
             <p className="text-xs text-zinc-600">Bright Data経由でXアカウントの投稿を収集します（毎朝6:00 JST に自動収集）</p>
           </div>
+          )}
 
           {/* URLから個別追加 */}
           <div className="space-y-2">
@@ -676,7 +683,9 @@ export default function TabSubstack() {
             </div>
           </div>
 
-          {/* Bright Data — Xアカウント */}
+          {/* Bright Data — Xアカウント管理：Bright Data撤退方針によりUIから無効化中。
+              関連コード・APIルート・環境変数は将来確認できるよう削除せず残してある。 */}
+          {BRIGHTDATA_UI_ENABLED && (
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-zinc-200">XアカウントをBright Dataで収集</h4>
             <p className="text-xs text-sky-400/80 bg-sky-900/15 border border-sky-800/30 rounded-lg px-3 py-2">
@@ -716,6 +725,7 @@ export default function TabSubstack() {
               </button>
             )}
           </div>
+          )}
 
           {/* RSS */}
           <div className="space-y-3">

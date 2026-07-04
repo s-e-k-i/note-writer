@@ -3,6 +3,7 @@ import { ACCURACY_RULES } from "@/lib/profile";
 import { getAccountContext } from "@/lib/getAccountContext";
 import { SEKI_ID } from "@/lib/accountIds";
 import { Article } from "@/lib/types";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
@@ -26,6 +27,8 @@ function buildArticlesSummary(articles: Article[]): string {
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, memoText, articleType, price, articles } = await request.json();
     const accountId = account_id ?? SEKI_ID;

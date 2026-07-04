@@ -1,6 +1,7 @@
 import { Redis } from "@upstash/redis";
 import { NotebookEntry } from "@/lib/types";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 function getRedis() {
   const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
@@ -18,6 +19,8 @@ function missingAccountId() {
 }
 
 export async function GET(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("account_id");
   if (!accountId) return missingAccountId();
@@ -42,6 +45,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const redis = getRedis();
   if (!redis) return Response.json({ ok: true });
   try {
@@ -75,6 +80,8 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const redis = getRedis();
   if (!redis) return Response.json({ ok: true });
   try {
@@ -95,6 +102,8 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const redis = getRedis();
   if (!redis) return Response.json({ ok: true });
   try {

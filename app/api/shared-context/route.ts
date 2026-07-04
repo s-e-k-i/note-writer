@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { redis, type SharedContextEntry } from "@/lib/redis";
+import { requireSitePassword } from "@/lib/apiAuth";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const [devLog, ideaMemo] = await Promise.all([
       redis.get<SharedContextEntry>("shared-context:dev-log"),
@@ -15,6 +18,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   try {
     const { type, content, fileName } = (await req.json()) as {
       type: "devLog" | "ideaMemo";

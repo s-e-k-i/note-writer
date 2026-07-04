@@ -1,11 +1,14 @@
 import { redis } from "@/lib/redis";
 import { SubstackNewsItem } from "@/lib/types";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const ITEMS_KEY = "substack_news_items";
 const SEEN_IDS_KEY = "brightdata:seen_ids";
 
 // sourceName に含まれる username で全件削除
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const { username } = await request.json() as { username?: string };
   if (!username) return Response.json({ error: "username required" }, { status: 400 });
 

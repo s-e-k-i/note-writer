@@ -30,6 +30,24 @@ export function requireSitePassword(request: Request): Response | null {
   return null;
 }
 
+// Fail-closed CRON_SECRET check shared by every cron-triggered route
+// (app/api/cron/bd-collect, cron/raindrop-sync, and collect-substack-news's
+// cron-only GET). Unlike the earlier version of this helper (and unlike
+// bd-collect's original inline check, now replaced to use this same
+// function), a missing CRON_SECRET is treated as a misconfiguration and
+// blocks the request — it is never treated as "no check needed".
+export function requireCronSecret(request: Request): Response | null {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    return Response.json({ error: "CRON_SECRET is not configured" }, { status: 500 });
+  }
+  const auth = request.headers.get("authorization");
+  if (auth !== `Bearer ${cronSecret}`) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return null;
+}
+
 // Confirms the caller-supplied noteAccountId is a real, registered account
 // (backed by the existing Redis account list) before any article data for it
 // is read or written. Never trust noteAccountId from the client on its own.

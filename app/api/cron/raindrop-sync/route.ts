@@ -1,7 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { redis } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireCronSecret, requireSitePassword } from "@/lib/apiAuth";
+import { excerptSummary } from "@/lib/brightdata-process";
 
 // Raindrop sync always targets the official account
 const NOTEBOOK_KEY = `account:${SEKI_ID}:notebook`;
@@ -15,33 +16,11 @@ interface RaindropItem {
   created: string;
 }
 
-async function enrichWithAI(title: string, excerpt: string): Promise<string> {
-  const client = new Anthropic();
-  try {
-    const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 400,
-      messages: [{
-        role: "user",
-        content: `以下のWebページを関達也のネタ帳（AI×ひとりビジネス発信）向けに整理してください。
-
-タイトル：${title}
-内容：${excerpt.slice(0, 800)}
-
-以下のJSON形式のみで返してください（説明文不要）：
-{"summary":"2〜3文の日本語要約","ideaSeed":"このネタをどう発信に使えるか（1文）"}`
-      }],
-    });
-    const text = (response.content[0] as { text: string }).text;
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return "";
-    const parsed = JSON.parse(m[0]) as { summary?: string; ideaSeed?: string };
-    return `📝 ${parsed.summary ?? ""}\n💡 ${parsed.ideaSeed ?? ""}`;
-  } catch {
-    return "";
-  }
-}
-
+// This route never calls Anthropic — not on the Vercel Cron path (GET) and
+// not on the manual "ブックマーク同期" button in TabNotebook.tsx (POST).
+// Both are just "fetch what's new" actions; AI enrichment, if ever added
+// back for notebook entries, belongs to a separate per-entry action the
+// user explicitly triggers, not to this fetch-and-store step.
 async function run() {
   const token = process.env.RAINDROP_TEST_TOKEN;
   if (!token) {
@@ -87,17 +66,11 @@ async function run() {
       const entryId = `raindrop_${item._id}`;
       if (existingIds.has(entryId)) continue;
 
-      // テキスト本文の構築
-      let text: string;
-      if (item.excerpt?.trim()) {
-        const aiText = await enrichWithAI(item.title, item.excerpt);
-        text = aiText
-          ? `${item.title}\n\n${aiText}`
-          : `${item.title}\n\n${item.excerpt.slice(0, 300)}`;
-      } else {
-        // excerptなし：タイトルのみ
-        text = item.title;
-      }
+      // テキスト本文の構築（AIは使わない。excerptがあればその非AI抜粋、
+      // なければタイトルのみ）
+      const text = item.excerpt?.trim()
+        ? `${item.title}\n\n${excerptSummary(item.excerpt)}`
+        : item.title;
 
       toAdd.push({
         id: entryId,
@@ -117,7 +90,9 @@ async function run() {
       await redis.set(NOTEBOOK_KEY, merged);
     }
 
-    // 最新IDを更新（今回取得した中で最大のID）
+    // 最新IDを更新（今回取得した中で最大のID。AIを呼ばないため件数上限・
+    // 持ち越しロジックは不要 — Raindrop自体がperpage=20で1回の取得件数を
+    // 制限しており、それ以上の分岐は発生しない）
     const maxId = Math.max(...newItems.map((i) => i._id));
     await redis.set(LAST_SYNCED_KEY, String(maxId));
 
@@ -130,12 +105,19 @@ async function run() {
   }
 }
 
-// Vercel Cronからはヘッダーなしでトリガーされる
-export async function GET() {
+// Vercel Cronは Authorization: Bearer <CRON_SECRET> を付けてGETを叩く。
+// CRON_SECRET不一致・未設定は、Raindrop APIを呼ぶ前に拒否する（fail closed）。
+export async function GET(request: Request) {
+  const authError = requireCronSecret(request);
+  if (authError) return authError;
   return run();
 }
 
-// ローカル動作確認用（手動実行）
-export async function POST() {
+// TabNotebook.tsxの「ブックマーク同期」ボタンから呼ばれる経路。ブラウザは
+// CRON_SECRETを送れないため、他のボタン起点ルートと同じくCookie（サイト
+// パスワード）で認証する。処理内容（AIを呼ばない）はGETと同じ。
+export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   return run();
 }

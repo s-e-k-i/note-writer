@@ -1,5 +1,6 @@
 import { redis } from '@/lib/redis';
 import { SubstackNewsItem } from '@/lib/types';
+import { requireSitePassword } from '@/lib/apiAuth';
 
 const REDIS_KEY = 'notewriter:snapshot';
 const SUBSTACK_KEY = 'substack_news_items';
@@ -48,6 +49,8 @@ interface SyncPayload {
 }
 
 export async function POST(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   try {
     const body = await req.json() as SyncPayload;
 

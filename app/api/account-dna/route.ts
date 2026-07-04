@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { validateAccountId } from "@/lib/accounts";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 function dnaKey(accountId: string) {
   return `account:${accountId}:dna`;
 }
 
 export async function GET(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("account_id");
   if (!accountId) {
@@ -25,6 +28,8 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   try {
     const { account_id, content } = (await req.json()) as { account_id?: string; content?: string };
     if (!account_id) {

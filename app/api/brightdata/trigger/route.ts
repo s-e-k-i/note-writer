@@ -1,5 +1,6 @@
 import { redis } from "@/lib/redis";
 import { BrightDataXSource } from "@/lib/types";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const ACCOUNTS_KEY = "brightdata:watched_accounts";
 const COUNTER_KEY = "brightdata:monthly_counter";
@@ -75,6 +76,8 @@ async function triggerBrightData(
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const body = await request.json().catch(() => ({}));
     const testMode = body.testMode === true;

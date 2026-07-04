@@ -3,10 +3,13 @@ import { NEWSLETTER_RULES, ACCURACY_RULES } from "@/lib/profile";
 import { getAccountContext } from "@/lib/getAccountContext";
 import { SEKI_ID } from "@/lib/accountIds";
 import { Article, Newsletter } from "@/lib/types";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, memoText, articles, newsletters, distributionTarget } = await request.json();
 

@@ -1,9 +1,12 @@
 import { redis } from "@/lib/redis";
 import { processBrightDataPosts } from "@/lib/brightdata-process";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const SNAPSHOT_KEY = "brightdata:current_snapshot_id";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const token = process.env.BRIGHTDATA_API_TOKEN;
   if (!token) {
     return Response.json({ error: "BRIGHTDATA_API_TOKEN not set" }, { status: 500 });

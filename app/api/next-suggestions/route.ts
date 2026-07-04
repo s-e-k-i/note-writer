@@ -3,6 +3,7 @@ import { ACCURACY_RULES, MAGAZINES } from "@/lib/profile";
 import { getAccountContext } from "@/lib/getAccountContext";
 import { redis, getSharedContext } from "@/lib/redis";
 import { validateAccountId } from "@/lib/accounts";
+import { requireSitePassword } from "@/lib/apiAuth";
 import { SEKI_ID } from "@/lib/accountIds";
 import { Article, NotebookEntry, Suggestion } from "@/lib/types";
 
@@ -58,6 +59,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, articles, notebookEntries } = await request.json() as {
       account_id?: string;

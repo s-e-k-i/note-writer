@@ -4,6 +4,7 @@ import { getAccountContext } from "@/lib/getAccountContext";
 import { Article, ConsultMessage } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
@@ -132,6 +133,8 @@ ${isOfficialAccount ? ACCURACY_RULES : ""}`;
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, mode, messages, articles, purposeForm, articleType, notebookEntries } = await request.json();
 

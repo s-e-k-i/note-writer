@@ -1,6 +1,7 @@
 import { redis } from "@/lib/redis";
 import { processBrightDataPosts } from "@/lib/brightdata-process";
 import { BrightDataXSource } from "@/lib/types";
+import { requireCronSecret } from "@/lib/apiAuth";
 
 const ACCOUNTS_KEY = "brightdata:watched_accounts";
 const COUNTER_KEY = "brightdata:monthly_counter";
@@ -121,15 +122,10 @@ async function triggerAndWait(
 }
 
 export async function GET(request: Request) {
-  // Vercel Cron sends Authorization: Bearer <CRON_SECRET>
-  // Reject any request that doesn't carry the secret
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  // Vercel Cron sends Authorization: Bearer <CRON_SECRET>. Fail closed if
+  // CRON_SECRET itself is not configured (see lib/apiAuth.ts).
+  const authError = requireCronSecret(request);
+  if (authError) return authError;
 
   const token = process.env.BRIGHTDATA_API_TOKEN;
   if (!token) {

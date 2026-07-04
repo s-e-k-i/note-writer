@@ -4,6 +4,7 @@ import { getAccountContext } from "@/lib/getAccountContext";
 import { SEKI_ID } from "@/lib/accountIds";
 import { Article, Newsletter } from "@/lib/types";
 import { getSharedContext } from "@/lib/redis";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
@@ -12,6 +13,8 @@ function magazineShort(mag: string): string {
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, articles, newsletters, distributionTarget, notebookEntries } = await request.json();
 

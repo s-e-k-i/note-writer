@@ -1,8 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { theme, fullContext } = await request.json();
 

@@ -4,10 +4,13 @@ import { getAccountContext } from "@/lib/getAccountContext";
 import { getSharedContext } from "@/lib/redis";
 import { NotebookEntry } from "@/lib/types";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, channel, mode, memo, notebookEntries, articleTitle, articleUrl } = await request.json() as {
       account_id?: string;

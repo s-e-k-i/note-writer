@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { ACCURACY_RULES } from "@/lib/profile";
 import { getAccountContext } from "@/lib/getAccountContext";
 import { SEKI_ID } from "@/lib/accountIds";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const client = new Anthropic();
 
@@ -85,6 +86,8 @@ ${articleText}
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, articleText, mode } = await request.json();
 

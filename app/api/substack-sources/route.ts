@@ -1,5 +1,6 @@
 import { redis } from "@/lib/redis";
 import { SubstackSources } from "@/lib/types";
+import { requireSitePassword } from "@/lib/apiAuth";
 
 const KEY = "substack_sources";
 
@@ -26,12 +27,16 @@ async function loadSources(): Promise<SubstackSources> {
   return DEFAULT_SOURCES;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const sources = await loadSources();
   return Response.json(sources);
 }
 
 export async function POST(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const { type, item } = await request.json();
   const sources = await loadSources();
   if (type === "youtube") sources.youtube = [...sources.youtube, item];
@@ -42,6 +47,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const { type, id, paused } = await request.json();
   const sources = await loadSources();
   if (type === "x") {
@@ -54,6 +61,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   const { type, id } = await request.json();
   const sources = await loadSources();
   if (type === "youtube") sources.youtube = sources.youtube.filter((s) => s.id !== id);
