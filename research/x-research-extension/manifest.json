@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "X Research Extractor (Manual, Local Only)",
   "version": "0.1.0",
-  "description": "手動実行のみ。ログイン済みXの検索結果ページに現在表示されている投稿をDOMから読み取り、選択したものだけをローカルでJSONコピー／ダウンロードする。自動化・定期実行は一切行わない。Gate 1として、localhost上のnote-writerからの固定pingメッセージにだけ応答する接続確認機能を追加（Xへのアクセス・ネットワーク通信は行わない）。Chromeウェブストアには公開しない。",
+  "description": "手動実行のみ。ログイン済みXの検索結果ページに現在表示されている投稿をDOMから読み取り、選択したものだけをローカルでJSONコピー／ダウンロードする。自動化・定期実行は一切行わない。Gate 1として、localhost上のnote-writerからの固定pingメッセージにだけ応答する接続確認機能を追加。Gate 2A-1として、note-writerから受け取った検索語でX検索専用タブを非アクティブのまま新規作成・再利用する機能を追加（投稿要素の確認・抽出は行わない）。Chromeウェブストアには公開しない。",
   "action": {
     "default_popup": "popup.html"
   },
@@ -12,5 +12,5 @@
   "externally_connectable": {
     "matches": ["http://localhost/*"]
   },
-  "permissions": ["activeTab", "scripting"]
+  "permissions": ["activeTab", "scripting", "storage"]
 }

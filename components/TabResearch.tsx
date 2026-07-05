@@ -53,6 +53,52 @@ function isXResearchPingResponse(value: unknown): value is XResearchPingResponse
   return true;
 }
 
+// ── Gate 2A-1: X検索専用タブの新規作成・再利用（開発時のみ表示） ──────
+// note-writer独自の入力上限。Xの公式な検索語制限を意味するものではない。
+const MAX_X_RESEARCH_QUERY_LENGTH = 200;
+const OPEN_SEARCH_TAB_TIMEOUT_MS = 10000;
+
+interface XResearchOpenSearchTabResponse {
+  ok: boolean;
+  requestId?: string;
+  status?: string;
+  tabReused?: boolean;
+  errorCode?: string;
+  message?: string;
+  error?: string;
+}
+
+// 拡張機能からの応答を無条件に信用せず、実行時に構造を検証する。
+function isXResearchOpenSearchTabResponse(value: unknown): value is XResearchOpenSearchTabResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.status !== undefined && typeof v.status !== "string") return false;
+  if (v.tabReused !== undefined && typeof v.tabReused !== "boolean") return false;
+  if (v.errorCode !== undefined && typeof v.errorCode !== "string") return false;
+  if (v.message !== undefined && typeof v.message !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
+
+// note-writer側の検索語検証。trim後の空文字・上限超過・制御文字を拒否する。
+// 拒否のみを行い、切り詰めなどの黙った書き換えは行わない。
+function validateOpenSearchTabQuery(raw: string): { ok: true; value: string } | { ok: false; error: string } {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return { ok: false, error: "検索語を入力してください" };
+  }
+  if (trimmed.length > MAX_X_RESEARCH_QUERY_LENGTH) {
+    return { ok: false, error: `検索語は${MAX_X_RESEARCH_QUERY_LENGTH}文字以内で入力してください` };
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1F\x7F]/.test(trimmed)) {
+    return { ok: false, error: "検索語に使用できない文字が含まれています" };
+  }
+  return { ok: true, value: trimmed };
+}
+
 interface ImportResult {
   totalInput: number;
   newPosts: number;
@@ -200,6 +246,16 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [extCheckStatus, setExtCheckStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
   const [extCheckMessage, setExtCheckMessage] = useState<string | null>(null);
   const [extCheckVersion, setExtCheckVersion] = useState<string | null>(null);
+
+  // Gate 2A-1: X検索専用タブの新規作成・再利用確認（開発時のみ）。
+  // こちらも既存の一覧・インポート・generationRef/accountIdRef等には触れない、
+  // Gate 1のUIとも独立した状態。
+  const [openSearchTabQueryInput, setOpenSearchTabQueryInput] = useState("");
+  const [openSearchTabStatus, setOpenSearchTabStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [openSearchTabMessage, setOpenSearchTabMessage] = useState<string | null>(null);
+  const [openSearchTabReused, setOpenSearchTabReused] = useState<boolean | null>(null);
+  // 古い要求の応答が後から届いても現在の画面へ反映しないためのガード。
+  const openSearchTabRequestIdRef = useRef<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -475,6 +531,100 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     }
   };
 
+  // Gate 2A-1: 検索語を送り、拡張機能側でX検索専用タブを作成・再利用させる。
+  // 投稿要素の確認・抽出・API呼び出し・DB保存は一切行わない。
+  const handleOpenSearchTab = () => {
+    if (openSearchTabStatus === "checking") return;
+
+    setOpenSearchTabStatus("checking");
+    setOpenSearchTabMessage(null);
+    setOpenSearchTabReused(null);
+
+    const validated = validateOpenSearchTabQuery(openSearchTabQueryInput);
+    if (!validated.ok) {
+      setOpenSearchTabStatus("error");
+      setOpenSearchTabMessage(validated.error);
+      return;
+    }
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setOpenSearchTabStatus("error");
+      setOpenSearchTabMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setOpenSearchTabStatus("error");
+      setOpenSearchTabMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    openSearchTabRequestIdRef.current = requestId;
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (openSearchTabRequestIdRef.current !== requestId) return;
+      setOpenSearchTabStatus("error");
+      setOpenSearchTabMessage(`${OPEN_SEARCH_TAB_TIMEOUT_MS / 1000}秒以内に応答がありませんでした`);
+    }, OPEN_SEARCH_TAB_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(
+        extensionId,
+        { type: "X_RESEARCH_OPEN_SEARCH_TAB", requestId, query: validated.value },
+        (response: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
+          // 古い要求（連続実行や別の検索語での再実行）の応答は無視する。
+          if (openSearchTabRequestIdRef.current !== requestId) return;
+
+          if (runtime.lastError) {
+            setOpenSearchTabStatus("error");
+            setOpenSearchTabMessage(
+              `拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`
+            );
+            return;
+          }
+
+          if (!isXResearchOpenSearchTabResponse(response)) {
+            setOpenSearchTabStatus("error");
+            setOpenSearchTabMessage("応答の形式が不正です");
+            return;
+          }
+
+          if (response.requestId !== requestId) {
+            setOpenSearchTabStatus("error");
+            setOpenSearchTabMessage("応答のrequestIdが一致しません");
+            return;
+          }
+
+          if (!response.ok) {
+            setOpenSearchTabStatus("error");
+            setOpenSearchTabMessage(response.message ?? response.error ?? "拡張機能がエラーを返しました");
+            return;
+          }
+
+          setOpenSearchTabStatus("success");
+          setOpenSearchTabReused(response.tabReused ?? null);
+        }
+      );
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (openSearchTabRequestIdRef.current !== requestId) return;
+      setOpenSearchTabStatus("error");
+      setOpenSearchTabMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
   const updateCardField = (relationId: string, field: keyof CardState, value: string) => {
     setCardStates((prev) => ({
       ...prev,
@@ -648,6 +798,45 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               <span className="text-xs text-red-400">{extCheckMessage}</span>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Gate 2A-1: 開発時のみ表示するX検索専用タブの新規作成・再利用確認（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：X検索専用タブの作成・再利用確認（Gate 2A-1）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            検索語を送り、拡張機能がX検索専用タブを非アクティブのまま作成・再利用するかだけを確認します。投稿の取得・保存は行いません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={openSearchTabQueryInput}
+              onChange={(e) => setOpenSearchTabQueryInput(e.target.value)}
+              placeholder="検索語"
+              maxLength={MAX_X_RESEARCH_QUERY_LENGTH}
+              disabled={openSearchTabStatus === "checking"}
+              className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={handleOpenSearchTab}
+              disabled={openSearchTabStatus === "checking"}
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+            >
+              {openSearchTabStatus === "checking" ? "確認中..." : "X検索タブを開く"}
+            </button>
+          </div>
+          {openSearchTabStatus === "success" && (
+            <p className="text-xs text-green-400">
+              成功（{openSearchTabReused ? "既存の専用タブを再利用" : "新規タブを作成"}）
+            </p>
+          )}
+          {openSearchTabStatus === "error" && (
+            <p className="text-xs text-red-400">{openSearchTabMessage}</p>
+          )}
         </div>
       )}
 
