@@ -99,6 +99,35 @@ function validateOpenSearchTabQuery(raw: string): { ok: true; value: string } | 
   return { ok: true, value: trimmed };
 }
 
+// ── Gate 2A-2: 専用タブでの投稿要素表示確認（開発時のみ表示） ──────────
+// ページ内検出自体は拡張機能側で最大15秒。ここでの20秒は、拡張機能からの
+// 応答そのものが返ってこない場合の、通信全体に対する安全網（別階層）。
+const CONFIRM_RENDER_TIMEOUT_MS = 20000;
+
+interface XResearchConfirmRenderResponse {
+  ok: boolean;
+  requestId?: string;
+  status?: string;
+  detectedCount?: number;
+  errorCode?: string;
+  message?: string;
+  error?: string;
+}
+
+// 拡張機能からの応答を無条件に信用せず、実行時に構造を検証する。
+function isXResearchConfirmRenderResponse(value: unknown): value is XResearchConfirmRenderResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.status !== undefined && typeof v.status !== "string") return false;
+  if (v.detectedCount !== undefined && typeof v.detectedCount !== "number") return false;
+  if (v.errorCode !== undefined && typeof v.errorCode !== "string") return false;
+  if (v.message !== undefined && typeof v.message !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
+
 interface ImportResult {
   totalInput: number;
   newPosts: number;
@@ -256,6 +285,13 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [openSearchTabReused, setOpenSearchTabReused] = useState<boolean | null>(null);
   // 古い要求の応答が後から届いても現在の画面へ反映しないためのガード。
   const openSearchTabRequestIdRef = useRef<string | null>(null);
+
+  // Gate 2A-2: 専用タブでの投稿要素表示確認（開発時のみ）。Gate 2A-1の状態とは
+  // 独立しているが、UI側では両方の処理中状態を見て互いのボタンを無効化する。
+  const [confirmRenderStatus, setConfirmRenderStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [confirmRenderMessage, setConfirmRenderMessage] = useState<string | null>(null);
+  const [confirmRenderDetectedCount, setConfirmRenderDetectedCount] = useState<number | null>(null);
+  const confirmRenderRequestIdRef = useRef<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -625,6 +661,103 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     }
   };
 
+  // Gate 2A-2: 専用タブでX投稿要素が1件以上表示されたかだけを確認する。
+  // 投稿本文・投稿者・反応数・URL等は一切取得・表示しない。
+  const handleConfirmRender = () => {
+    if (confirmRenderStatus === "checking") return;
+
+    setConfirmRenderStatus("checking");
+    setConfirmRenderMessage(null);
+    setConfirmRenderDetectedCount(null);
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setConfirmRenderStatus("error");
+      setConfirmRenderMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setConfirmRenderStatus("error");
+      setConfirmRenderMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    confirmRenderRequestIdRef.current = requestId;
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (confirmRenderRequestIdRef.current !== requestId) return;
+      setConfirmRenderStatus("error");
+      setConfirmRenderMessage(`${CONFIRM_RENDER_TIMEOUT_MS / 1000}秒以内に応答がありませんでした`);
+    }, CONFIRM_RENDER_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(
+        extensionId,
+        { type: "X_RESEARCH_CONFIRM_RENDER", requestId },
+        (response: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
+          // 古い要求（連続実行）の応答は無視する。
+          if (confirmRenderRequestIdRef.current !== requestId) return;
+
+          if (runtime.lastError) {
+            setConfirmRenderStatus("error");
+            setConfirmRenderMessage(
+              `拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`
+            );
+            return;
+          }
+
+          if (!isXResearchConfirmRenderResponse(response)) {
+            setConfirmRenderStatus("error");
+            setConfirmRenderMessage("応答の形式が不正です");
+            return;
+          }
+
+          if (response.requestId !== requestId) {
+            setConfirmRenderStatus("error");
+            setConfirmRenderMessage("応答のrequestIdが一致しません");
+            return;
+          }
+
+          if (!response.ok) {
+            const errorCode = response.errorCode;
+            let message = response.message ?? response.error ?? "拡張機能がエラーを返しました";
+            if (errorCode === "NO_DEDICATED_TAB") {
+              message = "先に「X検索タブを開く」を実行してください。";
+            } else if (errorCode === "TAB_NOT_FOUND") {
+              message = "専用タブが見つかりません。もう一度「X検索タブを開く」を実行してください。";
+            } else if (errorCode === "RENDER_NOT_CONFIRMED") {
+              message =
+                "15秒以内に投稿要素の表示を確認できませんでした。検索結果0件、描画遅延、未ログイン、X側エラー等の可能性があります。";
+            }
+            setConfirmRenderStatus("error");
+            setConfirmRenderMessage(message);
+            return;
+          }
+
+          setConfirmRenderStatus("success");
+          setConfirmRenderDetectedCount(response.detectedCount ?? null);
+        }
+      );
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (confirmRenderRequestIdRef.current !== requestId) return;
+      setConfirmRenderStatus("error");
+      setConfirmRenderMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
   const updateCardField = (relationId: string, field: keyof CardState, value: string) => {
     setCardStates((prev) => ({
       ...prev,
@@ -817,13 +950,13 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               onChange={(e) => setOpenSearchTabQueryInput(e.target.value)}
               placeholder="検索語"
               maxLength={MAX_X_RESEARCH_QUERY_LENGTH}
-              disabled={openSearchTabStatus === "checking"}
+              disabled={openSearchTabStatus === "checking" || confirmRenderStatus === "checking"}
               className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
             />
             <button
               type="button"
               onClick={handleOpenSearchTab}
-              disabled={openSearchTabStatus === "checking"}
+              disabled={openSearchTabStatus === "checking" || confirmRenderStatus === "checking"}
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
               {openSearchTabStatus === "checking" ? "確認中..." : "X検索タブを開く"}
@@ -836,6 +969,36 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
           )}
           {openSearchTabStatus === "error" && (
             <p className="text-xs text-red-400">{openSearchTabMessage}</p>
+          )}
+        </div>
+      )}
+
+      {/* Gate 2A-2: 開発時のみ表示する投稿要素の表示確認（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：専用タブでの投稿要素表示確認（Gate 2A-2）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            Gate 2A-1で開いた専用タブに投稿要素が1件以上表示されたかだけを確認します。投稿本文・投稿者・反応数等は取得しません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleConfirmRender}
+              disabled={confirmRenderStatus === "checking" || openSearchTabStatus === "checking"}
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+            >
+              {confirmRenderStatus === "checking" ? "確認中..." : "投稿要素の表示を確認"}
+            </button>
+          </div>
+          {confirmRenderStatus === "success" && (
+            <p className="text-xs text-green-400">
+              投稿要素の表示を確認しました（検出：{confirmRenderDetectedCount ?? "—"}件）
+            </p>
+          )}
+          {confirmRenderStatus === "error" && (
+            <p className="text-xs text-red-400">{confirmRenderMessage}</p>
           )}
         </div>
       )}
