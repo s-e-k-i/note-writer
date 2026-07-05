@@ -12,6 +12,46 @@ const MAX_IMPORT_ITEMS = 50;
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024; // 2MB
 const MAX_TAGS = 20;
 const MAX_TAG_LEN = 100;
+const EXTENSION_PING_TIMEOUT_MS = 5000;
+
+// ── Gate 1: Chrome拡張との接続確認（開発時のみ表示） ──────────────
+// 最小限の型定義。@types/chromeは追加せず、実行時にも構造を検証する
+// （chrome.runtime.sendMessageの戻り値をanyのまま信用しない）。
+
+type ChromeRuntimeSendMessage = (
+  extensionId: string,
+  message: unknown,
+  responseCallback: (response: unknown) => void
+) => void;
+
+interface MinimalChromeRuntime {
+  sendMessage?: ChromeRuntimeSendMessage;
+  lastError?: { message?: string };
+}
+
+function getChromeRuntime(): MinimalChromeRuntime | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { chrome?: { runtime?: MinimalChromeRuntime } };
+  return w.chrome?.runtime ?? null;
+}
+
+interface XResearchPingResponse {
+  ok: boolean;
+  requestId?: string;
+  extensionVersion?: string;
+  error?: string;
+}
+
+// 実行時に応答の形を検証する（拡張機能から返る値を無条件に信用しない）。
+function isXResearchPingResponse(value: unknown): value is XResearchPingResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.extensionVersion !== undefined && typeof v.extensionVersion !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
 
 interface ImportResult {
   totalInput: number;
@@ -154,6 +194,12 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  // Gate 1: 拡張機能との接続確認（開発時のみ）。既存のインポート・一覧・
+  // generationRef/accountIdRef等の状態には一切触れない、独立した状態。
+  const [extCheckStatus, setExtCheckStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [extCheckMessage, setExtCheckMessage] = useState<string | null>(null);
+  const [extCheckVersion, setExtCheckVersion] = useState<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -354,6 +400,81 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     }
   };
 
+  // Gate 1: 拡張機能への固定pingメッセージを送り、固定応答を受け取るだけの
+  // 接続確認。Xを開かず、既存のAPI（/api/research-posts*）も一切呼ばない。
+  const handleCheckExtensionConnection = () => {
+    if (extCheckStatus === "checking") return;
+
+    setExtCheckStatus("checking");
+    setExtCheckMessage(null);
+    setExtCheckVersion(null);
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setExtCheckStatus("error");
+      setExtCheckMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setExtCheckStatus("error");
+      setExtCheckMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      setExtCheckStatus("error");
+      setExtCheckMessage("5秒以内に応答がありませんでした");
+    }, EXTENSION_PING_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(extensionId, { type: "X_RESEARCH_PING", requestId }, (response: unknown) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+
+        if (runtime.lastError) {
+          setExtCheckStatus("error");
+          setExtCheckMessage(`拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`);
+          return;
+        }
+
+        if (!isXResearchPingResponse(response)) {
+          setExtCheckStatus("error");
+          setExtCheckMessage("応答の形式が不正です");
+          return;
+        }
+
+        if (response.requestId !== requestId) {
+          setExtCheckStatus("error");
+          setExtCheckMessage("応答のrequestIdが一致しません");
+          return;
+        }
+
+        if (!response.ok) {
+          setExtCheckStatus("error");
+          setExtCheckMessage(response.error ?? "拡張機能がエラーを返しました");
+          return;
+        }
+
+        setExtCheckStatus("success");
+        setExtCheckVersion(response.extensionVersion ?? null);
+      });
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      setExtCheckStatus("error");
+      setExtCheckMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
   const updateCardField = (relationId: string, field: keyof CardState, value: string) => {
     setCardStates((prev) => ({
       ...prev,
@@ -500,6 +621,36 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
 
   return (
     <div className="space-y-6">
+      {/* Gate 1: 開発時のみ表示する拡張機能接続確認（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：Chrome拡張との接続確認（Gate 1）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            固定のpingメッセージを送り、拡張機能からの固定応答を確認するだけです。Xは開きません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleCheckExtensionConnection}
+              disabled={extCheckStatus === "checking"}
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+            >
+              {extCheckStatus === "checking" ? "確認中..." : "拡張機能との接続を確認"}
+            </button>
+            {extCheckStatus === "success" && (
+              <span className="text-xs text-green-400">
+                接続成功（拡張機能バージョン: {extCheckVersion ?? "不明"}）
+              </span>
+            )}
+            {extCheckStatus === "error" && (
+              <span className="text-xs text-red-400">{extCheckMessage}</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">
         <h3 className="text-sm font-semibold text-zinc-200">Chrome拡張のJSONをインポート</h3>
