@@ -18,7 +18,23 @@
  * post text/author/URL/engagement counts, never calls extractXPostsCore,
  * never treats "not found within the timeout" as "0 results confirmed",
  * and never creates or recreates a tab (that stays Gate 2A-1's job).
+ *
+ * Gate 2B-1 scope: extract up to EXTRACT_POSTS_MAX posts from that same
+ * dedicated tab's currently-rendered DOM, reusing confirmXPostRenderInjected
+ * (Gate 2A-2) for the render wait and extractXPostsCore (extractor-core.js)
+ * for the actual extraction. It never scrolls, clicks, expands "show more",
+ * navigates, reads cookies/localStorage, or calls any note-writer API/DB.
  */
+
+// Loaded at top level (classic, non-module service worker) so
+// extractXPostsCore is available in this file's own scope for Gate 2B-1,
+// the same way it's already available in popup.js's scope via its own
+// <script src="extractor-core.js"> tag. extractor-core.js is untouched —
+// this is a second, independent load of the same file, into a different
+// context. It is a plain function declaration only (no top-level DOM
+// access, no side effects), so loading it here does not execute or depend
+// on anything at import time.
+importScripts("extractor-core.js");
 
 // Accepts any http://localhost:<any port> origin (note-writer's local dev
 // port varies run to run), but nothing else: not 127.0.0.1, not any other
@@ -55,6 +71,16 @@ let openSearchTabProcessing = false;
 // TabResearch.tsx additionally disables both UI controls while either is
 // running (see its own comments).
 let confirmRenderProcessing = false;
+
+// Gate 2B-1: fixed, not user-configurable. TabResearch.tsx never sends a
+// maxPosts value; this is the single place that number is decided.
+const EXTRACT_POSTS_MAX = 10;
+
+// Gate 2B-1's own processing flag — separate from openSearchTabProcessing
+// and confirmRenderProcessing so none of the three block each other's own
+// re-entrancy check. TabResearch.tsx additionally disables all three UI
+// controls while any one of them is running.
+let extractPostsProcessing = false;
 
 function safeRequestId(message) {
   return message && typeof message === "object" && typeof message.requestId === "string"
@@ -374,6 +400,156 @@ async function handleConfirmRender(requestId, sendResponse) {
   );
 }
 
+// Gate 2B-1's own URL gate, checked immediately before extraction (not at
+// tab-open time). Deliberately does not require tab.status === "complete",
+// a `q` param, or `f=live` — the render-confirmation wait below already
+// covers a still-loading page, and a missing q/f=live is not a safety
+// concern (Gate 2A-1 normally sets both anyway, but Gate 2B-1 does not add
+// extra warning UI for their absence).
+function isValidDedicatedTabUrl(rawUrl) {
+  if (typeof rawUrl !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && parsed.hostname === "x.com" && parsed.pathname === "/search";
+}
+
+// Gate 2B-1: confirms render (reusing Gate 2A-2's confirmXPostRenderInjected
+// as-is, not a copy) and, only if confirmed, extracts up to
+// EXTRACT_POSTS_MAX posts via extractXPostsCore (extractor-core.js, loaded
+// via importScripts above). Never creates/recreates a tab — only the tab id
+// already stored by Gate 2A-1 is used, and only after re-validating its
+// current URL. Never scrolls, clicks, expands "show more", reads
+// cookies/localStorage, or calls any note-writer API/DB.
+async function handleExtractPosts(requestId, sendResponse) {
+  let storedTabId;
+  try {
+    storedTabId = await getStoredTabId();
+  } catch (e) {
+    console.debug("[x-research] extractPosts: getStoredTabId failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "投稿データの抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (storedTabId === null) {
+    respondError(sendResponse, requestId, "NO_DEDICATED_TAB", "先にX検索タブを開いてください");
+    return;
+  }
+
+  let existingTab = null;
+  try {
+    existingTab = await chrome.tabs.get(storedTabId);
+  } catch {
+    existingTab = null;
+  }
+
+  if (!existingTab) {
+    // Self-heals the same way Gate 2A-2 does: invalidate the stale id and
+    // let the next "open search tab" request create a fresh one.
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  if (!isValidDedicatedTabUrl(existingTab.url)) {
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブがXの検索結果ページではありません");
+    return;
+  }
+
+  // Captured once, before any further async step — this is "the URL that was
+  // actually validated and extracted from", not re-read later.
+  const sourceUrl = existingTab.url;
+
+  let renderResults;
+  try {
+    renderResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: confirmXPostRenderInjected,
+      args: [CONFIRM_RENDER_TIMEOUT_MS],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractPosts: render confirmation executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "投稿データの抽出処理を実行できませんでした");
+    return;
+  }
+
+  const renderResult = renderResults && renderResults[0] ? renderResults[0].result : undefined;
+  const renderResultLooksValid =
+    renderResult &&
+    typeof renderResult === "object" &&
+    (renderResult.status === "render_confirmed" || renderResult.status === "render_not_confirmed") &&
+    typeof renderResult.detectedCount === "number" &&
+    Number.isInteger(renderResult.detectedCount) &&
+    renderResult.detectedCount >= 0;
+
+  if (!renderResultLooksValid) {
+    // An empty/malformed result is never interpreted as "0 posts" — it is
+    // reported as an injection failure, not a render result.
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "投稿データの抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (!(renderResult.status === "render_confirmed" && renderResult.detectedCount > 0)) {
+    // Deliberately not distinguished from "0 real results", "still loading",
+    // "not logged in", or an X-side error page — same as Gate 2A-2.
+    respondError(
+      sendResponse,
+      requestId,
+      "RENDER_NOT_CONFIRMED",
+      "投稿の表示を確認できませんでした",
+      "render_not_confirmed"
+    );
+    return;
+  }
+
+  let extractionResults;
+  try {
+    extractionResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: extractXPostsCore,
+      args: [EXTRACT_POSTS_MAX],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractPosts: extraction executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "投稿データの抽出処理を実行できませんでした");
+    return;
+  }
+
+  const extractionResult = extractionResults && extractionResults[0] ? extractionResults[0].result : undefined;
+  const extractionResultLooksValid =
+    extractionResult &&
+    typeof extractionResult === "object" &&
+    Array.isArray(extractionResult.results) &&
+    Array.isArray(extractionResult.skipped);
+
+  if (!extractionResultLooksValid) {
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "投稿データの抽出処理を実行できませんでした");
+    return;
+  }
+
+  // Defensive cap — extractXPostsCore already slices to EXTRACT_POSTS_MAX
+  // internally, but this response never trusts the injected result's shape
+  // beyond what was validated above.
+  const posts = extractionResult.results.slice(0, EXTRACT_POSTS_MAX);
+  const skipped = extractionResult.skipped;
+
+  sendResponse({
+    ok: true,
+    requestId,
+    status: "posts_extracted",
+    sourceUrl,
+    extractedAt: new Date().toISOString(),
+    requestedMaxPosts: EXTRACT_POSTS_MAX,
+    extractedCount: posts.length,
+    skippedCount: skipped.length,
+    posts,
+    skipped,
+  });
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   // Shared checks for every message type (unchanged logic from Gate 1).
   if (!sender || typeof sender.url !== "string" || sender.url.length === 0) {
@@ -439,6 +615,19 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       confirmRenderProcessing = false;
     });
     return true; // keep the message channel open until handleConfirmRender calls sendResponse
+  }
+
+  // Gate 2B-1: X_RESEARCH_EXTRACT_POSTS — asynchronous.
+  if (message.type === "X_RESEARCH_EXTRACT_POSTS") {
+    if (extractPostsProcessing) {
+      respondError(sendResponse, requestId, "ALREADY_PROCESSING", "現在、投稿データの抽出処理を実行中です");
+      return false;
+    }
+    extractPostsProcessing = true;
+    handleExtractPosts(requestId, sendResponse).finally(() => {
+      extractPostsProcessing = false;
+    });
+    return true; // keep the message channel open until handleExtractPosts calls sendResponse
   }
 
   respondError(sendResponse, requestId, "UNKNOWN_TYPE", "unknown message type");

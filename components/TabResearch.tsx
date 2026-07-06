@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { ResearchPostListItem } from "@/lib/types";
+import { ResearchPostListItem, ResearchPostImportItem } from "@/lib/types";
 
 interface TabResearchProps {
   noteAccountId: string;
@@ -126,6 +126,81 @@ function isXResearchConfirmRenderResponse(value: unknown): value is XResearchCon
   if (v.message !== undefined && typeof v.message !== "string") return false;
   if (v.error !== undefined && typeof v.error !== "string") return false;
   return true;
+}
+
+// ── Gate 2B-1: 専用タブからの投稿データ抽出（開発時のみ表示） ──────────
+// 通信全体に対する安全網。拡張機能側の描画確認（最大15秒）＋抽出処理の
+// 余裕を見込んだ値で、Gate 2A-2の20秒より長い。
+const EXTRACT_POSTS_TIMEOUT_MS = 25000;
+// 初期表示は最初の3件だけ。残りはdetails/summaryで折りたたむ。
+const EXTRACT_POSTS_INITIAL_DISPLAY_COUNT = 3;
+// 本文プレビューの切り詰め長。全文は表示しない。
+const EXTRACT_POSTS_TEXT_PREVIEW_LENGTH = 180;
+
+interface XResearchExtractPostsResponse {
+  ok: boolean;
+  requestId?: string;
+  status?: string;
+  sourceUrl?: string;
+  extractedAt?: string;
+  requestedMaxPosts?: number;
+  extractedCount?: number;
+  skippedCount?: number;
+  posts?: unknown[];
+  skipped?: unknown[];
+  errorCode?: string;
+  message?: string;
+  error?: string;
+}
+
+// 拡張機能からの応答を無条件に信用せず、実行時に構造を検証する。posts/skipped
+// の各要素までは深く検証しない（既存のImportResult.skipped/failed等と同じ扱い）。
+function isXResearchExtractPostsResponse(value: unknown): value is XResearchExtractPostsResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.status !== undefined && typeof v.status !== "string") return false;
+  if (v.sourceUrl !== undefined && typeof v.sourceUrl !== "string") return false;
+  if (v.extractedAt !== undefined && typeof v.extractedAt !== "string") return false;
+  if (v.requestedMaxPosts !== undefined && typeof v.requestedMaxPosts !== "number") return false;
+  if (v.extractedCount !== undefined && typeof v.extractedCount !== "number") return false;
+  if (v.skippedCount !== undefined && typeof v.skippedCount !== "number") return false;
+  if (v.posts !== undefined && !Array.isArray(v.posts)) return false;
+  if (v.skipped !== undefined && !Array.isArray(v.skipped)) return false;
+  if (v.errorCode !== undefined && typeof v.errorCode !== "string") return false;
+  if (v.message !== undefined && typeof v.message !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
+
+interface ExtractPostsResult {
+  sourceUrl: string;
+  extractedAt: string;
+  requestedMaxPosts: number;
+  extractedCount: number;
+  skippedCount: number;
+  posts: ResearchPostImportItem[];
+  skipped: unknown[];
+}
+
+function mapExtractPostsErrorMessage(errorCode: string | undefined, fallback: string): string {
+  switch (errorCode) {
+    case "NO_DEDICATED_TAB":
+      return "先に「X検索タブを開く」を実行してください。";
+    case "TAB_NOT_FOUND":
+      return "専用タブが見つかりません。もう一度「X検索タブを開く」を実行してください。";
+    case "INVALID_TAB_URL":
+      return "専用タブがXの検索結果ページではありません。もう一度「X検索タブを開く」を実行してください。";
+    case "RENDER_NOT_CONFIRMED":
+      return "15秒以内に投稿要素の表示を確認できませんでした。検索結果0件、描画遅延、未ログイン、X側エラー等の可能性があります。";
+    case "SCRIPT_INJECTION_FAILED":
+      return "投稿データの抽出処理を実行できませんでした。拡張機能を再読み込みして、もう一度お試しください。";
+    case "ALREADY_PROCESSING":
+      return "現在処理中です。完了後にもう一度お試しください。";
+    default:
+      return fallback;
+  }
 }
 
 interface ImportResult {
@@ -292,6 +367,14 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [confirmRenderMessage, setConfirmRenderMessage] = useState<string | null>(null);
   const [confirmRenderDetectedCount, setConfirmRenderDetectedCount] = useState<number | null>(null);
   const confirmRenderRequestIdRef = useRef<string | null>(null);
+
+  // Gate 2B-1: 専用タブからの投稿データ抽出確認（開発時のみ）。Gate 2A-1/2A-2の
+  // 状態とは独立しているが、UI側では3つの処理中状態を見て互いのボタンを無効化する。
+  const [extractPostsStatus, setExtractPostsStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [extractPostsMessage, setExtractPostsMessage] = useState<string | null>(null);
+  const [extractPostsResult, setExtractPostsResult] = useState<ExtractPostsResult | null>(null);
+  const [extractPostsShowAll, setExtractPostsShowAll] = useState(false);
+  const extractPostsRequestIdRef = useRef<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -758,6 +841,121 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     }
   };
 
+  // Gate 2B-1: 専用タブから最大10件の投稿データを抽出する。件数は拡張機能側の
+  // 固定値（EXTRACT_POSTS_MAX）で決まり、ここではmaxPostsを一切送らない。
+  // DB保存・API呼び出し・storage.sessionへの保存は行わない。
+  const handleExtractPosts = () => {
+    if (extractPostsStatus === "checking") return;
+
+    setExtractPostsStatus("checking");
+    setExtractPostsMessage(null);
+    setExtractPostsResult(null);
+    setExtractPostsShowAll(false);
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setExtractPostsStatus("error");
+      setExtractPostsMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setExtractPostsStatus("error");
+      setExtractPostsMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    extractPostsRequestIdRef.current = requestId;
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (extractPostsRequestIdRef.current !== requestId) return;
+      setExtractPostsStatus("error");
+      setExtractPostsMessage(`${EXTRACT_POSTS_TIMEOUT_MS / 1000}秒以内に応答がありませんでした`);
+    }, EXTRACT_POSTS_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(
+        extensionId,
+        { type: "X_RESEARCH_EXTRACT_POSTS", requestId },
+        (response: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
+          // 古い要求（連続実行）の応答は無視する。
+          if (extractPostsRequestIdRef.current !== requestId) return;
+
+          if (runtime.lastError) {
+            setExtractPostsStatus("error");
+            setExtractPostsMessage(
+              `拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`
+            );
+            return;
+          }
+
+          if (!isXResearchExtractPostsResponse(response)) {
+            setExtractPostsStatus("error");
+            setExtractPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          if (response.requestId !== requestId) {
+            setExtractPostsStatus("error");
+            setExtractPostsMessage("応答のrequestIdが一致しません");
+            return;
+          }
+
+          if (!response.ok) {
+            const message = mapExtractPostsErrorMessage(
+              response.errorCode,
+              response.message ?? response.error ?? "拡張機能がエラーを返しました"
+            );
+            setExtractPostsStatus("error");
+            setExtractPostsMessage(message);
+            return;
+          }
+
+          if (
+            typeof response.sourceUrl !== "string" ||
+            typeof response.extractedAt !== "string" ||
+            typeof response.requestedMaxPosts !== "number" ||
+            typeof response.extractedCount !== "number" ||
+            typeof response.skippedCount !== "number" ||
+            !Array.isArray(response.posts) ||
+            !Array.isArray(response.skipped)
+          ) {
+            setExtractPostsStatus("error");
+            setExtractPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          setExtractPostsStatus("success");
+          setExtractPostsResult({
+            sourceUrl: response.sourceUrl,
+            extractedAt: response.extractedAt,
+            requestedMaxPosts: response.requestedMaxPosts,
+            extractedCount: response.extractedCount,
+            skippedCount: response.skippedCount,
+            posts: response.posts as ResearchPostImportItem[],
+            skipped: response.skipped,
+          });
+        }
+      );
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (extractPostsRequestIdRef.current !== requestId) return;
+      setExtractPostsStatus("error");
+      setExtractPostsMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
   const updateCardField = (relationId: string, field: keyof CardState, value: string) => {
     setCardStates((prev) => ({
       ...prev,
@@ -950,13 +1148,21 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               onChange={(e) => setOpenSearchTabQueryInput(e.target.value)}
               placeholder="検索語"
               maxLength={MAX_X_RESEARCH_QUERY_LENGTH}
-              disabled={openSearchTabStatus === "checking" || confirmRenderStatus === "checking"}
+              disabled={
+                openSearchTabStatus === "checking" ||
+                confirmRenderStatus === "checking" ||
+                extractPostsStatus === "checking"
+              }
               className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
             />
             <button
               type="button"
               onClick={handleOpenSearchTab}
-              disabled={openSearchTabStatus === "checking" || confirmRenderStatus === "checking"}
+              disabled={
+                openSearchTabStatus === "checking" ||
+                confirmRenderStatus === "checking" ||
+                extractPostsStatus === "checking"
+              }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
               {openSearchTabStatus === "checking" ? "確認中..." : "X検索タブを開く"}
@@ -986,7 +1192,11 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             <button
               type="button"
               onClick={handleConfirmRender}
-              disabled={confirmRenderStatus === "checking" || openSearchTabStatus === "checking"}
+              disabled={
+                confirmRenderStatus === "checking" ||
+                openSearchTabStatus === "checking" ||
+                extractPostsStatus === "checking"
+              }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
               {confirmRenderStatus === "checking" ? "確認中..." : "投稿要素の表示を確認"}
@@ -999,6 +1209,128 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
           )}
           {confirmRenderStatus === "error" && (
             <p className="text-xs text-red-400">{confirmRenderMessage}</p>
+          )}
+        </div>
+      )}
+
+      {/* Gate 2B-1: 開発時のみ表示する投稿データ抽出確認（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：投稿データの抽出確認（Gate 2B-1）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            Gate 2A-1の専用タブに現在描画されている投稿データを最大10件抽出し、ここで目視確認するだけです。DB保存・API呼び出しは行いません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExtractPosts}
+              disabled={
+                extractPostsStatus === "checking" ||
+                openSearchTabStatus === "checking" ||
+                confirmRenderStatus === "checking"
+              }
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+            >
+              {extractPostsStatus === "checking" ? "抽出中..." : "投稿データを抽出（最大10件）"}
+            </button>
+          </div>
+          {extractPostsStatus === "error" && (
+            <p className="text-xs text-red-400">{extractPostsMessage}</p>
+          )}
+          {extractPostsStatus === "success" && extractPostsResult && (
+            <div className="text-xs text-zinc-300 space-y-2">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+                <p>
+                  抽出件数: {extractPostsResult.extractedCount}件 / 最大件数: {extractPostsResult.requestedMaxPosts}件
+                </p>
+                <p>スキップ件数: {extractPostsResult.skippedCount}件</p>
+                <p className="break-all">取得元URL: {extractPostsResult.sourceUrl}</p>
+                <p>取得日時: {formatDateTimeJST(extractPostsResult.extractedAt)}</p>
+              </div>
+
+              {extractPostsResult.extractedCount === 0 && extractPostsResult.skippedCount > 0 && (
+                <p className="text-amber-400">
+                  投稿要素は表示されていましたが、抽出できた投稿は0件でした。スキップ理由を確認してください。
+                </p>
+              )}
+
+              {extractPostsResult.posts.length > 0 && (
+                <ul className="space-y-2">
+                  {(extractPostsShowAll
+                    ? extractPostsResult.posts
+                    : extractPostsResult.posts.slice(0, EXTRACT_POSTS_INITIAL_DISPLAY_COUNT)
+                  ).map((post, index) => {
+                    const textPreview =
+                      (post.text || "").slice(0, EXTRACT_POSTS_TEXT_PREVIEW_LENGTH) +
+                      ((post.text || "").length > EXTRACT_POSTS_TEXT_PREVIEW_LENGTH || post.isTextTruncated
+                        ? "…"
+                        : "");
+                    return (
+                      <li key={post.postId || index} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+                        <div className="text-zinc-200">
+                          {post.authorName || "(名前不明)"}
+                          <span className="text-zinc-500 ml-1">@{post.authorHandle || "(不明)"}</span>
+                        </div>
+                        <div className="text-zinc-300 whitespace-pre-wrap break-words">
+                          {textPreview || "(本文なし)"}
+                          {post.isTextTruncated && (
+                            <span className="ml-2 text-amber-400/80">（省略あり）</span>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-500">
+                          <span>返信 {formatCount(post.replies)}</span>
+                          <span>リポスト {formatCount(post.reposts)}</span>
+                          <span>いいね {formatCount(post.likes)}</span>
+                          <span>ブックマーク {formatCount(post.bookmarks)}</span>
+                          <span>表示 {formatCount(post.views)}</span>
+                          <span>投稿日時: {formatDateTimeJST(post.postedAtRaw)}</span>
+                        </div>
+                        <div>
+                          <a
+                            href={post.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sky-400 hover:text-sky-300 break-all"
+                          >
+                            {post.url}
+                          </a>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {extractPostsResult.posts.length > EXTRACT_POSTS_INITIAL_DISPLAY_COUNT && !extractPostsShowAll && (
+                <button
+                  type="button"
+                  onClick={() => setExtractPostsShowAll(true)}
+                  className="text-xs text-sky-400 hover:text-sky-300 underline"
+                >
+                  残り{extractPostsResult.posts.length - EXTRACT_POSTS_INITIAL_DISPLAY_COUNT}件を表示
+                </button>
+              )}
+
+              {extractPostsResult.skippedCount > 0 && (
+                <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                  <summary className="cursor-pointer text-zinc-400">
+                    スキップ内容を表示（{extractPostsResult.skippedCount}件）
+                  </summary>
+                  <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                    {JSON.stringify(extractPostsResult.skipped, null, 2)}
+                  </pre>
+                </details>
+              )}
+
+              <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
+                <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                  {JSON.stringify(extractPostsResult, null, 2)}
+                </pre>
+              </details>
+            </div>
           )}
         </div>
       )}
