@@ -191,7 +191,7 @@ function mapExtractPostsErrorMessage(errorCode: string | undefined, fallback: st
     case "TAB_NOT_FOUND":
       return "専用タブが見つかりません。もう一度「X検索タブを開く」を実行してください。";
     case "INVALID_TAB_URL":
-      return "専用タブがXの検索結果ページではありません。もう一度「X検索タブを開く」を実行してください。";
+      return "専用タブが『最新』検索ページではありません。もう一度『X検索タブを開く』を実行してから、最新投稿を抽出してください。";
     case "RENDER_NOT_CONFIRMED":
       return "15秒以内に投稿要素の表示を確認できませんでした。検索結果0件、描画遅延、未ログイン、X側エラー等の可能性があります。";
     case "SCRIPT_INJECTION_FAILED":
@@ -201,6 +201,109 @@ function mapExtractPostsErrorMessage(errorCode: string | undefined, fallback: st
     default:
       return fallback;
   }
+}
+
+// ── Gate 2B-2A: 「話題」検索結果からの投稿データ抽出（開発時のみ表示） ────
+// 遷移待機（最大15秒）＋描画確認（最大15秒）＋抽出処理が直列に発生するため、
+// Gate 2B-1の25秒より長い安全タイムアウトを設ける。
+const EXTRACT_TOP_POSTS_TIMEOUT_MS = 40000;
+const EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT = 3;
+const EXTRACT_TOP_POSTS_TEXT_PREVIEW_LENGTH = 180;
+
+interface XResearchExtractTopPostsResponse {
+  ok: boolean;
+  requestId?: string;
+  status?: string;
+  query?: string;
+  sourceUrl?: string;
+  extractedAt?: string;
+  requestedMaxPosts?: number;
+  extractedCount?: number;
+  skippedCount?: number;
+  posts?: unknown[];
+  skipped?: unknown[];
+  errorCode?: string;
+  message?: string;
+  error?: string;
+}
+
+// 拡張機能からの応答を無条件に信用せず、実行時に構造を検証する。posts/skipped
+// の各要素までは深く検証しない（Gate 2B-1のisXResearchExtractPostsResponseと同じ扱い）。
+function isXResearchExtractTopPostsResponse(value: unknown): value is XResearchExtractTopPostsResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.status !== undefined && typeof v.status !== "string") return false;
+  if (v.query !== undefined && typeof v.query !== "string") return false;
+  if (v.sourceUrl !== undefined && typeof v.sourceUrl !== "string") return false;
+  if (v.extractedAt !== undefined && typeof v.extractedAt !== "string") return false;
+  if (v.requestedMaxPosts !== undefined && typeof v.requestedMaxPosts !== "number") return false;
+  if (v.extractedCount !== undefined && typeof v.extractedCount !== "number") return false;
+  if (v.skippedCount !== undefined && typeof v.skippedCount !== "number") return false;
+  if (v.posts !== undefined && !Array.isArray(v.posts)) return false;
+  if (v.skipped !== undefined && !Array.isArray(v.skipped)) return false;
+  if (v.errorCode !== undefined && typeof v.errorCode !== "string") return false;
+  if (v.message !== undefined && typeof v.message !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
+
+interface TopPostsResult {
+  query: string;
+  sourceUrl: string;
+  extractedAt: string;
+  requestedMaxPosts: number;
+  extractedCount: number;
+  skippedCount: number;
+  posts: ResearchPostImportItem[];
+  skipped: unknown[];
+}
+
+function mapExtractTopPostsErrorMessage(errorCode: string | undefined, fallback: string): string {
+  switch (errorCode) {
+    case "NO_DEDICATED_TAB":
+      return "先に「X検索タブを開く」を実行してください。";
+    case "TAB_NOT_FOUND":
+      return "専用タブが見つかりません。もう一度「X検索タブを開く」を実行してください。";
+    case "INVALID_TAB_URL":
+      return "専用タブを話題検索ページとして確認できませんでした。もう一度「X検索タブを開く」からやり直してください。";
+    case "INVALID_QUERY":
+    case "EMPTY_QUERY":
+      return "最新結果から有効な検索語を確認できませんでした。最新投稿をもう一度抽出してください。";
+    case "QUERY_TOO_LONG":
+      return "検索語が長すぎます。検索語を短くして最新投稿からやり直してください。";
+    case "TAB_NAVIGATION_FAILED":
+      return "話題検索ページへの移動を完了できませんでした。Xの表示状態を確認して、もう一度お試しください。";
+    case "RENDER_NOT_CONFIRMED":
+      return "15秒以内に話題投稿の表示を確認できませんでした。検索結果0件、描画遅延、未ログイン、X側エラー等の可能性があります。";
+    case "SCRIPT_INJECTION_FAILED":
+      return "話題投稿の抽出処理を実行できませんでした。拡張機能を再読み込みして、もう一度お試しください。";
+    case "ALREADY_PROCESSING":
+      return "現在処理中です。完了後にもう一度お試しください。";
+    default:
+      return fallback;
+  }
+}
+
+// Gate 2B-1の最新抽出結果のsourceUrl（https://x.com/search?q=...&f=live 等）
+// から、話題抽出に使う検索語を復元する。入力欄(openSearchTabQueryInput)の
+// 現在値は一切参照しない — 利用者が後から検索語を編集していても、話題抽出は
+// 常に最新抽出が実際に使ったqを使う。復元できない場合はnullを返す。
+function deriveTopSearchQuery(sourceUrl: string | undefined): string | null {
+  if (!sourceUrl) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(sourceUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "x.com" || parsed.pathname !== "/search") {
+    return null;
+  }
+  const q = parsed.searchParams.get("q");
+  if (!q) return null;
+  return q;
 }
 
 interface ImportResult {
@@ -375,6 +478,16 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [extractPostsResult, setExtractPostsResult] = useState<ExtractPostsResult | null>(null);
   const [extractPostsShowAll, setExtractPostsShowAll] = useState(false);
   const extractPostsRequestIdRef = useRef<string | null>(null);
+
+  // Gate 2B-2A: 「話題」検索結果からの投稿データ抽出（開発時のみ）。Gate
+  // 2A-1/2A-2/2B-1の状態とは独立しているが、UI側では4つの処理中状態を見て
+  // 互いのボタンを無効化する。重複整理用のstate（duplicatePosts等）はGate
+  // 2B-2Bでまだ追加しない。
+  const [topPostsStatus, setTopPostsStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [topPostsMessage, setTopPostsMessage] = useState<string | null>(null);
+  const [topPostsResult, setTopPostsResult] = useState<TopPostsResult | null>(null);
+  const [topPostsShowAll, setTopPostsShowAll] = useState(false);
+  const topPostsRequestIdRef = useRef<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -849,8 +962,10 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
 
     setExtractPostsStatus("checking");
     setExtractPostsMessage(null);
-    setExtractPostsResult(null);
-    setExtractPostsShowAll(false);
+    // 既存の最新結果・話題結果はここでは消さない。URL検証失敗（話題ページ上で
+    // 誤って最新抽出を押した場合等）やタイムアウト等の一時的な失敗で、直前まで
+    // 有効だった結果を巻き添えで消さないため。結果の置き換え・話題結果の
+    // クリアは、この抽出が実際に成功した時点でのみ行う（下記の成功分岐）。
 
     const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
     if (!extensionId) {
@@ -944,6 +1059,16 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             posts: response.posts as ResearchPostImportItem[],
             skipped: response.skipped,
           });
+          setExtractPostsShowAll(false);
+
+          // 最新抽出が実際に成功した時点でのみ、古い話題結果をクリアする —
+          // 話題結果は直前の最新結果と紐づいており、新しい最新結果に置き換わった
+          // 以上は混在させないため。抽出が失敗した場合はここまで到達せず、
+          // 既存の話題結果はそのまま残る。
+          setTopPostsStatus("idle");
+          setTopPostsMessage(null);
+          setTopPostsResult(null);
+          setTopPostsShowAll(false);
         }
       );
     } catch (e) {
@@ -953,6 +1078,132 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
       if (extractPostsRequestIdRef.current !== requestId) return;
       setExtractPostsStatus("error");
       setExtractPostsMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
+  // Gate 2B-2A: 専用タブを「話題」検索結果へ遷移させ、最大10件の投稿データを
+  // 抽出する。検索語は入力欄(openSearchTabQueryInput)の現在値ではなく、常に
+  // Gate 2B-1の最新抽出結果のsourceUrlから復元したものを使う。最新と話題の
+  // 重複整理はまだ行わない（Gate 2B-2Bの対象）。DB保存・API呼び出し・
+  // storage.sessionへの保存は行わない。
+  const handleExtractTopPosts = () => {
+    if (topPostsStatus === "checking") return;
+
+    const query = deriveTopSearchQuery(extractPostsResult?.sourceUrl);
+    if (!query) {
+      setTopPostsStatus("error");
+      setTopPostsMessage("最新の抽出結果から検索語を確認できません。もう一度、最新投稿を抽出してください。");
+      return;
+    }
+
+    setTopPostsStatus("checking");
+    setTopPostsMessage(null);
+    setTopPostsResult(null);
+    setTopPostsShowAll(false);
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setTopPostsStatus("error");
+      setTopPostsMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setTopPostsStatus("error");
+      setTopPostsMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    topPostsRequestIdRef.current = requestId;
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (topPostsRequestIdRef.current !== requestId) return;
+      setTopPostsStatus("error");
+      setTopPostsMessage(`${EXTRACT_TOP_POSTS_TIMEOUT_MS / 1000}秒以内に応答がありませんでした`);
+    }, EXTRACT_TOP_POSTS_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(
+        extensionId,
+        { type: "X_RESEARCH_EXTRACT_TOP_POSTS", requestId, query },
+        (response: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
+          // 古い要求（連続実行）の応答は無視する。
+          if (topPostsRequestIdRef.current !== requestId) return;
+
+          if (runtime.lastError) {
+            setTopPostsStatus("error");
+            setTopPostsMessage(
+              `拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`
+            );
+            return;
+          }
+
+          if (!isXResearchExtractTopPostsResponse(response)) {
+            setTopPostsStatus("error");
+            setTopPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          if (response.requestId !== requestId) {
+            setTopPostsStatus("error");
+            setTopPostsMessage("応答のrequestIdが一致しません");
+            return;
+          }
+
+          if (!response.ok) {
+            const message = mapExtractTopPostsErrorMessage(
+              response.errorCode,
+              response.message ?? response.error ?? "拡張機能がエラーを返しました"
+            );
+            setTopPostsStatus("error");
+            setTopPostsMessage(message);
+            return;
+          }
+
+          if (
+            typeof response.query !== "string" ||
+            typeof response.sourceUrl !== "string" ||
+            typeof response.extractedAt !== "string" ||
+            typeof response.requestedMaxPosts !== "number" ||
+            typeof response.extractedCount !== "number" ||
+            typeof response.skippedCount !== "number" ||
+            !Array.isArray(response.posts) ||
+            !Array.isArray(response.skipped)
+          ) {
+            setTopPostsStatus("error");
+            setTopPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          setTopPostsStatus("success");
+          setTopPostsResult({
+            query: response.query,
+            sourceUrl: response.sourceUrl,
+            extractedAt: response.extractedAt,
+            requestedMaxPosts: response.requestedMaxPosts,
+            extractedCount: response.extractedCount,
+            skippedCount: response.skippedCount,
+            posts: response.posts as ResearchPostImportItem[],
+            skipped: response.skipped,
+          });
+        }
+      );
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (topPostsRequestIdRef.current !== requestId) return;
+      setTopPostsStatus("error");
+      setTopPostsMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
     }
   };
 
@@ -1151,7 +1402,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               disabled={
                 openSearchTabStatus === "checking" ||
                 confirmRenderStatus === "checking" ||
-                extractPostsStatus === "checking"
+                extractPostsStatus === "checking" ||
+                topPostsStatus === "checking"
               }
               className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
             />
@@ -1161,7 +1413,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               disabled={
                 openSearchTabStatus === "checking" ||
                 confirmRenderStatus === "checking" ||
-                extractPostsStatus === "checking"
+                extractPostsStatus === "checking" ||
+                topPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1195,7 +1448,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               disabled={
                 confirmRenderStatus === "checking" ||
                 openSearchTabStatus === "checking" ||
-                extractPostsStatus === "checking"
+                extractPostsStatus === "checking" ||
+                topPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1229,7 +1483,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
               disabled={
                 extractPostsStatus === "checking" ||
                 openSearchTabStatus === "checking" ||
-                confirmRenderStatus === "checking"
+                confirmRenderStatus === "checking" ||
+                topPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1334,6 +1589,145 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
           )}
         </div>
       )}
+
+      {/* Gate 2B-2A: 開発時のみ表示する話題投稿の抽出確認（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" &&
+        (() => {
+          const topSearchQuery = deriveTopSearchQuery(extractPostsResult?.sourceUrl);
+          const topPostsButtonDisabled =
+            topPostsStatus === "checking" ||
+            openSearchTabStatus === "checking" ||
+            confirmRenderStatus === "checking" ||
+            extractPostsStatus === "checking" ||
+            !topSearchQuery;
+          return (
+            <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-semibold text-zinc-200">
+                開発用：話題投稿の抽出確認（Gate 2B-2A）
+              </h3>
+              <p className="text-xs text-zinc-500">
+                Gate 2B-1の最新抽出結果が使った検索語で、専用タブを「話題」の検索結果へ移動し、話題投稿を最大10件抽出します。DB保存・API呼び出しは行いません。
+              </p>
+              {topSearchQuery ? (
+                <p className="text-xs text-zinc-400">対象検索語：{topSearchQuery}（最新抽出時）</p>
+              ) : (
+                <p className="text-xs text-amber-400">
+                  最新の抽出結果から検索語を確認できません。もう一度、最新投稿を抽出してください。
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExtractTopPosts}
+                  disabled={topPostsButtonDisabled}
+                  className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+                >
+                  {topPostsStatus === "checking" ? "抽出中..." : "話題投稿を抽出（最大10件）"}
+                </button>
+              </div>
+              {topPostsStatus === "error" && (
+                <p className="text-xs text-red-400">{topPostsMessage}</p>
+              )}
+              {topPostsStatus === "success" && topPostsResult && (
+                <div className="text-xs text-zinc-300 space-y-2">
+                  <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+                    <p>対象検索語: {topPostsResult.query}</p>
+                    <p>
+                      抽出件数: {topPostsResult.extractedCount}件 / 最大件数: {topPostsResult.requestedMaxPosts}件
+                    </p>
+                    <p>スキップ件数: {topPostsResult.skippedCount}件</p>
+                    <p className="break-all">取得元URL: {topPostsResult.sourceUrl}</p>
+                    <p>取得日時: {formatDateTimeJST(topPostsResult.extractedAt)}</p>
+                  </div>
+
+                  {topPostsResult.extractedCount === 0 && topPostsResult.skippedCount > 0 && (
+                    <p className="text-amber-400">
+                      投稿要素は表示されていましたが、抽出できた話題投稿は0件でした。スキップ理由を確認してください。
+                    </p>
+                  )}
+
+                  {topPostsResult.posts.length > 0 && (
+                    <ul className="space-y-2">
+                      {(topPostsShowAll
+                        ? topPostsResult.posts
+                        : topPostsResult.posts.slice(0, EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT)
+                      ).map((post, index) => {
+                        const textPreview =
+                          (post.text || "").slice(0, EXTRACT_TOP_POSTS_TEXT_PREVIEW_LENGTH) +
+                          ((post.text || "").length > EXTRACT_TOP_POSTS_TEXT_PREVIEW_LENGTH || post.isTextTruncated
+                            ? "…"
+                            : "");
+                        return (
+                          <li
+                            key={post.postId || index}
+                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1"
+                          >
+                            <div className="text-zinc-200">
+                              {post.authorName || "(名前不明)"}
+                              <span className="text-zinc-500 ml-1">@{post.authorHandle || "(不明)"}</span>
+                            </div>
+                            <div className="text-zinc-300 whitespace-pre-wrap break-words">
+                              {textPreview || "(本文なし)"}
+                              {post.isTextTruncated && (
+                                <span className="ml-2 text-amber-400/80">（省略あり）</span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-500">
+                              <span>返信 {formatCount(post.replies)}</span>
+                              <span>リポスト {formatCount(post.reposts)}</span>
+                              <span>いいね {formatCount(post.likes)}</span>
+                              <span>ブックマーク {formatCount(post.bookmarks)}</span>
+                              <span>表示 {formatCount(post.views)}</span>
+                              <span>投稿日時: {formatDateTimeJST(post.postedAtRaw)}</span>
+                            </div>
+                            <div>
+                              <a
+                                href={post.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sky-400 hover:text-sky-300 break-all"
+                              >
+                                {post.url}
+                              </a>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+
+                  {topPostsResult.posts.length > EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT && !topPostsShowAll && (
+                    <button
+                      type="button"
+                      onClick={() => setTopPostsShowAll(true)}
+                      className="text-xs text-sky-400 hover:text-sky-300 underline"
+                    >
+                      残り{topPostsResult.posts.length - EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT}件を表示
+                    </button>
+                  )}
+
+                  {topPostsResult.skippedCount > 0 && (
+                    <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                      <summary className="cursor-pointer text-zinc-400">
+                        スキップ内容を表示（{topPostsResult.skippedCount}件）
+                      </summary>
+                      <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                        {JSON.stringify(topPostsResult.skipped, null, 2)}
+                      </pre>
+                    </details>
+                  )}
+
+                  <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                    <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
+                    <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                      {JSON.stringify(topPostsResult, null, 2)}
+                    </pre>
+                  </details>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">

@@ -82,6 +82,23 @@ const EXTRACT_POSTS_MAX = 10;
 // controls while any one of them is running.
 let extractPostsProcessing = false;
 
+// Gate 2B-2A: how long to wait for a NEW navigation (triggered by this
+// feature's own chrome.tabs.update/reload call) to reach "complete" on the
+// dedicated tab, before giving up. Separate from CONFIRM_RENDER_TIMEOUT_MS —
+// that one waits for post elements to render *after* the page has loaded;
+// this one waits for the page load itself.
+const TOP_SEARCH_NAVIGATION_TIMEOUT_MS = 15000;
+
+// Gate 2B-2A: fixed, not user-configurable, same discipline as
+// EXTRACT_POSTS_MAX.
+const EXTRACT_TOP_POSTS_MAX = 10;
+
+// Gate 2B-2A's own processing flag — separate from openSearchTabProcessing,
+// confirmRenderProcessing, and extractPostsProcessing so none of the four
+// block each other's own re-entrancy check. TabResearch.tsx additionally
+// disables all four UI controls while any one of them is running.
+let extractTopPostsProcessing = false;
+
 function safeRequestId(message) {
   return message && typeof message === "object" && typeof message.requestId === "string"
     ? message.requestId
@@ -130,6 +147,19 @@ function buildSearchUrl(query) {
   params.set("q", query);
   params.set("src", "typed_query");
   params.set("f", "live");
+  return `https://x.com/search?${params.toString()}`;
+}
+
+// Gate 2B-2A: builds the "話題"(Top) search URL for an already-validated
+// query. Deliberately a separate function from buildSearchUrl (Gate 2A-1's
+// "最新"/Latest URL) rather than a shared helper — buildSearchUrl stays
+// untouched. Same discipline: only the query text is caller-supplied, never
+// a domain/path/extra parameter, and f is never set (X treats the absence
+// of f as the Top tab).
+function buildTopSearchUrl(query) {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  params.set("src", "typed_query");
   return `https://x.com/search?${params.toString()}`;
 }
 
@@ -400,12 +430,13 @@ async function handleConfirmRender(requestId, sendResponse) {
   );
 }
 
-// Gate 2B-1's own URL gate, checked immediately before extraction (not at
-// tab-open time). Deliberately does not require tab.status === "complete",
-// a `q` param, or `f=live` — the render-confirmation wait below already
-// covers a still-loading page, and a missing q/f=live is not a safety
-// concern (Gate 2A-1 normally sets both anyway, but Gate 2B-1 does not add
-// extra warning UI for their absence).
+// Shared "is this at least some x.com/search page" gate. Deliberately does
+// not require tab.status === "complete", a `q` param, or `f=live` — used by
+// Gate 2B-2A's pre-navigation check (any dedicated-tab search page is a
+// legitimate starting point to then navigate away from) and, until this
+// gate was found to also let a Top/話題 page slip through, by Gate 2B-1.
+// Gate 2B-1 now uses the stricter isValidLatestSearchTabUrl below instead —
+// this function itself is unchanged and still backs Gate 2B-2A.
 function isValidDedicatedTabUrl(rawUrl) {
   if (typeof rawUrl !== "string") return false;
   let parsed;
@@ -415,6 +446,122 @@ function isValidDedicatedTabUrl(rawUrl) {
     return false;
   }
   return parsed.protocol === "https:" && parsed.hostname === "x.com" && parsed.pathname === "/search";
+}
+
+// Gate 2B-1's own final gate, checked immediately before extraction (not at
+// tab-open time). Confirms the dedicated tab is specifically showing
+// "最新"(Latest) search results — not just any x.com/search page, and not a
+// "話題"(Top) page left behind by Gate 2B-2A. A page with no `f` param (or
+// f=top, or any other non-"live" value) passes isValidDedicatedTabUrl's
+// looser check but must NOT be extracted here as if it were Latest. `q`
+// must also be non-empty; a bare /search with no query is not a real
+// Latest results page either.
+function isValidLatestSearchTabUrl(rawUrl) {
+  if (typeof rawUrl !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "x.com" || parsed.pathname !== "/search") {
+    return false;
+  }
+  if (!parsed.searchParams.get("q")) return false;
+  if (parsed.searchParams.get("f") !== "live") return false;
+  return true;
+}
+
+// Gate 2B-2A's final gate, checked only after navigation-complete is
+// confirmed. Same protocol/hostname/pathname requirement as
+// isValidDedicatedTabUrl, plus two checks that distinguish "話題"(Top) from
+// "最新"(Latest): the actual `q` (compared decoded, via URLSearchParams —
+// never as raw query-string text) must equal expectedQuery, and `f` must be
+// completely absent. buildTopSearchUrl never sets `f` at all, so any `f`
+// present — "live", empty, or any other value — means this is not the URL
+// this feature itself would have produced, and is rejected rather than
+// pattern-matched against just the "live" value. Other params (src, etc.)
+// are not checked.
+function isValidTopSearchTabUrl(rawUrl, expectedQuery) {
+  if (typeof rawUrl !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "x.com" || parsed.pathname !== "/search") {
+    return false;
+  }
+  if (parsed.searchParams.get("q") !== expectedQuery) return false;
+  if (parsed.searchParams.has("f")) return false;
+  return true;
+}
+
+// Gate 2B-2A: registers chrome.tabs.onUpdated/onRemoved listeners BEFORE
+// calling the caller-supplied startNavigation (which is expected to call
+// chrome.tabs.update or chrome.tabs.reload) — this ordering is required so
+// an immediate "loading" or "complete" event fired right after the
+// navigation call can never be missed. Resolves once a NEW navigation (not
+// a pre-existing "already complete" state — navigationStarted must first be
+// set by a "loading" status or a url change on this tabId) reaches
+// "complete", the tab is removed, or timeoutMs elapses, whichever comes
+// first. Always cleans up its own listeners and timer via the single
+// finish() path, on every resolution branch. Events for any other tabId are
+// ignored.
+function waitForTopSearchNavigation(tabId, timeoutMs, startNavigation) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let navigationStarted = false;
+    let timer = null;
+
+    function cleanup() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+    }
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    }
+
+    function onUpdated(updatedTabId, changeInfo) {
+      if (updatedTabId !== tabId) return;
+      if (!navigationStarted && (changeInfo.status === "loading" || typeof changeInfo.url === "string")) {
+        navigationStarted = true;
+      }
+      if (navigationStarted && changeInfo.status === "complete") {
+        finish({ status: "complete" });
+      }
+    }
+
+    function onRemoved(removedTabId) {
+      if (removedTabId !== tabId) return;
+      finish({ status: "tab_removed" });
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
+
+    timer = setTimeout(() => {
+      finish({ status: "timeout" });
+    }, timeoutMs);
+
+    Promise.resolve()
+      .then(startNavigation)
+      .catch((e) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(e);
+      });
+  });
 }
 
 // Gate 2B-1: confirms render (reusing Gate 2A-2's confirmXPostRenderInjected
@@ -454,8 +601,12 @@ async function handleExtractPosts(requestId, sendResponse) {
     return;
   }
 
-  if (!isValidDedicatedTabUrl(existingTab.url)) {
-    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブがXの検索結果ページではありません");
+  if (!isValidLatestSearchTabUrl(existingTab.url)) {
+    // Covers both "not a search page at all" and "a 話題(Top) page left
+    // behind by Gate 2B-2A (no f=live, even though it still passes the
+    // looser isValidDedicatedTabUrl check)" — either way, this is never
+    // extracted here as if it were Latest.
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブが『最新』検索ページではありません");
     return;
   }
 
@@ -550,6 +701,207 @@ async function handleExtractPosts(requestId, sendResponse) {
   });
 }
 
+// Gate 2B-2A: navigates the same dedicated tab (Gate 2A-1's tabId only — no
+// new tab, no chrome.tabs.query) to the "話題"(Top) search results for the
+// given, already-validated-by-the-caller query, waits for that navigation
+// to actually complete (never just chrome.tabs.update's own promise —
+// see waitForTopSearchNavigation), re-validates the final URL (host/path/q/
+// f), and only then reuses confirmXPostRenderInjected (Gate 2A-2) and
+// extractXPostsCore (extractor-core.js) exactly like Gate 2B-1 does. Never
+// scrolls, clicks, expands "show more", reads cookies/localStorage, or
+// calls any note-writer API/DB. Never performs duplicate-detection against
+// Gate 2B-1's "最新" results — that stays Gate 2B-2B's job.
+async function handleExtractTopPosts(message, requestId, sendResponse) {
+  const validated = validateQuery(message.query);
+  if (!validated.ok) {
+    respondError(sendResponse, requestId, validated.errorCode, validated.message);
+    return;
+  }
+  const expectedQuery = validated.value;
+
+  let storedTabId;
+  try {
+    storedTabId = await getStoredTabId();
+  } catch (e) {
+    console.debug("[x-research] extractTopPosts: getStoredTabId failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "話題投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (storedTabId === null) {
+    respondError(sendResponse, requestId, "NO_DEDICATED_TAB", "先にX検索タブを開いてください");
+    return;
+  }
+
+  let existingTab = null;
+  try {
+    existingTab = await chrome.tabs.get(storedTabId);
+  } catch {
+    existingTab = null;
+  }
+
+  if (!existingTab) {
+    // Self-heals the same way Gate 2A-1/2A-2/2B-1 do: invalidate the stale
+    // id and let the next "open search tab" request create a fresh one.
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  if (!isValidDedicatedTabUrl(existingTab.url)) {
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブを話題検索ページとして確認できませんでした");
+    return;
+  }
+
+  const topSearchUrl = buildTopSearchUrl(expectedQuery);
+  // If the tab is already showing this exact query's Top results, a plain
+  // chrome.tabs.update to the same URL may not fire a new navigation at
+  // all — chrome.tabs.reload is used instead to force one. Otherwise,
+  // update to the target URL as usual.
+  const alreadyOnTargetTopSearch = isValidTopSearchTabUrl(existingTab.url, expectedQuery);
+
+  let navigationResult;
+  try {
+    navigationResult = await waitForTopSearchNavigation(storedTabId, TOP_SEARCH_NAVIGATION_TIMEOUT_MS, async () => {
+      if (alreadyOnTargetTopSearch) {
+        await chrome.tabs.reload(storedTabId);
+      } else {
+        await chrome.tabs.update(storedTabId, { url: topSearchUrl, active: false });
+      }
+    });
+  } catch (e) {
+    console.debug("[x-research] extractTopPosts: navigation trigger failed", e);
+    respondError(sendResponse, requestId, "TAB_NAVIGATION_FAILED", "話題検索ページへの移動を完了できませんでした");
+    return;
+  }
+
+  if (navigationResult.status === "tab_removed") {
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  if (navigationResult.status !== "complete") {
+    // Covers the timeout case. Deliberately a distinct error code from
+    // SCRIPT_INJECTION_FAILED — a failed/incomplete navigation is a
+    // different failure than a script-injection failure.
+    respondError(sendResponse, requestId, "TAB_NAVIGATION_FAILED", "話題検索ページへの移動を完了できませんでした");
+    return;
+  }
+
+  let finalTab = null;
+  try {
+    finalTab = await chrome.tabs.get(storedTabId);
+  } catch {
+    finalTab = null;
+  }
+
+  if (!finalTab) {
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  // Final gate: host/path/q/f re-checked against the actual post-navigation
+  // URL, not assumed from topSearchUrl. An f=live URL here means the tab is
+  // still (or again) showing Latest — never treated as Top.
+  if (!isValidTopSearchTabUrl(finalTab.url, expectedQuery)) {
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブを話題検索ページとして確認できませんでした");
+    return;
+  }
+
+  // Captured once, right after the final URL gate passed — this is "the URL
+  // that was actually validated and extracted from".
+  const sourceUrl = finalTab.url;
+
+  let renderResults;
+  try {
+    renderResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: confirmXPostRenderInjected,
+      args: [CONFIRM_RENDER_TIMEOUT_MS],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractTopPosts: render confirmation executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "話題投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  const renderResult = renderResults && renderResults[0] ? renderResults[0].result : undefined;
+  const renderResultLooksValid =
+    renderResult &&
+    typeof renderResult === "object" &&
+    (renderResult.status === "render_confirmed" || renderResult.status === "render_not_confirmed") &&
+    typeof renderResult.detectedCount === "number" &&
+    Number.isInteger(renderResult.detectedCount) &&
+    renderResult.detectedCount >= 0;
+
+  if (!renderResultLooksValid) {
+    // An empty/malformed result is never interpreted as "0 posts" — it is
+    // reported as an injection failure, not a render result.
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "話題投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (!(renderResult.status === "render_confirmed" && renderResult.detectedCount > 0)) {
+    // Deliberately not distinguished from "0 real results", "still loading",
+    // "not logged in", or an X-side error page — same as Gate 2A-2/2B-1.
+    respondError(
+      sendResponse,
+      requestId,
+      "RENDER_NOT_CONFIRMED",
+      "投稿の表示を確認できませんでした",
+      "render_not_confirmed"
+    );
+    return;
+  }
+
+  let extractionResults;
+  try {
+    extractionResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: extractXPostsCore,
+      args: [EXTRACT_TOP_POSTS_MAX],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractTopPosts: extraction executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "話題投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  const extractionResult = extractionResults && extractionResults[0] ? extractionResults[0].result : undefined;
+  const extractionResultLooksValid =
+    extractionResult &&
+    typeof extractionResult === "object" &&
+    Array.isArray(extractionResult.results) &&
+    Array.isArray(extractionResult.skipped);
+
+  if (!extractionResultLooksValid) {
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "話題投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  // Defensive cap — extractXPostsCore already slices to EXTRACT_TOP_POSTS_MAX
+  // internally, but this response never trusts the injected result's shape
+  // beyond what was validated above.
+  const posts = extractionResult.results.slice(0, EXTRACT_TOP_POSTS_MAX);
+  const skipped = extractionResult.skipped;
+
+  sendResponse({
+    ok: true,
+    requestId,
+    status: "top_posts_extracted",
+    query: expectedQuery,
+    sourceUrl,
+    extractedAt: new Date().toISOString(),
+    requestedMaxPosts: EXTRACT_TOP_POSTS_MAX,
+    extractedCount: posts.length,
+    skippedCount: skipped.length,
+    posts,
+    skipped,
+  });
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   // Shared checks for every message type (unchanged logic from Gate 1).
   if (!sender || typeof sender.url !== "string" || sender.url.length === 0) {
@@ -628,6 +980,19 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       extractPostsProcessing = false;
     });
     return true; // keep the message channel open until handleExtractPosts calls sendResponse
+  }
+
+  // Gate 2B-2A: X_RESEARCH_EXTRACT_TOP_POSTS — asynchronous.
+  if (message.type === "X_RESEARCH_EXTRACT_TOP_POSTS") {
+    if (extractTopPostsProcessing) {
+      respondError(sendResponse, requestId, "ALREADY_PROCESSING", "現在、話題投稿の抽出処理を実行中です");
+      return false;
+    }
+    extractTopPostsProcessing = true;
+    handleExtractTopPosts(message, requestId, sendResponse).finally(() => {
+      extractTopPostsProcessing = false;
+    });
+    return true; // keep the message channel open until handleExtractTopPosts calls sendResponse
   }
 
   respondError(sendResponse, requestId, "UNKNOWN_TYPE", "unknown message type");
