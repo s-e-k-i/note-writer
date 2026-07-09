@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { ResearchPostListItem, ResearchPostImportItem } from "@/lib/types";
 
 interface TabResearchProps {
@@ -402,6 +402,45 @@ function formatBookmarkRate(bookmarks: number | null, views: number | null): str
   return `${((bookmarks / views) * 100).toFixed(2)}%`;
 }
 
+// Gate 2B-2B: 話題のみ一覧・重複一覧で使う、Gate 2B-1/2B-2Aの投稿カードと
+// 同じ表示形式の共通レンダラー（見た目の重複を避けるための最小限の関数化。
+// Gate 2B-1/2B-2A自身の既存カード表示は変更しない）。
+function renderResearchPostCard(post: ResearchPostImportItem, index: number) {
+  const textPreview =
+    (post.text || "").slice(0, EXTRACT_TOP_POSTS_TEXT_PREVIEW_LENGTH) +
+    ((post.text || "").length > EXTRACT_TOP_POSTS_TEXT_PREVIEW_LENGTH || post.isTextTruncated ? "…" : "");
+  return (
+    <li key={post.postId || index} className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+      <div className="text-zinc-200">
+        {post.authorName || "(名前不明)"}
+        <span className="text-zinc-500 ml-1">@{post.authorHandle || "(不明)"}</span>
+      </div>
+      <div className="text-zinc-300 whitespace-pre-wrap break-words">
+        {textPreview || "(本文なし)"}
+        {post.isTextTruncated && <span className="ml-2 text-amber-400/80">（省略あり）</span>}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-500">
+        <span>返信 {formatCount(post.replies)}</span>
+        <span>リポスト {formatCount(post.reposts)}</span>
+        <span>いいね {formatCount(post.likes)}</span>
+        <span>ブックマーク {formatCount(post.bookmarks)}</span>
+        <span>表示 {formatCount(post.views)}</span>
+        <span>投稿日時: {formatDateTimeJST(post.postedAtRaw)}</span>
+      </div>
+      <div>
+        <a
+          href={post.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sky-400 hover:text-sky-300 break-all"
+        >
+          {post.url}
+        </a>
+      </div>
+    </li>
+  );
+}
+
 async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json();
@@ -481,13 +520,36 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
 
   // Gate 2B-2A: 「話題」検索結果からの投稿データ抽出（開発時のみ）。Gate
   // 2A-1/2A-2/2B-1の状態とは独立しているが、UI側では4つの処理中状態を見て
-  // 互いのボタンを無効化する。重複整理用のstate（duplicatePosts等）はGate
-  // 2B-2Bでまだ追加しない。
+  // 互いのボタンを無効化する。
   const [topPostsStatus, setTopPostsStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
   const [topPostsMessage, setTopPostsMessage] = useState<string | null>(null);
   const [topPostsResult, setTopPostsResult] = useState<TopPostsResult | null>(null);
   const [topPostsShowAll, setTopPostsShowAll] = useState(false);
   const topPostsRequestIdRef = useRef<string | null>(null);
+
+  // Gate 2B-2B: 最新（Gate 2B-1）・話題（Gate 2B-2A）一覧の「話題のみ」表示の
+  // 展開状態だけを持つUI用state。比較結果そのもの（duplicates/topOnly）は
+  // stateに保持せず、下のpostComparisonで描画のたびに導出する。
+  const [topOnlyShowAll, setTopOnlyShowAll] = useState(false);
+
+  // Gate 2B-2B: 最新・話題の両方が揃っている場合だけ、postIdの完全一致で比較する。
+  // 新しい通信・Chrome拡張メッセージ・DB保存・API送信・AI評価は行わない。投稿
+  // オブジェクトは既存配列の参照をそのまま使い、ディープコピー・破壊的変更は
+  // しない。片方しか無い場合はnullを返し、呼び出し側で0件と誤表示しない。
+  const postComparison = useMemo(() => {
+    if (!extractPostsResult || !topPostsResult) return null;
+    const latestPosts = extractPostsResult.posts;
+    const topPosts = topPostsResult.posts;
+    const latestPostIdSet = new Set(latestPosts.map((post) => post.postId));
+    const duplicates = topPosts.filter((post) => latestPostIdSet.has(post.postId));
+    const topOnly = topPosts.filter((post) => !latestPostIdSet.has(post.postId));
+    return {
+      latestCount: latestPosts.length,
+      topCount: topPosts.length,
+      duplicates,
+      topOnly,
+    };
+  }, [extractPostsResult, topPostsResult]);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -1728,6 +1790,70 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             </div>
           );
         })()}
+
+      {/* Gate 2B-2B: 開発時のみ表示する最新／話題の重複整理（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：最新と話題の重複整理（Gate 2B-2B）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            Gate 2B-1の最新結果とGate 2B-2Aの話題結果を、postIdの完全一致だけで比較します。API送信・DB保存・AI評価は行いません。
+          </p>
+          {postComparison ? (
+            <div className="text-xs text-zinc-300 space-y-2">
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+                <p>最新投稿：{postComparison.latestCount}件</p>
+                <p>話題投稿：{postComparison.topCount}件</p>
+                <p>重複投稿：{postComparison.duplicates.length}件</p>
+                <p>話題のみ：{postComparison.topOnly.length}件</p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-zinc-400">話題のみにある投稿（{postComparison.topOnly.length}件）</p>
+                {postComparison.topOnly.length === 0 ? (
+                  <p className="text-zinc-500">話題のみにある投稿はありません。</p>
+                ) : (
+                  <>
+                    <ul className="space-y-2">
+                      {(topOnlyShowAll
+                        ? postComparison.topOnly
+                        : postComparison.topOnly.slice(0, EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT)
+                      ).map((post, index) => renderResearchPostCard(post, index))}
+                    </ul>
+                    {postComparison.topOnly.length > EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT && !topOnlyShowAll && (
+                      <button
+                        type="button"
+                        onClick={() => setTopOnlyShowAll(true)}
+                        className="text-xs text-sky-400 hover:text-sky-300 underline"
+                      >
+                        残り{postComparison.topOnly.length - EXTRACT_TOP_POSTS_INITIAL_DISPLAY_COUNT}件を表示
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                <summary className="cursor-pointer text-zinc-400">
+                  最新と話題の重複投稿（{postComparison.duplicates.length}件）
+                </summary>
+                {postComparison.duplicates.length === 0 ? (
+                  <p className="mt-2 text-zinc-500">重複投稿はありません。</p>
+                ) : (
+                  <ul className="mt-2 space-y-2">
+                    {postComparison.duplicates.map((post, index) => renderResearchPostCard(post, index))}
+                  </ul>
+                )}
+              </details>
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500">
+              まだ比較できません。最新投稿と話題投稿の両方を抽出すると、ここに重複整理結果が表示されます。
+            </p>
+          )}
+        </div>
+      )}
 
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">
