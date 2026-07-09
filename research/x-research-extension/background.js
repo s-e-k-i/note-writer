@@ -99,6 +99,47 @@ const EXTRACT_TOP_POSTS_MAX = 10;
 // disables all four UI controls while any one of them is running.
 let extractTopPostsProcessing = false;
 
+// Gate 3A's own input cap for the account username — the real X technical
+// constraint (1-15 chars, letters/digits/underscore only), unlike
+// MAX_X_RESEARCH_QUERY_LENGTH above which is just this feature's own
+// arbitrary boundary for search queries.
+const MAX_PROFILE_USERNAME_LENGTH = 15;
+
+// X's own reserved top-level paths — none of these can ever be a real
+// username, so a URL matching one of these as its single path segment is
+// never treated as "the requested account's profile", however innocuous the
+// segment looks on its own (e.g. "home" passes the character-class check).
+const RESERVED_PROFILE_PATHS = new Set([
+  "home",
+  "search",
+  "explore",
+  "notifications",
+  "messages",
+  "settings",
+  "i",
+  "intent",
+  "compose",
+  "bookmarks",
+  "lists",
+  "communities",
+  "jobs",
+  "premium",
+  "hashtag",
+  "login",
+  "logout",
+  "signup",
+]);
+
+// Gate 2B-3A: fixed, not user-configurable, same discipline as
+// EXTRACT_POSTS_MAX/EXTRACT_TOP_POSTS_MAX.
+const EXTRACT_ACCOUNT_POSTS_MAX = 10;
+
+// Gate 2B-3A's own processing flag — separate from the other four so none
+// of the five block each other's own re-entrancy check. TabResearch.tsx
+// additionally disables all five UI controls while any one of them is
+// running.
+let extractAccountPostsProcessing = false;
+
 function safeRequestId(message) {
   return message && typeof message === "object" && typeof message.requestId === "string"
     ? message.requestId
@@ -140,6 +181,48 @@ function validateQuery(rawQuery) {
   return { ok: true, value: trimmed };
 }
 
+// Gate 2B-3A: trim + strip at most one leading "@" + lowercase. Does not
+// validate character set or length — validateProfileUsername does that on
+// the result of this function. Mirrors the existing normalization already
+// used by app/api/brightdata/accounts/route.ts (a separate, unrelated
+// feature) for consistency, but this file does not call that endpoint or
+// share its storage.
+function normalizeProfileUsername(rawUsername) {
+  const trimmed = rawUsername.trim();
+  const withoutAt = trimmed.startsWith("@") ? trimmed.slice(1) : trimmed;
+  return withoutAt.toLowerCase();
+}
+
+// Gate 2B-3A: background.js's own re-validation of the username — never
+// trusts TabResearch.tsx's own input check. Rejects empty, over-length (X's
+// real 15-character limit, not an arbitrary local cap), disallowed
+// characters, and X's reserved top-level paths (which could never be a real
+// username, but would otherwise pass the character-class check — e.g.
+// "home").
+function validateProfileUsername(rawUsername) {
+  if (typeof rawUsername !== "string") {
+    return { ok: false, errorCode: "INVALID_USERNAME", message: "ユーザー名が不正です" };
+  }
+  const normalized = normalizeProfileUsername(rawUsername);
+  if (normalized.length === 0) {
+    return { ok: false, errorCode: "EMPTY_USERNAME", message: "ユーザー名を入力してください" };
+  }
+  if (normalized.length > MAX_PROFILE_USERNAME_LENGTH) {
+    return {
+      ok: false,
+      errorCode: "USERNAME_TOO_LONG",
+      message: `ユーザー名は${MAX_PROFILE_USERNAME_LENGTH}文字以内で入力してください`,
+    };
+  }
+  if (!/^[A-Za-z0-9_]+$/.test(normalized)) {
+    return { ok: false, errorCode: "INVALID_USERNAME", message: "ユーザー名に使用できない文字が含まれています" };
+  }
+  if (RESERVED_PROFILE_PATHS.has(normalized)) {
+    return { ok: false, errorCode: "INVALID_USERNAME", message: "そのユーザー名は指定できません" };
+  }
+  return { ok: true, value: normalized };
+}
+
 // Fixed base URL + fixed parameter set only. The caller (note-writer) never
 // supplies a domain, path, or extra parameters — only the query text.
 function buildSearchUrl(query) {
@@ -161,6 +244,15 @@ function buildTopSearchUrl(query) {
   params.set("q", query);
   params.set("src", "typed_query");
   return `https://x.com/search?${params.toString()}`;
+}
+
+// Gate 2B-3A: builds the profile URL for an already-validated username
+// (validateProfileUsername's output only — never a raw, unvalidated
+// string). No query string, no hash, no URLSearchParams needed. Always
+// x.com, never twitter.com/www.x.com, matching buildSearchUrl/
+// buildTopSearchUrl's discipline.
+function buildProfileUrl(username) {
+  return `https://x.com/${username}`;
 }
 
 // Returns the stored dedicated tab id if it is a valid integer, or null
@@ -498,18 +590,67 @@ function isValidTopSearchTabUrl(rawUrl, expectedQuery) {
   return true;
 }
 
-// Gate 2B-2A: registers chrome.tabs.onUpdated/onRemoved listeners BEFORE
-// calling the caller-supplied startNavigation (which is expected to call
-// chrome.tabs.update or chrome.tabs.reload) — this ordering is required so
-// an immediate "loading" or "complete" event fired right after the
-// navigation call can never be missed. Resolves once a NEW navigation (not
-// a pre-existing "already complete" state — navigationStarted must first be
-// set by a "loading" status or a url change on this tabId) reaches
+// Gate 2B-3A's own pre-navigation gate. Deliberately looser than
+// isValidDedicatedTabUrl — that function requires pathname === "/search",
+// which would incorrectly reject the dedicated tab whenever it's already
+// sitting on a profile page from a previous Gate 2B-3A run (or on any other
+// x.com page). The only property that actually matters before navigating
+// this tab elsewhere is that it is still an x.com tab — pathname is
+// intentionally unconstrained here. isValidDedicatedTabUrl itself is
+// unchanged and still backs Gate 2B-2A's own pre-navigation check, since
+// Gate 2B-2A's actual precondition (the tab was just left on /search by
+// Gate 2B-1) is genuinely narrower.
+function isValidXTabUrl(rawUrl) {
+  if (typeof rawUrl !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === "https:" && parsed.hostname === "x.com";
+}
+
+// Gate 2B-3A's final gate, checked only after navigation-complete is
+// confirmed. Matching the expected username directly (rather than
+// enumerating "is this NOT a reserved path") mirrors isValidTopSearchTabUrl's
+// `q` comparison — but reserved paths (e.g. "home") also happen to satisfy
+// the same character class as a real username, so unlike `q`, an explicit
+// reserved-path rejection is still needed here as a second, independent
+// gate: a URL is only accepted if the single path segment matches the
+// expected username AND is not itself a reserved path (defense in depth,
+// even though a correctly-normalized expectedUsername can never itself be a
+// reserved path — see validateProfileUsername).
+function isValidProfileTabUrl(rawUrl, expectedUsername) {
+  if (typeof rawUrl !== "string") return false;
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "https:" || parsed.hostname !== "x.com") return false;
+  const match = parsed.pathname.match(/^\/([A-Za-z0-9_]{1,15})$/);
+  if (!match) return false;
+  const segment = match[1].toLowerCase();
+  if (RESERVED_PROFILE_PATHS.has(segment)) return false;
+  return segment === expectedUsername.toLowerCase();
+}
+
+// Shared by Gate 2B-2A and Gate 2B-3A (and any future Gate that navigates
+// the dedicated tab): registers chrome.tabs.onUpdated/onRemoved listeners
+// BEFORE calling the caller-supplied startNavigation (which is expected to
+// call chrome.tabs.update or chrome.tabs.reload) — this ordering is
+// required so an immediate "loading" or "complete" event fired right after
+// the navigation call can never be missed. Resolves once a NEW navigation
+// (not a pre-existing "already complete" state — navigationStarted must
+// first be set by a "loading" status or a url change on this tabId) reaches
 // "complete", the tab is removed, or timeoutMs elapses, whichever comes
 // first. Always cleans up its own listeners and timer via the single
 // finish() path, on every resolution branch. Events for any other tabId are
-// ignored.
-function waitForTopSearchNavigation(tabId, timeoutMs, startNavigation) {
+// ignored. Contains no search- or profile-specific logic — it only knows
+// about tabId/timeoutMs/startNavigation.
+function waitForTabNavigation(tabId, timeoutMs, startNavigation) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let navigationStarted = false;
@@ -705,7 +846,7 @@ async function handleExtractPosts(requestId, sendResponse) {
 // new tab, no chrome.tabs.query) to the "話題"(Top) search results for the
 // given, already-validated-by-the-caller query, waits for that navigation
 // to actually complete (never just chrome.tabs.update's own promise —
-// see waitForTopSearchNavigation), re-validates the final URL (host/path/q/
+// see waitForTabNavigation), re-validates the final URL (host/path/q/
 // f), and only then reuses confirmXPostRenderInjected (Gate 2A-2) and
 // extractXPostsCore (extractor-core.js) exactly like Gate 2B-1 does. Never
 // scrolls, clicks, expands "show more", reads cookies/localStorage, or
@@ -762,7 +903,7 @@ async function handleExtractTopPosts(message, requestId, sendResponse) {
 
   let navigationResult;
   try {
-    navigationResult = await waitForTopSearchNavigation(storedTabId, TOP_SEARCH_NAVIGATION_TIMEOUT_MS, async () => {
+    navigationResult = await waitForTabNavigation(storedTabId, TOP_SEARCH_NAVIGATION_TIMEOUT_MS, async () => {
       if (alreadyOnTargetTopSearch) {
         await chrome.tabs.reload(storedTabId);
       } else {
@@ -902,6 +1043,214 @@ async function handleExtractTopPosts(message, requestId, sendResponse) {
   });
 }
 
+// Gate 2B-3A: navigates the same dedicated tab (Gate 2A-1's tabId only — no
+// new tab, no chrome.tabs.query) to the given, already-revalidated-here
+// account's profile page, waits for that navigation to actually complete
+// (waitForTabNavigation, shared with Gate 2B-2A), re-validates the final
+// URL (host/path/username), and only then reuses confirmXPostRenderInjected
+// (Gate 2A-2) and extractXPostsCore (extractor-core.js) exactly like Gate
+// 2B-1/2B-2A do. Never scrolls, clicks, expands "show more", switches to
+// the replies/media tab, reads cookies/localStorage, or calls any
+// note-writer API/DB. Never excludes reposts/replies/quotes/pinned posts —
+// that stays a later Gate's job (see the completion report's note on
+// authorHandle not always matching the requested account for reposts).
+async function handleExtractAccountPosts(message, requestId, sendResponse) {
+  const validated = validateProfileUsername(message.username);
+  if (!validated.ok) {
+    respondError(sendResponse, requestId, validated.errorCode, validated.message);
+    return;
+  }
+  const expectedUsername = validated.value;
+
+  let storedTabId;
+  try {
+    storedTabId = await getStoredTabId();
+  } catch (e) {
+    console.debug("[x-research] extractAccountPosts: getStoredTabId failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "アカウント投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (storedTabId === null) {
+    respondError(sendResponse, requestId, "NO_DEDICATED_TAB", "先にX検索タブを開いてください");
+    return;
+  }
+
+  let existingTab = null;
+  try {
+    existingTab = await chrome.tabs.get(storedTabId);
+  } catch {
+    existingTab = null;
+  }
+
+  if (!existingTab) {
+    // Self-heals the same way Gate 2A-1/2A-2/2B-1/2B-2A do: invalidate the
+    // stale id and let the next "open search tab" request create a fresh
+    // one.
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  if (!isValidXTabUrl(existingTab.url)) {
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブがXの画面ではありません");
+    return;
+  }
+
+  const profileUrl = buildProfileUrl(expectedUsername);
+  // If the tab is already showing this exact account's profile, a plain
+  // chrome.tabs.update to the same URL may not fire a new navigation at
+  // all — chrome.tabs.reload is used instead to force one. Otherwise,
+  // update to the target URL as usual.
+  const alreadyOnTargetProfile = isValidProfileTabUrl(existingTab.url, expectedUsername);
+
+  let navigationResult;
+  try {
+    navigationResult = await waitForTabNavigation(storedTabId, TOP_SEARCH_NAVIGATION_TIMEOUT_MS, async () => {
+      if (alreadyOnTargetProfile) {
+        await chrome.tabs.reload(storedTabId);
+      } else {
+        await chrome.tabs.update(storedTabId, { url: profileUrl, active: false });
+      }
+    });
+  } catch (e) {
+    console.debug("[x-research] extractAccountPosts: navigation trigger failed", e);
+    respondError(sendResponse, requestId, "TAB_NAVIGATION_FAILED", "プロフィールページへの移動を完了できませんでした");
+    return;
+  }
+
+  if (navigationResult.status === "tab_removed") {
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  if (navigationResult.status !== "complete") {
+    // Covers the timeout case. Deliberately a distinct error code from
+    // SCRIPT_INJECTION_FAILED — a failed/incomplete navigation is a
+    // different failure than a script-injection failure.
+    respondError(sendResponse, requestId, "TAB_NAVIGATION_FAILED", "プロフィールページへの移動を完了できませんでした");
+    return;
+  }
+
+  let finalTab = null;
+  try {
+    finalTab = await chrome.tabs.get(storedTabId);
+  } catch {
+    finalTab = null;
+  }
+
+  if (!finalTab) {
+    await clearStoredTabId();
+    respondError(sendResponse, requestId, "TAB_NOT_FOUND", "専用タブが見つかりません");
+    return;
+  }
+
+  // Final gate: host/path/username re-checked against the actual
+  // post-navigation URL, not assumed from profileUrl. Account-not-found,
+  // suspended, or protected-account pages are not distinguished here (or by
+  // the render-confirmation step below) from "still loading" or "logged
+  // out" — all of those fall through to RENDER_NOT_CONFIRMED, same as Gate
+  // 2A-2/2B-1/2B-2A.
+  if (!isValidProfileTabUrl(finalTab.url, expectedUsername)) {
+    respondError(sendResponse, requestId, "INVALID_TAB_URL", "専用タブを対象アカウントのプロフィールページとして確認できませんでした");
+    return;
+  }
+
+  // Captured once, right after the final URL gate passed — this is "the URL
+  // that was actually validated and extracted from".
+  const sourceUrl = finalTab.url;
+
+  let renderResults;
+  try {
+    renderResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: confirmXPostRenderInjected,
+      args: [CONFIRM_RENDER_TIMEOUT_MS],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractAccountPosts: render confirmation executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "アカウント投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  const renderResult = renderResults && renderResults[0] ? renderResults[0].result : undefined;
+  const renderResultLooksValid =
+    renderResult &&
+    typeof renderResult === "object" &&
+    (renderResult.status === "render_confirmed" || renderResult.status === "render_not_confirmed") &&
+    typeof renderResult.detectedCount === "number" &&
+    Number.isInteger(renderResult.detectedCount) &&
+    renderResult.detectedCount >= 0;
+
+  if (!renderResultLooksValid) {
+    // An empty/malformed result is never interpreted as "0 posts" — it is
+    // reported as an injection failure, not a render result.
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "アカウント投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  if (!(renderResult.status === "render_confirmed" && renderResult.detectedCount > 0)) {
+    // Deliberately not distinguished from "0 real posts", "still loading",
+    // "not logged in", "account doesn't exist/suspended/protected", or an
+    // X-side error page — same non-committal treatment as Gate 2A-2/2B-1/
+    // 2B-2A.
+    respondError(
+      sendResponse,
+      requestId,
+      "RENDER_NOT_CONFIRMED",
+      "投稿の表示を確認できませんでした",
+      "render_not_confirmed"
+    );
+    return;
+  }
+
+  let extractionResults;
+  try {
+    extractionResults = await chrome.scripting.executeScript({
+      target: { tabId: storedTabId, frameIds: [0] }, // main frame only
+      func: extractXPostsCore,
+      args: [EXTRACT_ACCOUNT_POSTS_MAX],
+    });
+  } catch (e) {
+    console.debug("[x-research] extractAccountPosts: extraction executeScript failed", e);
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "アカウント投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  const extractionResult = extractionResults && extractionResults[0] ? extractionResults[0].result : undefined;
+  const extractionResultLooksValid =
+    extractionResult &&
+    typeof extractionResult === "object" &&
+    Array.isArray(extractionResult.results) &&
+    Array.isArray(extractionResult.skipped);
+
+  if (!extractionResultLooksValid) {
+    respondError(sendResponse, requestId, "SCRIPT_INJECTION_FAILED", "アカウント投稿の抽出処理を実行できませんでした");
+    return;
+  }
+
+  // Defensive cap — extractXPostsCore already slices to
+  // EXTRACT_ACCOUNT_POSTS_MAX internally, but this response never trusts the
+  // injected result's shape beyond what was validated above.
+  const posts = extractionResult.results.slice(0, EXTRACT_ACCOUNT_POSTS_MAX);
+  const skipped = extractionResult.skipped;
+
+  sendResponse({
+    ok: true,
+    requestId,
+    status: "account_posts_extracted",
+    username: expectedUsername,
+    sourceUrl,
+    extractedAt: new Date().toISOString(),
+    requestedMaxPosts: EXTRACT_ACCOUNT_POSTS_MAX,
+    extractedCount: posts.length,
+    skippedCount: skipped.length,
+    posts,
+    skipped,
+  });
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   // Shared checks for every message type (unchanged logic from Gate 1).
   if (!sender || typeof sender.url !== "string" || sender.url.length === 0) {
@@ -993,6 +1342,19 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       extractTopPostsProcessing = false;
     });
     return true; // keep the message channel open until handleExtractTopPosts calls sendResponse
+  }
+
+  // Gate 2B-3A: X_RESEARCH_EXTRACT_ACCOUNT_POSTS — asynchronous.
+  if (message.type === "X_RESEARCH_EXTRACT_ACCOUNT_POSTS") {
+    if (extractAccountPostsProcessing) {
+      respondError(sendResponse, requestId, "ALREADY_PROCESSING", "現在、アカウント投稿の抽出処理を実行中です");
+      return false;
+    }
+    extractAccountPostsProcessing = true;
+    handleExtractAccountPosts(message, requestId, sendResponse).finally(() => {
+      extractAccountPostsProcessing = false;
+    });
+    return true; // keep the message channel open until handleExtractAccountPosts calls sendResponse
   }
 
   respondError(sendResponse, requestId, "UNKNOWN_TYPE", "unknown message type");

@@ -306,6 +306,88 @@ function deriveTopSearchQuery(sourceUrl: string | undefined): string | null {
   return q;
 }
 
+// ── Gate 2B-3A: 注目アカウントのプロフィールからの投稿データ抽出（開発時のみ表示） ──
+// 遷移待機（最大15秒）＋描画確認（最大15秒）＋抽出処理が直列に発生するため、
+// Gate 2B-2Aと同じ40秒の安全タイムアウトを設ける。
+const EXTRACT_ACCOUNT_POSTS_TIMEOUT_MS = 40000;
+const EXTRACT_ACCOUNT_POSTS_INITIAL_DISPLAY_COUNT = 3;
+
+interface XResearchExtractAccountPostsResponse {
+  ok: boolean;
+  requestId?: string;
+  status?: string;
+  username?: string;
+  sourceUrl?: string;
+  extractedAt?: string;
+  requestedMaxPosts?: number;
+  extractedCount?: number;
+  skippedCount?: number;
+  posts?: unknown[];
+  skipped?: unknown[];
+  errorCode?: string;
+  message?: string;
+  error?: string;
+}
+
+// 拡張機能からの応答を無条件に信用せず、実行時に構造を検証する。posts/skipped
+// の各要素までは深く検証しない（Gate 2B-1/2B-2Aの応答検証と同じ扱い）。
+function isXResearchExtractAccountPostsResponse(value: unknown): value is XResearchExtractAccountPostsResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.ok !== "boolean") return false;
+  if (v.requestId !== undefined && typeof v.requestId !== "string") return false;
+  if (v.status !== undefined && typeof v.status !== "string") return false;
+  if (v.username !== undefined && typeof v.username !== "string") return false;
+  if (v.sourceUrl !== undefined && typeof v.sourceUrl !== "string") return false;
+  if (v.extractedAt !== undefined && typeof v.extractedAt !== "string") return false;
+  if (v.requestedMaxPosts !== undefined && typeof v.requestedMaxPosts !== "number") return false;
+  if (v.extractedCount !== undefined && typeof v.extractedCount !== "number") return false;
+  if (v.skippedCount !== undefined && typeof v.skippedCount !== "number") return false;
+  if (v.posts !== undefined && !Array.isArray(v.posts)) return false;
+  if (v.skipped !== undefined && !Array.isArray(v.skipped)) return false;
+  if (v.errorCode !== undefined && typeof v.errorCode !== "string") return false;
+  if (v.message !== undefined && typeof v.message !== "string") return false;
+  if (v.error !== undefined && typeof v.error !== "string") return false;
+  return true;
+}
+
+interface AccountPostsResult {
+  username: string;
+  sourceUrl: string;
+  extractedAt: string;
+  requestedMaxPosts: number;
+  extractedCount: number;
+  skippedCount: number;
+  posts: ResearchPostImportItem[];
+  skipped: unknown[];
+}
+
+function mapExtractAccountPostsErrorMessage(errorCode: string | undefined, fallback: string): string {
+  switch (errorCode) {
+    case "NO_DEDICATED_TAB":
+      return "先に「X検索タブを開く」を実行してください。";
+    case "TAB_NOT_FOUND":
+      return "専用タブが見つかりません。もう一度「X検索タブを開く」を実行してください。";
+    case "INVALID_TAB_URL":
+      return "専用タブを対象アカウントのプロフィールページとして確認できませんでした。もう一度「X検索タブを開く」からやり直してください。";
+    case "EMPTY_USERNAME":
+    case "INVALID_USERNAME":
+      return "ユーザー名を確認できませんでした。入力内容を見直してください。";
+    case "USERNAME_TOO_LONG":
+      return "ユーザー名が長すぎます。15文字以内で入力してください。";
+    case "TAB_NAVIGATION_FAILED":
+      return "プロフィールページへの移動を完了できませんでした。Xの表示状態を確認して、もう一度お試しください。";
+    case "RENDER_NOT_CONFIRMED":
+      return "15秒以内に投稿の表示を確認できませんでした。投稿0件、描画遅延、未ログイン、アカウントが存在しない、保護/凍結アカウント等の可能性があります。";
+    case "SCRIPT_INJECTION_FAILED":
+      return "アカウント投稿の抽出処理を実行できませんでした。拡張機能を再読み込みして、もう一度お試しください。";
+    case "ALREADY_PROCESSING":
+      return "現在処理中です。完了後にもう一度お試しください。";
+    default:
+      return fallback;
+  }
+}
+
 interface ImportResult {
   totalInput: number;
   newPosts: number;
@@ -550,6 +632,17 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
       topOnly,
     };
   }, [extractPostsResult, topPostsResult]);
+
+  // Gate 2B-3A: 注目アカウント（1件）のプロフィールからの投稿データ抽出
+  // （開発時のみ）。Gate 2A-1/2A-2/2B-1/2B-2Aの状態とは独立しているが、UI側
+  // では5つの処理中状態を見て互いのボタンを無効化する。最新・話題・比較結果
+  // とは別のデータであり、それらを消す・消される関係にはない。
+  const [accountUsernameInput, setAccountUsernameInput] = useState("");
+  const [accountPostsStatus, setAccountPostsStatus] = useState<"idle" | "checking" | "success" | "error">("idle");
+  const [accountPostsMessage, setAccountPostsMessage] = useState<string | null>(null);
+  const [accountPostsResult, setAccountPostsResult] = useState<AccountPostsResult | null>(null);
+  const [accountPostsShowAll, setAccountPostsShowAll] = useState(false);
+  const accountPostsRequestIdRef = useRef<string | null>(null);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -1269,6 +1362,131 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     }
   };
 
+  // Gate 2B-3A: 専用タブを注目アカウント（1件）のプロフィールへ遷移させ、
+  // 最大10件の投稿データを抽出する。background.js側がusernameを最終的に
+  // 再検証するため、ここでの検証は明らかな入力ミスの早期表示のみ。最新・
+  // 話題・比較結果のいずれも消さない（抽出開始時・失敗時とも）。
+  const handleExtractAccountPosts = () => {
+    if (accountPostsStatus === "checking") return;
+
+    const trimmedUsername = accountUsernameInput.trim();
+    if (trimmedUsername.length === 0) {
+      setAccountPostsStatus("error");
+      setAccountPostsMessage("ユーザー名を入力してください");
+      return;
+    }
+
+    setAccountPostsStatus("checking");
+    setAccountPostsMessage(null);
+    // 既存のaccountPostsResult・最新結果・話題結果・比較結果はここでは消さない。
+
+    const extensionId = process.env.NEXT_PUBLIC_X_RESEARCH_EXTENSION_ID;
+    if (!extensionId) {
+      setAccountPostsStatus("error");
+      setAccountPostsMessage("Chrome拡張機能IDが設定されていません");
+      return;
+    }
+
+    const runtime = getChromeRuntime();
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      setAccountPostsStatus("error");
+      setAccountPostsMessage("この環境ではchrome.runtimeを利用できません（Chromeブラウザで開いてください）");
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    accountPostsRequestIdRef.current = requestId;
+    let settled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      if (accountPostsRequestIdRef.current !== requestId) return;
+      setAccountPostsStatus("error");
+      setAccountPostsMessage(`${EXTRACT_ACCOUNT_POSTS_TIMEOUT_MS / 1000}秒以内に応答がありませんでした`);
+    }, EXTRACT_ACCOUNT_POSTS_TIMEOUT_MS);
+
+    try {
+      runtime.sendMessage(
+        extensionId,
+        { type: "X_RESEARCH_EXTRACT_ACCOUNT_POSTS", requestId, username: trimmedUsername },
+        (response: unknown) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeoutId);
+
+          // 古い要求（連続実行）の応答は無視する。
+          if (accountPostsRequestIdRef.current !== requestId) return;
+
+          if (runtime.lastError) {
+            setAccountPostsStatus("error");
+            setAccountPostsMessage(
+              `拡張機能が見つからないか通信に失敗しました: ${runtime.lastError.message ?? "不明なエラー"}`
+            );
+            return;
+          }
+
+          if (!isXResearchExtractAccountPostsResponse(response)) {
+            setAccountPostsStatus("error");
+            setAccountPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          if (response.requestId !== requestId) {
+            setAccountPostsStatus("error");
+            setAccountPostsMessage("応答のrequestIdが一致しません");
+            return;
+          }
+
+          if (!response.ok) {
+            const message = mapExtractAccountPostsErrorMessage(
+              response.errorCode,
+              response.message ?? response.error ?? "拡張機能がエラーを返しました"
+            );
+            setAccountPostsStatus("error");
+            setAccountPostsMessage(message);
+            return;
+          }
+
+          if (
+            typeof response.username !== "string" ||
+            typeof response.sourceUrl !== "string" ||
+            typeof response.extractedAt !== "string" ||
+            typeof response.requestedMaxPosts !== "number" ||
+            typeof response.extractedCount !== "number" ||
+            typeof response.skippedCount !== "number" ||
+            !Array.isArray(response.posts) ||
+            !Array.isArray(response.skipped)
+          ) {
+            setAccountPostsStatus("error");
+            setAccountPostsMessage("応答の形式が不正です");
+            return;
+          }
+
+          setAccountPostsStatus("success");
+          setAccountPostsResult({
+            username: response.username,
+            sourceUrl: response.sourceUrl,
+            extractedAt: response.extractedAt,
+            requestedMaxPosts: response.requestedMaxPosts,
+            extractedCount: response.extractedCount,
+            skippedCount: response.skippedCount,
+            posts: response.posts as ResearchPostImportItem[],
+            skipped: response.skipped,
+          });
+          setAccountPostsShowAll(false);
+        }
+      );
+    } catch (e) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      if (accountPostsRequestIdRef.current !== requestId) return;
+      setAccountPostsStatus("error");
+      setAccountPostsMessage(e instanceof Error ? e.message : "拡張機能が見つかりません");
+    }
+  };
+
   const updateCardField = (relationId: string, field: keyof CardState, value: string) => {
     setCardStates((prev) => ({
       ...prev,
@@ -1465,7 +1683,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                 openSearchTabStatus === "checking" ||
                 confirmRenderStatus === "checking" ||
                 extractPostsStatus === "checking" ||
-                topPostsStatus === "checking"
+                topPostsStatus === "checking" ||
+                accountPostsStatus === "checking"
               }
               className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
             />
@@ -1476,7 +1695,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                 openSearchTabStatus === "checking" ||
                 confirmRenderStatus === "checking" ||
                 extractPostsStatus === "checking" ||
-                topPostsStatus === "checking"
+                topPostsStatus === "checking" ||
+                accountPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1511,7 +1731,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                 confirmRenderStatus === "checking" ||
                 openSearchTabStatus === "checking" ||
                 extractPostsStatus === "checking" ||
-                topPostsStatus === "checking"
+                topPostsStatus === "checking" ||
+                accountPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1546,7 +1767,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                 extractPostsStatus === "checking" ||
                 openSearchTabStatus === "checking" ||
                 confirmRenderStatus === "checking" ||
-                topPostsStatus === "checking"
+                topPostsStatus === "checking" ||
+                accountPostsStatus === "checking"
               }
               className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
             >
@@ -1661,6 +1883,7 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             openSearchTabStatus === "checking" ||
             confirmRenderStatus === "checking" ||
             extractPostsStatus === "checking" ||
+            accountPostsStatus === "checking" ||
             !topSearchQuery;
           return (
             <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
@@ -1851,6 +2074,115 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             <p className="text-xs text-zinc-500">
               まだ比較できません。最新投稿と話題投稿の両方を抽出すると、ここに重複整理結果が表示されます。
             </p>
+          )}
+        </div>
+      )}
+
+      {/* Gate 2B-3A: 開発時のみ表示する注目アカウントの投稿抽出（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            開発用：注目アカウントの投稿抽出（Gate 2B-3A）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            専用タブを指定した1件のXアカウントのプロフィールへ移動し、投稿データを最大10件抽出します。プロフィールURLではなくユーザー名を入力してください。DB保存・API呼び出しは行いません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={accountUsernameInput}
+              onChange={(e) => setAccountUsernameInput(e.target.value)}
+              placeholder="例: OpenAI または @OpenAI"
+              maxLength={64}
+              disabled={
+                accountPostsStatus === "checking" ||
+                openSearchTabStatus === "checking" ||
+                confirmRenderStatus === "checking" ||
+                extractPostsStatus === "checking" ||
+                topPostsStatus === "checking"
+              }
+              className="flex-1 min-w-[220px] bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-amber-500 disabled:opacity-50"
+            />
+            <button
+              type="button"
+              onClick={handleExtractAccountPosts}
+              disabled={
+                accountPostsStatus === "checking" ||
+                openSearchTabStatus === "checking" ||
+                confirmRenderStatus === "checking" ||
+                extractPostsStatus === "checking" ||
+                topPostsStatus === "checking"
+              }
+              className="px-3 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-zinc-200 rounded-lg transition-colors"
+            >
+              {accountPostsStatus === "checking" ? "抽出中..." : "アカウントの投稿を抽出（最大10件）"}
+            </button>
+          </div>
+          {accountPostsStatus === "error" && (
+            <p className="text-xs text-red-400">{accountPostsMessage}</p>
+          )}
+          {/* accountPostsStatusではなくaccountPostsResultの有無だけで表示するかを
+              決める — 失敗時もaccountPostsResultは保持されるため、直前の成功結果
+              とその後のエラーメッセージを両立して表示できる。 */}
+          {accountPostsResult && (
+            <div className="text-xs text-zinc-300 space-y-2">
+              <p className="text-amber-400/90">
+                現段階では、プロフィール上のリポスト・返信・引用投稿・固定投稿を除外しません。リポスト等では、表示される投稿者が入力したアカウントと異なる場合があります。
+              </p>
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+                <p>対象アカウント: @{accountPostsResult.username}</p>
+                <p>
+                  抽出件数: {accountPostsResult.extractedCount}件 / 最大件数: {accountPostsResult.requestedMaxPosts}件
+                </p>
+                <p>スキップ件数: {accountPostsResult.skippedCount}件</p>
+                <p className="break-all">取得元URL: {accountPostsResult.sourceUrl}</p>
+                <p>取得日時: {formatDateTimeJST(accountPostsResult.extractedAt)}</p>
+              </div>
+
+              {accountPostsResult.extractedCount === 0 && accountPostsResult.skippedCount > 0 && (
+                <p className="text-amber-400">
+                  投稿要素は表示されていましたが、抽出できた投稿は0件でした。スキップ理由を確認してください。
+                </p>
+              )}
+
+              {accountPostsResult.posts.length > 0 && (
+                <ul className="space-y-2">
+                  {(accountPostsShowAll
+                    ? accountPostsResult.posts
+                    : accountPostsResult.posts.slice(0, EXTRACT_ACCOUNT_POSTS_INITIAL_DISPLAY_COUNT)
+                  ).map((post, index) => renderResearchPostCard(post, index))}
+                </ul>
+              )}
+
+              {accountPostsResult.posts.length > EXTRACT_ACCOUNT_POSTS_INITIAL_DISPLAY_COUNT &&
+                !accountPostsShowAll && (
+                  <button
+                    type="button"
+                    onClick={() => setAccountPostsShowAll(true)}
+                    className="text-xs text-sky-400 hover:text-sky-300 underline"
+                  >
+                    残り{accountPostsResult.posts.length - EXTRACT_ACCOUNT_POSTS_INITIAL_DISPLAY_COUNT}件を表示
+                  </button>
+                )}
+
+              {accountPostsResult.skippedCount > 0 && (
+                <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                  <summary className="cursor-pointer text-zinc-400">
+                    スキップ内容を表示（{accountPostsResult.skippedCount}件）
+                  </summary>
+                  <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                    {JSON.stringify(accountPostsResult.skipped, null, 2)}
+                  </pre>
+                </details>
+              )}
+
+              <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
+                <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
+                <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
+                  {JSON.stringify(accountPostsResult, null, 2)}
+                </pre>
+              </details>
+            </div>
           )}
         </div>
       )}
