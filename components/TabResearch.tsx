@@ -388,6 +388,72 @@ function mapExtractAccountPostsErrorMessage(errorCode: string | undefined, fallb
   }
 }
 
+// ── Gate 2B-4: 統合候補一覧と人間による選択（開発時のみ表示） ──────────
+// extractPostsResult／topPostsResult／accountPostsResultの3つをpostId基準で
+// 画面上だけ統合する。DB保存・API送信・AI処理は行わない。lib/types.ts・
+// ResearchPostImportItem自体は変更しない（このファイル内のローカル型のみ）。
+type ResearchPostSource =
+  | { kind: "latest" }
+  | { kind: "top" }
+  | { kind: "account"; username: string };
+
+interface IntegratedResearchPost {
+  post: ResearchPostImportItem;
+  sources: ResearchPostSource[];
+}
+
+const INTEGRATED_POSTS_INITIAL_DISPLAY_COUNT = 3;
+const INTEGRATED_POSTS_TEXT_PREVIEW_LENGTH = 180;
+
+function researchPostSourceLabel(source: ResearchPostSource): string {
+  switch (source.kind) {
+    case "latest":
+      return "最新";
+    case "top":
+      return "話題";
+    case "account":
+      return `@${source.username}`;
+  }
+}
+
+// 同じ取得元を同じpostIdへ二重追加しないための同一性判定。account同士は
+// kindとusername（正規化済み値）が一致する場合だけ同一とみなす。
+function isSameResearchPostSource(a: ResearchPostSource, b: ResearchPostSource): boolean {
+  if (a.kind !== b.kind) return false;
+  if (a.kind === "account" && b.kind === "account") return a.username === b.username;
+  return true;
+}
+
+// Gate 2B-4の代表投稿決定規則。反応数の合算・平均・スコア計算は一切行わず、
+// 既存のResearchPostImportItemを丸ごとどちらか一方採用するだけ。
+// 1. 本文が空でない方を優先（文章制作の資料としての価値を優先）
+// 2. isTextTruncated===falseの方を優先（全文がある方を優先）
+// 3. 上記が同じならResultのextractedAtが新しい方を優先
+// 4. extractedAtを有効な日時として比較できなければ、先に発見した方を維持
+function pickRepresentativeResearchPost(
+  current: { post: ResearchPostImportItem; extractedAt: string },
+  candidate: { post: ResearchPostImportItem; extractedAt: string }
+): ResearchPostImportItem {
+  const currentHasText = current.post.text.trim().length > 0;
+  const candidateHasText = candidate.post.text.trim().length > 0;
+  if (currentHasText !== candidateHasText) {
+    return candidateHasText ? candidate.post : current.post;
+  }
+
+  const currentTruncated = current.post.isTextTruncated;
+  const candidateTruncated = candidate.post.isTextTruncated;
+  if (currentTruncated !== candidateTruncated) {
+    return candidateTruncated ? current.post : candidate.post;
+  }
+
+  const currentTime = new Date(current.extractedAt).getTime();
+  const candidateTime = new Date(candidate.extractedAt).getTime();
+  if (Number.isNaN(currentTime) || Number.isNaN(candidateTime)) {
+    return current.post;
+  }
+  return candidateTime > currentTime ? candidate.post : current.post;
+}
+
 interface ImportResult {
   totalInput: number;
   newPosts: number;
@@ -523,6 +589,75 @@ function renderResearchPostCard(post: ResearchPostImportItem, index: number) {
   );
 }
 
+// Gate 2B-4: 統合候補一覧専用のカード。renderResearchPostCardと同じ表示項目・
+// 表示形式を踏襲しつつ、チェックボックスと取得元バッジを追加する。既存の
+// renderResearchPostCard自体は変更せず、Gate 2B-1/2B-2A/2B-3Aの既存表示への
+// 影響を避ける。
+function renderIntegratedPostCard(
+  item: IntegratedResearchPost,
+  index: number,
+  selected: boolean,
+  onToggle: (postId: string) => void
+) {
+  const post = item.post;
+  const textPreview =
+    (post.text || "").slice(0, INTEGRATED_POSTS_TEXT_PREVIEW_LENGTH) +
+    ((post.text || "").length > INTEGRATED_POSTS_TEXT_PREVIEW_LENGTH || post.isTextTruncated ? "…" : "");
+  return (
+    <li
+      key={post.postId || index}
+      className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1"
+    >
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(post.postId)}
+          className="mt-1 shrink-0"
+        />
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-1">
+            {item.sources.map((source, sourceIndex) => (
+              <span
+                key={sourceIndex}
+                className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-zinc-700 text-zinc-300 border border-zinc-600"
+              >
+                {researchPostSourceLabel(source)}
+              </span>
+            ))}
+          </div>
+          <div className="text-zinc-200">
+            {post.authorName || "(名前不明)"}
+            <span className="text-zinc-500 ml-1">@{post.authorHandle || "(不明)"}</span>
+          </div>
+          <div className="text-zinc-300 whitespace-pre-wrap break-words">
+            {textPreview || "(本文なし)"}
+            {post.isTextTruncated && <span className="ml-2 text-amber-400/80">（省略あり）</span>}
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-zinc-500">
+            <span>返信 {formatCount(post.replies)}</span>
+            <span>リポスト {formatCount(post.reposts)}</span>
+            <span>いいね {formatCount(post.likes)}</span>
+            <span>ブックマーク {formatCount(post.bookmarks)}</span>
+            <span>表示 {formatCount(post.views)}</span>
+            <span>投稿日時: {formatDateTimeJST(post.postedAtRaw)}</span>
+          </div>
+          <div>
+            <a
+              href={post.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sky-400 hover:text-sky-300 break-all"
+            >
+              {post.url}
+            </a>
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
 async function parseErrorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = await res.json();
@@ -643,6 +778,114 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
   const [accountPostsResult, setAccountPostsResult] = useState<AccountPostsResult | null>(null);
   const [accountPostsShowAll, setAccountPostsShowAll] = useState(false);
   const accountPostsRequestIdRef = useRef<string | null>(null);
+
+  // Gate 2B-4: 統合候補一覧の展開状態だけを持つUI用state（開発時のみ）。
+  const [integratedPostsShowAll, setIntegratedPostsShowAll] = useState(false);
+
+  // Gate 2B-4: 最新・話題・注目アカウントの3つの抽出結果をpostId基準で画面上
+  // だけ統合する。postComparisonは統合元に使わない（latest単独投稿を含まず、
+  // account結果も持たないため）。DB保存・API送信・AI処理は一切行わない。
+  // 反応数の合算・平均・独自スコアも計算しない。
+  const integratedPosts = useMemo<IntegratedResearchPost[]>(() => {
+    interface WorkingEntry {
+      post: ResearchPostImportItem;
+      extractedAt: string;
+      sources: ResearchPostSource[];
+    }
+    const map = new Map<string, WorkingEntry>();
+
+    const addFromResult = (
+      posts: ResearchPostImportItem[],
+      extractedAt: string,
+      source: ResearchPostSource
+    ) => {
+      for (const post of posts) {
+        if (!post.postId) continue; // 防御的: falsyなpostIdは統合対象外
+        const existing = map.get(post.postId);
+        if (!existing) {
+          map.set(post.postId, { post, extractedAt, sources: [source] });
+          continue;
+        }
+        const hasSource = existing.sources.some((s) => isSameResearchPostSource(s, source));
+        const sources = hasSource ? existing.sources : [...existing.sources, source];
+        const representative = pickRepresentativeResearchPost(
+          { post: existing.post, extractedAt: existing.extractedAt },
+          { post, extractedAt }
+        );
+        const representativeExtractedAt = representative === post ? extractedAt : existing.extractedAt;
+        map.set(post.postId, { post: representative, extractedAt: representativeExtractedAt, sources });
+      }
+    };
+
+    // 処理順: 1. latest 2. top 3. account。各配列内は元の投稿順を維持し、
+    // Mapの挿入順（＝発見順）もそのまま一覧の表示順として使う。
+    if (extractPostsResult) {
+      addFromResult(extractPostsResult.posts, extractPostsResult.extractedAt, { kind: "latest" });
+    }
+    if (topPostsResult) {
+      addFromResult(topPostsResult.posts, topPostsResult.extractedAt, { kind: "top" });
+    }
+    if (accountPostsResult) {
+      addFromResult(accountPostsResult.posts, accountPostsResult.extractedAt, {
+        kind: "account",
+        username: accountPostsResult.username,
+      });
+    }
+
+    return Array.from(map.values()).map(({ post, sources }) => ({ post, sources }));
+  }, [extractPostsResult, topPostsResult, accountPostsResult]);
+
+  // Gate 2B-4: 選択状態はpostIdだけを保持する（ResearchPostImportItem全体は
+  // 保持しない）。
+  const [selectedPostIds, setSelectedPostIds] = useState<Set<string>>(() => new Set());
+
+  // 統合候補一覧が変化するたびに、現在のintegratedPostsに存在しないpostIdを
+  // selectedPostIdsから実際に削除する（表示時のfilterだけで無害化する方式は
+  // 採用しない）。変化がなければ以前のSetをそのまま返し、不要な再レンダー・
+  // 無限ループを避ける。
+  useEffect(() => {
+    setSelectedPostIds((prev) => {
+      const currentIds = new Set(integratedPosts.map((p) => p.post.postId));
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((id) => {
+        if (currentIds.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [integratedPosts]);
+
+  const toggleSelectedPostId = useCallback((postId: string) => {
+    setSelectedPostIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(postId)) {
+        next.delete(postId);
+      } else {
+        next.add(postId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllIntegratedPosts = useCallback(() => {
+    setSelectedPostIds(new Set(integratedPosts.map((p) => p.post.postId)));
+  }, [integratedPosts]);
+
+  const deselectAllIntegratedPosts = useCallback(() => {
+    setSelectedPostIds(new Set());
+  }, []);
+
+  // 選択件数・選択投稿配列は、常に現在のintegratedPostsに対するfilterとして
+  // 導出する。次Gateでそのまま既存保存APIへ渡せる形（ResearchPostImportItem[]）
+  // だが、今回はDB・APIへは一切送信しない。
+  const selectedResearchPosts = useMemo<ResearchPostImportItem[]>(
+    () => integratedPosts.filter((p) => selectedPostIds.has(p.post.postId)).map((p) => p.post),
+    [integratedPosts, selectedPostIds]
+  );
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -2186,6 +2429,85 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
           )}
         </div>
       )}
+
+      {/* NW-X Gate 2B-4: 開発時のみ表示する統合候補一覧と選択（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" &&
+        (() => {
+          const hasAnyResult = extractPostsResult !== null || topPostsResult !== null || accountPostsResult !== null;
+          const displayedIntegratedPosts = integratedPostsShowAll
+            ? integratedPosts
+            : integratedPosts.slice(0, INTEGRATED_POSTS_INITIAL_DISPLAY_COUNT);
+          return (
+            <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-semibold text-zinc-200">
+                NW-X Gate 2B-4：統合候補と選択（開発用）
+              </h3>
+              <p className="text-xs text-zinc-500">
+                最新・話題・注目アカウントの抽出結果をpostIdで統合し、重複を1件にまとめて表示します。DB保存・API送信・AI処理は行いません。
+              </p>
+
+              {!hasAnyResult ? (
+                <p className="text-xs text-zinc-500">
+                  まだ統合候補がありません。最新・話題・注目アカウントのいずれかを抽出してください。
+                </p>
+              ) : integratedPosts.length === 0 ? (
+                <p className="text-xs text-zinc-500">統合候補はありません。</p>
+              ) : (
+                <div className="text-xs text-zinc-300 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-zinc-400">
+                      選択 {selectedResearchPosts.length} / 全{integratedPosts.length}件
+                    </span>
+                    <button
+                      type="button"
+                      onClick={selectAllIntegratedPosts}
+                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+                    >
+                      候補全{integratedPosts.length}件を選択
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deselectAllIntegratedPosts}
+                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+                    >
+                      全解除
+                    </button>
+                  </div>
+
+                  <ul className="space-y-2">
+                    {displayedIntegratedPosts.map((item, index) =>
+                      renderIntegratedPostCard(
+                        item,
+                        index,
+                        selectedPostIds.has(item.post.postId),
+                        toggleSelectedPostId
+                      )
+                    )}
+                  </ul>
+
+                  {integratedPosts.length > INTEGRATED_POSTS_INITIAL_DISPLAY_COUNT && !integratedPostsShowAll && (
+                    <button
+                      type="button"
+                      onClick={() => setIntegratedPostsShowAll(true)}
+                      className="text-xs text-sky-400 hover:text-sky-300 underline"
+                    >
+                      残り{integratedPosts.length - INTEGRATED_POSTS_INITIAL_DISPLAY_COUNT}件を表示
+                    </button>
+                  )}
+                  {integratedPostsShowAll && integratedPosts.length > INTEGRATED_POSTS_INITIAL_DISPLAY_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setIntegratedPostsShowAll(false)}
+                      className="text-xs text-sky-400 hover:text-sky-300 underline ml-3"
+                    >
+                      折りたたむ
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">
