@@ -597,7 +597,8 @@ function renderIntegratedPostCard(
   item: IntegratedResearchPost,
   index: number,
   selected: boolean,
-  onToggle: (postId: string) => void
+  onToggle: (postId: string) => void,
+  disabled: boolean
 ) {
   const post = item.post;
   const textPreview =
@@ -613,6 +614,7 @@ function renderIntegratedPostCard(
           type="checkbox"
           checked={selected}
           onChange={() => onToggle(post.postId)}
+          disabled={disabled}
           className="mt-1 shrink-0"
         />
         <div className="flex-1 min-w-0 space-y-1">
@@ -887,6 +889,25 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     [integratedPosts, selectedPostIds]
   );
 
+  // Gate 2B-5: 選択投稿の保存専用state。既存JSONインポート用のimporting・
+  // importResult・importErrorとは独立させる（無関係な処理同士を同じフラグで
+  // 無効化しないため、既存Gate群と同じ設計方針）。新しい型は作らず、既存の
+  // ImportResultをそのまま使う。
+  const [selectedSaveStatus, setSelectedSaveStatus] = useState<"idle" | "saving" | "completed" | "error">("idle");
+  const [selectedSaveResult, setSelectedSaveResult] = useState<ImportResult | null>(null);
+  const [selectedSaveError, setSelectedSaveError] = useState<string | null>(null);
+  // disabled属性だけに頼らない二重送信防止用のin-flightガード。保存処理専用。
+  const selectedSaveInFlightRef = useRef(false);
+
+  // account切り替え時、以前のGate 2B-5の結果・エラーを新しいアカウント画面へ
+  // 残さないための最小限のリセット。既存の一覧再取得用リセットeffect（下の
+  // useEffect）とは別に、Gate 2B-5専用の状態だけを対象にする。
+  useEffect(() => {
+    setSelectedSaveStatus("idle");
+    setSelectedSaveResult(null);
+    setSelectedSaveError(null);
+  }, [noteAccountId]);
+
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
       const next = { ...prev };
@@ -1083,6 +1104,110 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
       }
     } finally {
       setImporting(false);
+    }
+  };
+
+  // Gate 2B-5: Gate 2B-4で選択された投稿だけを、既存のPOST /api/research-posts/import
+  // へ送る。新しいAPI・DB・型は追加しない。既存のhandleImportと同じ一覧再取得
+  // パターン（bumpGeneration→GET /api/research-posts→setItems/setHasMore/
+  // mergeCardStates）をそのまま再利用する。成功判定はレスポンスのskipped/failed
+  // のindexだけを根拠にし、postIdは主キーにしない（postIdは省略され得るため）。
+  const handleSaveSelectedPosts = async () => {
+    // disabled属性だけに頼らない二重送信防止。
+    if (selectedSaveInFlightRef.current) return;
+    if (selectedSaveStatus === "saving") return;
+
+    // 保存ボタンを押した時点のselectedResearchPostsを送信時スナップショットと
+    // して固定する。処理中に選択stateが変化しても、この配列を基準に成功判定
+    // を行う。
+    const postsToSave = selectedResearchPosts;
+    if (postsToSave.length === 0) return;
+
+    selectedSaveInFlightRef.current = true;
+    const requestedAccountId = noteAccountId;
+    setSelectedSaveStatus("saving");
+    setSelectedSaveResult(null);
+    setSelectedSaveError(null);
+
+    try {
+      const res = await fetch("/api/research-posts/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          noteAccountId: requestedAccountId,
+          searchQuery: null,
+          items: postsToSave,
+        }),
+      });
+      if (!res.ok) throw new Error(await parseErrorMessage(res, "保存に失敗しました"));
+
+      let result: ImportResult;
+      try {
+        result = (await res.json()) as ImportResult;
+      } catch {
+        throw new Error("応答の解析に失敗しました");
+      }
+
+      // アカウントが切り替わっていた場合、この結果（保存結果・選択解除・
+      // 一覧再取得）を現在の画面へは一切反映しない。
+      if (accountIdRef.current !== requestedAccountId) return;
+
+      // 成功判定：postsToSaveの各indexについて、レスポンスのskipped/failedの
+      // indexに含まれていなければ成功扱い。postIdでの判定は行わない
+      // （skipped/failedのpostIdは省略され得るため）。範囲外のindexは無視する。
+      const skippedIndexes = new Set(
+        result.skipped.map((s) => s.index).filter((i) => i >= 0 && i < postsToSave.length)
+      );
+      const failedIndexes = new Set(
+        result.failed.map((f) => f.index).filter((i) => i >= 0 && i < postsToSave.length)
+      );
+      const succeededPostIds = new Set<string>();
+      postsToSave.forEach((post, index) => {
+        if (!skippedIndexes.has(index) && !failedIndexes.has(index)) {
+          succeededPostIds.add(post.postId);
+        }
+      });
+
+      setSelectedSaveResult(result);
+      setSelectedSaveStatus("completed");
+
+      // 成功した投稿だけ選択解除する。skipped/failedの投稿は選択を維持する。
+      if (succeededPostIds.size > 0) {
+        setSelectedPostIds((prev) => {
+          const next = new Set(prev);
+          succeededPostIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+
+      // 既存handleImportと同じ一覧再取得パターン。部分的なskipped/failedが
+      // あっても、成功した投稿が存在する可能性があるため常に再取得する。
+      const myGeneration = bumpGeneration();
+      const params = new URLSearchParams({
+        noteAccountId: requestedAccountId,
+        limit: String(PAGE_SIZE),
+        offset: "0",
+      });
+      const listRes = await fetch(`/api/research-posts?${params.toString()}`);
+      if (
+        listRes.ok &&
+        generationRef.current === myGeneration &&
+        accountIdRef.current === requestedAccountId
+      ) {
+        const data = (await listRes.json()) as { items: ResearchPostListItem[]; hasMore: boolean };
+        setItems(data.items);
+        setHasMore(data.hasMore);
+        mergeCardStates(data.items);
+      }
+    } catch (e) {
+      // トップレベルエラー（network／認証／4xx・5xx／不正レスポンス／JSON解析
+      // 失敗）の場合は選択状態を一切変更せず、再試行できる状態へ戻すだけ。
+      if (accountIdRef.current === requestedAccountId) {
+        setSelectedSaveStatus("error");
+        setSelectedSaveError(e instanceof Error ? e.message : "保存に失敗しました");
+      }
+    } finally {
+      selectedSaveInFlightRef.current = false;
     }
   };
 
@@ -2461,14 +2586,16 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                     <button
                       type="button"
                       onClick={selectAllIntegratedPosts}
-                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+                      disabled={selectedSaveStatus === "saving"}
+                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-50 rounded-lg transition-colors"
                     >
                       候補全{integratedPosts.length}件を選択
                     </button>
                     <button
                       type="button"
                       onClick={deselectAllIntegratedPosts}
-                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+                      disabled={selectedSaveStatus === "saving"}
+                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-50 rounded-lg transition-colors"
                     >
                       全解除
                     </button>
@@ -2480,7 +2607,8 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
                         item,
                         index,
                         selectedPostIds.has(item.post.postId),
-                        toggleSelectedPostId
+                        toggleSelectedPostId,
+                        selectedSaveStatus === "saving"
                       )
                     )}
                   </ul>
@@ -2508,6 +2636,80 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
             </div>
           );
         })()}
+
+      {/* NW-X Gate 2B-5: 開発時のみ表示する選択投稿の保存（本番では非表示） */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-200">
+            NW-X Gate 2B-5：選択投稿の保存（開発用）
+          </h3>
+          <p className="text-xs text-zinc-500">
+            Gate 2B-4で選択した投稿だけを、既存のリサーチ保存APIへ送信し、既存リサーチ一覧へ反映します。新しいAPI・DB・型は使用しません。
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSaveSelectedPosts}
+              disabled={selectedResearchPosts.length === 0 || selectedSaveStatus === "saving"}
+              className="px-3 py-2 text-xs bg-amber-500 hover:bg-amber-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-black rounded-lg transition-colors"
+            >
+              {selectedSaveStatus === "saving"
+                ? "保存中…"
+                : `選択した${selectedResearchPosts.length}件を保存`}
+            </button>
+          </div>
+
+          {selectedSaveStatus === "error" && (
+            <p className="text-xs text-red-400">{selectedSaveError}</p>
+          )}
+
+          {selectedSaveStatus === "completed" && selectedSaveResult && (
+            <div className="text-xs text-zinc-300 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 space-y-1">
+              <p>処理対象: {selectedSaveResult.totalInput}件</p>
+              <p>
+                処理成功:{" "}
+                {selectedSaveResult.totalInput -
+                  selectedSaveResult.skipped.length -
+                  selectedSaveResult.failed.length}
+                件
+              </p>
+              <p>新しくリサーチ一覧へ追加: {selectedSaveResult.newRelations}件</p>
+              <p>すでにこのアカウントで保存済み: {selectedSaveResult.existingRelations}件</p>
+              <p>スキップ: {selectedSaveResult.skipped.length}件 / 失敗: {selectedSaveResult.failed.length}件</p>
+              <p className="text-zinc-500">
+                （参考: 新規投稿データ {selectedSaveResult.newPosts}件 / 既存投稿データ更新{" "}
+                {selectedSaveResult.updatedPosts}件）
+              </p>
+              {selectedSaveResult.skipped.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-zinc-400">スキップした投稿:</p>
+                  <ul className="list-disc list-inside text-zinc-500">
+                    {selectedSaveResult.skipped.map((s) => (
+                      <li key={s.index}>
+                        #{s.index}
+                        {s.postId ? `（postId: ${s.postId}）` : ""}: {s.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {selectedSaveResult.failed.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-zinc-400">失敗した投稿:</p>
+                  <ul className="list-disc list-inside text-zinc-500">
+                    {selectedSaveResult.failed.map((f) => (
+                      <li key={f.index}>
+                        #{f.index}
+                        {f.postId ? `（postId: ${f.postId}）` : ""}: {f.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">
