@@ -25,7 +25,7 @@ import AccountDNAPanel from "@/components/AccountDNAPanel";
 import NotebookPiPWidget from "@/components/NotebookPiPWidget";
 import PasswordGate from "@/components/PasswordGate";
 import { usePiP } from "@/hooks/usePiP";
-import { Article, Draft, NewsletterDraft, ProposalContext } from "@/lib/types";
+import { Article, Draft, NewsletterDraft, ProposalContext, ResearchPostListItem } from "@/lib/types";
 import { useDraftsDB } from "@/lib/useDraftsDB";
 import { useNewsletterDraftDB } from "@/lib/useNewsletterDraftDB";
 import { useSnsDB } from "@/lib/useSnsDB";
@@ -61,6 +61,9 @@ export default function Home() {
   const [newsletterTab, setNewsletterTab] = useState<NewsletterTab>("list");
   const [pendingProposal, setPendingProposal] = useState<ProposalContext | null>(null);
   const [pendingRewrite, setPendingRewrite] = useState<{ text: string; mode: RewriteMode; isPaid?: boolean; price?: number; title?: string } | null>(null);
+  // Xリサーチ一覧で選ばれた、note記事生成の参考資料として使う投稿。
+  // 人間が選んだものだけをTabGenerateへ渡す（AI APIはここでは呼ばない）。
+  const [pendingResearchReferences, setPendingResearchReferences] = useState<ResearchPostListItem[] | null>(null);
 
   // Load saved account from localStorage on mount
   useEffect(() => {
@@ -76,6 +79,14 @@ export default function Home() {
     // Reset tab state on switch
     setSection("note");
     setNoteTab("database");
+    // 別アカウントのリサーチ投稿を新しいアカウントの記事生成へ持ち越さない
+    setPendingResearchReferences(null);
+  };
+
+  const handleSendResearchToGenerate = (posts: ResearchPostListItem[]) => {
+    setPendingResearchReferences(posts);
+    setSection("note");
+    setNoteTab("generate");
   };
 
   const isOfficialAccount = currentAccountId === SEKI_ID;
@@ -331,7 +342,10 @@ export default function Home() {
                 <button
                   key={tab.id}
                   onClick={() => {
-                    if (tab.id === "generate") setPendingProposal(null);
+                    if (tab.id === "generate") {
+                      setPendingProposal(null);
+                      setPendingResearchReferences(null);
+                    }
                     setNoteTab(tab.id);
                   }}
                   className={`px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px ${
@@ -406,6 +420,7 @@ export default function Home() {
                       articles={articles}
                       drafts={drafts}
                       initialProposal={pendingProposal}
+                      initialResearchReferences={pendingResearchReferences}
                       onSaveDraft={handleSaveDraft}
                       onBackToConsult={() => setNoteTab("consult")}
                       onSendToRewrite={handleSendToRewrite}
@@ -493,7 +508,7 @@ export default function Home() {
 
               {/* research section (Xリサーチ) — all note accounts, no isOfficialAccount gate */}
               {section === "research" && (
-                <TabResearch noteAccountId={currentAccountId} />
+                <TabResearch noteAccountId={currentAccountId} onSendToGenerate={handleSendResearchToGenerate} />
               )}
 
               {/* settings section */}

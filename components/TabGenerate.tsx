@@ -1,8 +1,24 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Article, Draft, ProposalContext, ArticleType, WordCount } from "@/lib/types";
+import { Article, Draft, ProposalContext, ArticleType, WordCount, ResearchPostListItem, ResearchReferencePost } from "@/lib/types";
 import { MAGAZINES } from "@/lib/profile";
+
+// ResearchPostListItem（画面間の受け渡し用に保持している一時state）から、
+// プロンプトで実際に使う最小フィールドだけを抜き出す。relationId等の
+// 内部管理情報はAPIへ送らない。
+function toResearchReferencePost(r: ResearchPostListItem): ResearchReferencePost {
+  return {
+    text: r.text,
+    authorName: r.authorName,
+    authorHandle: r.authorHandle,
+    url: r.url,
+    savedReason: r.savedReason,
+    memo: r.memo,
+    tags: r.tags,
+    likes: r.likes,
+  };
+}
 
 type RewriteMode = "rewrite" | "polish";
 
@@ -11,10 +27,16 @@ interface Props {
   articles: Article[];
   drafts: Draft[];
   initialProposal?: ProposalContext | null;
+  initialResearchReferences?: ResearchPostListItem[] | null;
   onSaveDraft: (draft: Omit<Draft, "id" | "createdAt" | "status">) => void;
   onBackToConsult?: () => void;
   onSendToRewrite?: (text: string, mode: RewriteMode, isPaid: boolean, price?: number, title?: string) => void;
 }
+
+// 1回の記事生成につき参考資料として渡せるX投稿数のハード上限。
+// 呼び出しは既存の「記事を生成する」ボタン押下時の1回だけであり、
+// 件数を増やしても生成API呼び出し回数自体は増えない。
+const MAX_RESEARCH_REFERENCE_POSTS = 5;
 
 const CLOSING_TEXT = "最後まで読んでくださり、本当にありがとうございます。";
 
@@ -56,7 +78,7 @@ function resolveInitialMagazine(name?: string): string {
   return partial ?? MAGAZINES.filter((m) => m !== "未登録")[0];
 }
 
-export default function TabGenerate({ accountId, articles, drafts, initialProposal, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
+export default function TabGenerate({ accountId, articles, drafts, initialProposal, initialResearchReferences, onSaveDraft, onBackToConsult, onSendToRewrite }: Props) {
   const fromProposal = !!(initialProposal?.articleType);
   const fromSuggestions = !!(initialProposal?.fromSuggestions);
 
@@ -72,6 +94,38 @@ export default function TabGenerate({ accountId, articles, drafts, initialPropos
   const [fullContext, setFullContext] = useState(initialProposal?.fullContext ?? "");
   const [contextExpanded, setContextExpanded] = useState(false);
   const [structureMemo, setStructureMemo] = useState("");
+
+  // Xリサーチ一覧から選ばれた参考投稿（人間が選んだものだけ）。
+  // 表示・保持のみで、ここではAI APIを呼ばない。
+  const [researchReferences, setResearchReferences] = useState<ResearchPostListItem[]>(
+    (initialResearchReferences ?? []).slice(0, MAX_RESEARCH_REFERENCE_POSTS)
+  );
+
+  useEffect(() => {
+    setResearchReferences((initialResearchReferences ?? []).slice(0, MAX_RESEARCH_REFERENCE_POSTS));
+  }, [initialResearchReferences]);
+
+  // アカウント切り替え時、前のアカウントの参考投稿を残さないための保険。
+  // page.tsx側でもpendingResearchReferencesをnullにリセットしており、かつ
+  // このコンポーネントはnoteTabが"generate"でなくなると常にアンマウントされる
+  // ため通常は不要だが、将来マウントされ続ける構成に変わっても別アカウントの
+  // 投稿を引き継がないよう、accountIdの実際の変化時だけ独立して消す
+  // （マウント直後の初回実行では消さない）。
+  const prevAccountIdRef = useRef(accountId);
+  useEffect(() => {
+    if (prevAccountIdRef.current !== accountId) {
+      prevAccountIdRef.current = accountId;
+      setResearchReferences([]);
+    }
+  }, [accountId]);
+
+  const handleClearResearchReferences = () => {
+    setResearchReferences([]);
+  };
+
+  const handleRemoveResearchReference = (relationId: string) => {
+    setResearchReferences((prev) => prev.filter((r) => r.relationId !== relationId));
+  };
 
   // Override state (for "変更する")
   const [overridingType, setOverridingType] = useState(false);
@@ -255,6 +309,7 @@ export default function TabGenerate({ accountId, articles, drafts, initialPropos
           fullContext: fullContext || undefined,
           structureMemo: structureMemo.trim() || undefined,
           writingStyle,
+          researchReferences: researchReferences.length > 0 ? researchReferences.map(toResearchReferencePost) : undefined,
           suggestionMeta: (fromSuggestions && !cleared) ? {
             role: initialProposal?.suggestionRole,
             roleLabel: initialProposal?.suggestionRoleLabel,
@@ -596,6 +651,42 @@ export default function TabGenerate({ accountId, articles, drafts, initialPropos
           ) : (
             <p className="text-xs text-zinc-500 truncate">{fullContext.slice(0, 120)}…</p>
           )}
+        </div>
+      )}
+
+      {/* Xリサーチからの参考投稿 */}
+      {researchReferences.length > 0 && (
+        <div className="bg-zinc-800/60 border border-sky-500/30 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-medium text-sky-400">
+              Xリサーチからの参考投稿（{researchReferences.length}件・記事生成に含めます）
+            </span>
+            <button
+              onClick={handleClearResearchReferences}
+              className="text-xs text-zinc-500 hover:text-zinc-300"
+            >
+              参考資料をクリア
+            </button>
+          </div>
+          <ul className="space-y-2">
+            {researchReferences.map((r) => (
+              <li key={r.relationId} className="flex items-start justify-between gap-2 text-xs text-zinc-400 border-t border-zinc-700/60 pt-2">
+                <div className="min-w-0">
+                  <div className="text-zinc-300">
+                    {r.authorName && r.authorName.trim() ? r.authorName : `@${r.authorHandle}`}
+                    <span className="text-zinc-600"> @{r.authorHandle}</span>
+                  </div>
+                  <div className="text-zinc-500 truncate">{r.text && r.text.trim() ? r.text : "（本文なし）"}</div>
+                </div>
+                <button
+                  onClick={() => handleRemoveResearchReference(r.relationId)}
+                  className="shrink-0 text-zinc-500 hover:text-zinc-300"
+                >
+                  外す
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

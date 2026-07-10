@@ -4,9 +4,14 @@ import { getAccountContext } from "@/lib/getAccountContext";
 import { validateAccountId } from "@/lib/accounts";
 import { requireSitePassword } from "@/lib/apiAuth";
 import { SEKI_ID } from "@/lib/accountIds";
-import { Article } from "@/lib/types";
+import { Article, ResearchReferencePost } from "@/lib/types";
 
 const client = new Anthropic();
+
+// 1回の記事生成につき参考資料として渡せるX投稿数のハード上限。
+// クライアント側の選択UIでも同じ上限を設けているが、ここでも独立して
+// 強制する（クライアント側の上限実装に関わらず、APIが常に守る）。
+const MAX_RESEARCH_REFERENCE_POSTS = 5;
 
 function buildArticlesSummary(articles: Article[]): string {
   if (!articles || articles.length === 0) return "（記事データベースなし）";
@@ -15,16 +20,79 @@ function buildArticlesSummary(articles: Article[]): string {
     .join("\n");
 }
 
+// クライアントから届く値を無条件に信用しない。ResearchReferencePost
+// （プロンプトで使う最小フィールドだけを持つ形）だけを受け入れる。
+// relationId等の内部管理情報が含まれていても読み取らない。
+function isResearchReferencePost(value: unknown): value is ResearchReferencePost {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.text !== "string" && v.text !== null) return false;
+  if (typeof v.authorName !== "string" && v.authorName !== null) return false;
+  if (typeof v.authorHandle !== "string") return false;
+  if (typeof v.url !== "string") return false;
+  if (typeof v.savedReason !== "string" && v.savedReason !== null) return false;
+  if (typeof v.memo !== "string" && v.memo !== null) return false;
+  if (!Array.isArray(v.tags) || !v.tags.every((t) => typeof t === "string")) return false;
+  if (typeof v.likes !== "number" && v.likes !== null) return false;
+  return true;
+}
+
+function buildResearchReferencesSection(rawRefs: unknown): string {
+  if (!Array.isArray(rawRefs) || rawRefs.length === 0) return "";
+  // 件数の上限判定はこの関数の呼び出し前（POSTハンドラ）で行い、超過時は
+  // 400で拒否済みのため、ここでは黙った切り捨て（.slice）は行わない。
+  const refs = rawRefs.filter(isResearchReferencePost);
+  if (refs.length === 0) return "";
+
+  const items = refs
+    .map((r, i) => {
+      const author =
+        r.authorName && r.authorName.trim() ? `${r.authorName}（@${r.authorHandle}）` : `@${r.authorHandle}`;
+      const text = r.text && r.text.trim() ? r.text.trim() : "（本文なし）";
+      const likes = typeof r.likes === "number" ? `\n  いいね数: ${r.likes}` : "";
+      const reason = r.savedReason && r.savedReason.trim() ? `\n  保存理由: ${r.savedReason.trim()}` : "";
+      const memo = r.memo && r.memo.trim() ? `\n  メモ: ${r.memo.trim()}` : "";
+      const tags = r.tags && r.tags.length > 0 ? `\n  タグ: ${r.tags.join(", ")}` : "";
+      return `${i + 1}. ${author}\n  投稿: ${text}${likes}\n  URL: ${r.url}${reason}${memo}${tags}`;
+    })
+    .join("\n\n");
+
+  return `
+
+【X投稿の参考資料（人間が選んだもの・あくまで参考情報）】
+以下は関達也本人ではなく、他の投稿者によるX（旧Twitter）の投稿です。次を厳守してください。
+- これらは参考情報・他者の意見として扱うこと。関達也本人の体験として書かないこと。
+- 投稿文をそのまま長く転載しないこと。要点を自分の言葉で紹介する程度にとどめること。
+- 内容を事実として断定する場合は、必要に応じて「詳細は要確認」等の留保を含めること。
+- 出典として、必要な箇所でURLを示せるようにしておくこと。
+
+${items}`;
+}
+
 export async function POST(request: Request) {
   const authError = requireSitePassword(request);
   if (authError) return authError;
   try {
-    const { account_id, theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle, suggestionMeta } =
+    const { account_id, theme, magazine, articleType, price, wordCount, purpose, articles, fullContext, structureMemo, writingStyle, suggestionMeta, researchReferences } =
       await request.json();
 
     const accountId = account_id ?? SEKI_ID;
     if (!await validateAccountId(accountId)) {
       return Response.json({ error: "account_id is required and must be valid" }, { status: 400 });
+    }
+
+    // researchReferencesの件数上限は、生成処理・Anthropic API呼び出しより
+    // 前に検証する。超過時は黙って先頭N件へ切り詰めず、400で拒否する。
+    if (researchReferences !== undefined && researchReferences !== null) {
+      if (!Array.isArray(researchReferences)) {
+        return Response.json({ error: "researchReferences must be an array" }, { status: 400 });
+      }
+      if (researchReferences.length > MAX_RESEARCH_REFERENCE_POSTS) {
+        return Response.json(
+          { error: `researchReferencesは${MAX_RESEARCH_REFERENCE_POSTS}件以下にしてください` },
+          { status: 400 }
+        );
+      }
     }
 
     const { profileDocument, dna, isOfficialAccount } = await getAccountContext(accountId);
@@ -127,8 +195,9 @@ ${isOfficialAccount ? ACCURACY_RULES : ""}`;
       : `\n\n記事本文の後に、改行を2行入れてから「## タイトル案」として5個のタイトル候補を番号付きリストで提案してください。`;
 
     const structureMemoSection = structureMemo ? `\n構成メモ：\n${structureMemo}\n` : "";
+    const researchReferencesSection = buildResearchReferencesSection(researchReferences);
 
-    const userMessage = fullContext
+    const userMessage = (fullContext
       ? `以下の提案内容をもとに記事を書いてください：
 
 ${fullContext}
@@ -144,7 +213,7 @@ ${structureMemoSection}
 テーマ・キーワード：${theme}
 掲載マガジン：${magazine}
 ${structureMemoSection}
-体験談ベースの記事にしてください。${freeSuffix}`;
+体験談ベースの記事にしてください。${freeSuffix}`) + researchReferencesSection;
 
     const maxTokens = isPaid ? 5000 : wordCount === "standard" ? 4000 : 3000;
 

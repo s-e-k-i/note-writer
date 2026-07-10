@@ -253,6 +253,20 @@ export interface ResearchPostListItem {
   relationCreatedAt: string;
 }
 
+// note記事生成へ参考資料として渡す最小情報。ResearchPostListItemのうち
+// プロンプトで実際に使うフィールドだけを抜き出したもの。relationId・
+// researchPostId・capturedAt等の内部管理情報はここには含めない。
+export interface ResearchReferencePost {
+  text: string | null;
+  authorName: string | null;
+  authorHandle: string;
+  url: string;
+  savedReason: string | null;
+  memo: string | null;
+  tags: string[];
+  likes: number | null;
+}
+
 // PATCHの更新入力。undefinedのフィールドは既存値を維持し、nullは値を消す
 // （tagsのみnullを許容しない。空配列[]で全削除を表現する）。
 export interface ResearchPostRelationUpdate {

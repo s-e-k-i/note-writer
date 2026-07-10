@@ -5,7 +5,12 @@ import { ResearchPostListItem, ResearchPostImportItem } from "@/lib/types";
 
 interface TabResearchProps {
   noteAccountId: string;
+  onSendToGenerate: (posts: ResearchPostListItem[]) => void;
 }
+
+// note記事生成へ一度に渡せるX投稿数のハード上限。AI APIへの無駄な送信を
+// 防ぐための上限であり、超えた分を勝手に切り捨てず、UI側で選択自体を止める。
+const MAX_GENERATE_REFERENCE_POSTS = 5;
 
 const PAGE_SIZE = 50;
 const MAX_IMPORT_ITEMS = 50;
@@ -670,7 +675,7 @@ async function parseErrorMessage(res: Response, fallback: string): Promise<strin
   return `${fallback} (${res.status})`;
 }
 
-export default function TabResearch({ noteAccountId }: TabResearchProps) {
+export default function TabResearch({ noteAccountId, onSendToGenerate }: TabResearchProps) {
   const [items, setItems] = useState<ResearchPostListItem[]>([]);
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
   const [loading, setLoading] = useState(true);
@@ -907,6 +912,39 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
     setSelectedSaveResult(null);
     setSelectedSaveError(null);
   }, [noteAccountId]);
+
+  // 保存済みリサーチ一覧から、note記事生成の参考資料として使う投稿を選ぶ
+  // ための選択state。Gate 2B-4/2B-5の統合候補選択（selectedPostIds）とは
+  // 別物（対象がintegratedPostsではなくitems=保存済み一覧のため）で、
+  // relationIdをキーにする。上限MAX_GENERATE_REFERENCE_POSTSを超える選択は
+  // 追加できないようにし、勝手な切り捨てはしない。
+  const [generateSelection, setGenerateSelection] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setGenerateSelection(new Set());
+  }, [noteAccountId]);
+
+  const toggleGenerateSelection = useCallback((relationId: string) => {
+    setGenerateSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(relationId)) {
+        next.delete(relationId);
+      } else {
+        if (next.size >= MAX_GENERATE_REFERENCE_POSTS) return prev;
+        next.add(relationId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSendSelectedToGenerate = useCallback(() => {
+    const selected = items
+      .filter((item) => generateSelection.has(item.relationId))
+      .slice(0, MAX_GENERATE_REFERENCE_POSTS);
+    if (selected.length === 0) return;
+    onSendToGenerate(selected);
+    setGenerateSelection(new Set());
+  }, [items, generateSelection, onSendToGenerate]);
 
   const mergeCardStates = useCallback((newItems: ResearchPostListItem[]) => {
     setCardStates((prev) => {
@@ -2823,22 +2861,54 @@ export default function TabResearch({ noteAccountId }: TabResearchProps) {
 
       {!loading && !loadError && items.length > 0 && (
         <div className="space-y-3">
+          <div className="bg-zinc-800 border border-sky-700/40 rounded-xl p-3 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-zinc-400">
+              note記事生成に使う投稿を選択：{generateSelection.size} / {MAX_GENERATE_REFERENCE_POSTS}件
+            </span>
+            {generateSelection.size >= MAX_GENERATE_REFERENCE_POSTS && (
+              <span className="text-xs text-amber-400/80">
+                これ以上は選択できません（上限{MAX_GENERATE_REFERENCE_POSTS}件）
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleSendSelectedToGenerate}
+              disabled={generateSelection.size === 0}
+              className="ml-auto text-xs px-3 py-1.5 bg-sky-500 hover:bg-sky-400 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-semibold rounded-lg transition-colors"
+            >
+              選択した投稿をnote記事生成に使う →
+            </button>
+          </div>
+
           {items.map((item) => {
             const card = cardStates[item.relationId];
             const displayName =
               item.authorName && item.authorName.trim() ? item.authorName : `@${item.authorHandle}`;
             const showHandleSeparately = !!(item.authorName && item.authorName.trim());
             const bodyText = item.text && item.text.trim() ? item.text : "本文を取得できませんでした";
+            const isSelectedForGenerate = generateSelection.has(item.relationId);
+            const generateCheckboxDisabled =
+              !isSelectedForGenerate && generateSelection.size >= MAX_GENERATE_REFERENCE_POSTS;
 
             return (
               <div key={item.relationId} className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">
                 {/* ヘッダー */}
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-zinc-200 truncate">{displayName}</div>
-                    {showHandleSeparately && (
-                      <div className="text-xs text-zinc-500">@{item.authorHandle}</div>
-                    )}
+                  <div className="min-w-0 flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelectedForGenerate}
+                      disabled={generateCheckboxDisabled}
+                      onChange={() => toggleGenerateSelection(item.relationId)}
+                      title="note記事生成の参考資料として使う"
+                      className="mt-1 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-zinc-200 truncate">{displayName}</div>
+                      {showHandleSeparately && (
+                        <div className="text-xs text-zinc-500">@{item.authorHandle}</div>
+                      )}
+                    </div>
                   </div>
                   <div className="text-xs text-zinc-500 shrink-0 text-right">
                     <div>投稿日時: {formatDateTimeJST(item.postedAt)}</div>
