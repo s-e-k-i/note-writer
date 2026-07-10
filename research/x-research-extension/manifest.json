@@ -10,7 +10,7 @@
     "service_worker": "background.js"
   },
   "externally_connectable": {
-    "matches": ["http://localhost/*"]
+    "matches": ["http://localhost/*", "https://note-writer-six.vercel.app/*"]
   },
   "host_permissions": ["https://x.com/*"],
   "permissions": ["activeTab", "scripting", "storage"]

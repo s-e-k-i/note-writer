@@ -2069,11 +2069,10 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
         </div>
       )}
 
-      {/* Gate 2A-1: 開発時のみ表示するX検索専用タブの新規作成・再利用確認（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" && (
-        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+      {/* Gate 2A-1: X検索用タブ（本番でも表示） */}
+      <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
           <h3 className="text-sm font-semibold text-zinc-200">
-            開発用：X検索専用タブの作成・再利用確認（Gate 2A-1）
+            X検索用タブ
           </h3>
           <p className="text-xs text-zinc-500">
             検索語を送り、拡張機能がX検索専用タブを非アクティブのまま作成・再利用するかだけを確認します。投稿の取得・保存は行いません。
@@ -2118,7 +2117,6 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
             <p className="text-xs text-red-400">{openSearchTabMessage}</p>
           )}
         </div>
-      )}
 
       {/* Gate 2A-2: 開発時のみ表示する投稿要素の表示確認（本番では非表示） */}
       {process.env.NODE_ENV !== "production" && (
@@ -2156,14 +2154,13 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
         </div>
       )}
 
-      {/* Gate 2B-1: 開発時のみ表示する投稿データ抽出確認（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" && (
-        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+      {/* Gate 2B-1: 最新投稿を取得（本番でも表示） */}
+      <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
           <h3 className="text-sm font-semibold text-zinc-200">
-            開発用：投稿データの抽出確認（Gate 2B-1）
+            最新投稿を取得
           </h3>
           <p className="text-xs text-zinc-500">
-            Gate 2A-1の専用タブに現在描画されている投稿データを最大10件抽出し、ここで目視確認するだけです。DB保存・API呼び出しは行いません。
+            X検索用タブに現在描画されている投稿データを最大10件抽出し、ここで目視確認するだけです。DB保存・API呼び出しは行いません。
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -2258,31 +2255,12 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
                 </button>
               )}
 
-              {extractPostsResult.skippedCount > 0 && (
-                <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                  <summary className="cursor-pointer text-zinc-400">
-                    スキップ内容を表示（{extractPostsResult.skippedCount}件）
-                  </summary>
-                  <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                    {JSON.stringify(extractPostsResult.skipped, null, 2)}
-                  </pre>
-                </details>
-              )}
-
-              <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
-                <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                  {JSON.stringify(extractPostsResult, null, 2)}
-                </pre>
-              </details>
             </div>
           )}
         </div>
-      )}
 
-      {/* Gate 2B-2A: 開発時のみ表示する話題投稿の抽出確認（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" &&
-        (() => {
+      {/* Gate 2B-2A: 話題投稿を取得（本番でも表示） */}
+      {(() => {
           const topSearchQuery = deriveTopSearchQuery(extractPostsResult?.sourceUrl);
           const topPostsButtonDisabled =
             topPostsStatus === "checking" ||
@@ -2294,10 +2272,10 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
           return (
             <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
               <h3 className="text-sm font-semibold text-zinc-200">
-                開発用：話題投稿の抽出確認（Gate 2B-2A）
+                話題投稿を取得
               </h3>
               <p className="text-xs text-zinc-500">
-                Gate 2B-1の最新抽出結果が使った検索語で、専用タブを「話題」の検索結果へ移動し、話題投稿を最大10件抽出します。DB保存・API呼び出しは行いません。
+                最新投稿の取得結果が使った検索語で、専用タブを「話題」の検索結果へ移動し、話題投稿を最大10件抽出します。DB保存・API呼び出しは行いません。
               </p>
               {topSearchQuery ? (
                 <p className="text-xs text-zinc-400">対象検索語：{topSearchQuery}（最新抽出時）</p>
@@ -2397,23 +2375,6 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
                     </button>
                   )}
 
-                  {topPostsResult.skippedCount > 0 && (
-                    <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                      <summary className="cursor-pointer text-zinc-400">
-                        スキップ内容を表示（{topPostsResult.skippedCount}件）
-                      </summary>
-                      <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                        {JSON.stringify(topPostsResult.skipped, null, 2)}
-                      </pre>
-                    </details>
-                  )}
-
-                  <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                    <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
-                    <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                      {JSON.stringify(topPostsResult, null, 2)}
-                    </pre>
-                  </details>
                 </div>
               )}
             </div>
@@ -2484,11 +2445,10 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
         </div>
       )}
 
-      {/* Gate 2B-3A: 開発時のみ表示する注目アカウントの投稿抽出（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" && (
-        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+      {/* Gate 2B-3A: 注目アカウントの投稿を取得（本番でも表示） */}
+      <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
           <h3 className="text-sm font-semibold text-zinc-200">
-            開発用：注目アカウントの投稿抽出（Gate 2B-3A）
+            注目アカウントの投稿を取得
           </h3>
           <p className="text-xs text-zinc-500">
             専用タブを指定した1件のXアカウントのプロフィールへ移動し、投稿データを最大10件抽出します。プロフィールURLではなくユーザー名を入力してください。DB保存・API呼び出しは行いません。
@@ -2571,31 +2531,12 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
                   </button>
                 )}
 
-              {accountPostsResult.skippedCount > 0 && (
-                <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                  <summary className="cursor-pointer text-zinc-400">
-                    スキップ内容を表示（{accountPostsResult.skippedCount}件）
-                  </summary>
-                  <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                    {JSON.stringify(accountPostsResult.skipped, null, 2)}
-                  </pre>
-                </details>
-              )}
-
-              <details className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2">
-                <summary className="cursor-pointer text-zinc-400">JSON全体を表示</summary>
-                <pre className="mt-2 text-[11px] text-zinc-500 whitespace-pre-wrap break-all">
-                  {JSON.stringify(accountPostsResult, null, 2)}
-                </pre>
-              </details>
             </div>
           )}
         </div>
-      )}
 
-      {/* NW-X Gate 2B-4: 開発時のみ表示する統合候補一覧と選択（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" &&
-        (() => {
+      {/* NW-X Gate 2B-4: 取得した投稿を選ぶ（本番でも表示） */}
+      {(() => {
           const hasAnyResult = extractPostsResult !== null || topPostsResult !== null || accountPostsResult !== null;
           const displayedIntegratedPosts = integratedPostsShowAll
             ? integratedPosts
@@ -2603,7 +2544,7 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
           return (
             <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
               <h3 className="text-sm font-semibold text-zinc-200">
-                NW-X Gate 2B-4：統合候補と選択（開発用）
+                取得した投稿を選ぶ
               </h3>
               <p className="text-xs text-zinc-500">
                 最新・話題・注目アカウントの抽出結果をpostIdで統合し、重複を1件にまとめて表示します。DB保存・API送信・AI処理は行いません。
@@ -2675,14 +2616,13 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
           );
         })()}
 
-      {/* NW-X Gate 2B-5: 開発時のみ表示する選択投稿の保存（本番では非表示） */}
-      {process.env.NODE_ENV !== "production" && (
-        <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
+      {/* NW-X Gate 2B-5: 選択した投稿を保存（本番でも表示） */}
+      <div className="bg-zinc-800 border border-amber-700/40 rounded-xl p-4 space-y-2">
           <h3 className="text-sm font-semibold text-zinc-200">
-            NW-X Gate 2B-5：選択投稿の保存（開発用）
+            選択した投稿を保存
           </h3>
           <p className="text-xs text-zinc-500">
-            Gate 2B-4で選択した投稿だけを、既存のリサーチ保存APIへ送信し、既存リサーチ一覧へ反映します。新しいAPI・DB・型は使用しません。
+            「取得した投稿を選ぶ」で選択した投稿だけを、既存のリサーチ保存APIへ送信し、既存リサーチ一覧へ反映します。新しいAPI・DB・型は使用しません。
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -2747,7 +2687,6 @@ export default function TabResearch({ noteAccountId, onSendToGenerate }: TabRese
             </div>
           )}
         </div>
-      )}
 
       {/* JSONインポート */}
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4 space-y-3">

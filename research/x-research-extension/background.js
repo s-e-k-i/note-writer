@@ -37,14 +37,18 @@
 importScripts("extractor-core.js");
 
 // Accepts any http://localhost:<any port> origin (note-writer's local dev
-// port varies run to run), but nothing else: not 127.0.0.1, not any other
-// hostname, not https, not file:/chrome-extension:. Port is intentionally
-// not checked here (manifest.json's externally_connectable already can't
-// encode a port either — see its comment); only protocol + exact hostname
-// are the access-control boundary. Shared by both X_RESEARCH_PING and
-// X_RESEARCH_OPEN_SEARCH_TAB via the single entry check below.
+// port varies run to run), and exactly one production origin
+// (https://note-writer-six.vercel.app), but nothing else: not 127.0.0.1,
+// not any other hostname, not other Vercel preview/alias URLs, not
+// file:/chrome-extension:. Port is intentionally not checked for localhost
+// (manifest.json's externally_connectable already can't encode a port
+// either — see its comment); protocol + exact hostname are the
+// access-control boundary for both entries. Shared by every message type
+// via the single entry check below.
 function isAllowedSenderUrl(senderUrl) {
-  return senderUrl.protocol === "http:" && senderUrl.hostname === "localhost";
+  if (senderUrl.protocol === "http:" && senderUrl.hostname === "localhost") return true;
+  if (senderUrl.protocol === "https:" && senderUrl.hostname === "note-writer-six.vercel.app") return true;
+  return false;
 }
 
 // Gate 2A-1's own input cap for the search query — not an official X query
