@@ -13,6 +13,8 @@ interface Props {
   onUpdateSummaries: (updates: { id: string; summary: string }[]) => void;
   onAddArticle: (article: Omit<Article, "id" | "number">) => void;
   onUpdateArticle: (id: string, updates: Partial<Article>) => void;
+  onDeleteArticle: (id: string) => void;
+  onRestoreArticle: (id: string) => void;
 }
 
 interface EditFields {
@@ -111,7 +113,14 @@ function summaryBadge(a: Article): { label: string; className: string } | null {
   return null;
 }
 
-export default function TabDatabase({ articles, usingLocalFallback, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle }: Props) {
+export default function TabDatabase({ articles, usingLocalFallback, onImport, onExportJSON, onImportJSON, onUpdateSummaries, onAddArticle, onUpdateArticle, onDeleteArticle, onRestoreArticle }: Props) {
+  // ソフト削除：articlesには削除済み記事も含まれる（app/api/articles-db/route.ts
+  // が返すようになったため）。通常表示は未削除だけ、トグルONで削除済みだけを表示する。
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const visibleArticles = articles.filter((a) => !a.deletedAt);
+  const deletedArticles = articles.filter((a) => a.deletedAt);
+
   const [summaryImportOpen, setSummaryImportOpen] = useState(false);
   const [summaryJSON, setSummaryJSON] = useState("");
   const [summaryImportMsg, setSummaryImportMsg] = useState("");
@@ -145,8 +154,8 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
 
   // Auto-generate summaries for articles that have body but no summary (runs once on mount)
   useEffect(() => {
-    if (autoSummarized.current || !articles.length) return;
-    const missing = articles.filter((a) => !a.summary?.trim() && a.body?.trim());
+    if (autoSummarized.current || !visibleArticles.length) return;
+    const missing = visibleArticles.filter((a) => !a.summary?.trim() && a.body?.trim());
     if (!missing.length) return;
     autoSummarized.current = true;
     (async () => {
@@ -349,10 +358,10 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
 
   const magazineCounts = MAGAZINES.map((m) => ({
     name: m.split("──")[0].trim(),
-    count: articles.filter((a) => (a.magazines ?? [a.magazine]).includes(m)).length,
+    count: visibleArticles.filter((a) => (a.magazines ?? [a.magazine]).includes(m)).length,
   }));
 
-  const monthlyCounts = articles.reduce<Record<string, number>>((acc, a) => {
+  const monthlyCounts = visibleArticles.reduce<Record<string, number>>((acc, a) => {
     const month = a.date.slice(0, 7);
     acc[month] = (acc[month] || 0) + 1;
     return acc;
@@ -360,8 +369,8 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
 
   const currentMonth = new Date().toISOString().slice(0, 7);
 
-  const oldestMonth = articles.length > 0
-    ? [...articles].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 7)
+  const oldestMonth = visibleArticles.length > 0
+    ? [...visibleArticles].sort((a, b) => a.date.localeCompare(b.date))[0].date.slice(0, 7)
     : currentMonth;
 
   const twelveMonthsAgoDate = new Date();
@@ -389,7 +398,7 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
 
   const maxMonthCount = Math.max(...displayData.map((d) => d.count), 1);
 
-  const paidArticles = articles.filter((a) => a.isPaid);
+  const paidArticles = visibleArticles.filter((a) => a.isPaid);
   const paidCount = paidArticles.length;
   const totalPaidRevenue = paidArticles.reduce((sum, a) => sum + (a.paidPrice ?? 0), 0);
 
@@ -567,7 +576,7 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
       </div>
 
       {/* Dashboard */}
-      {articles.length > 0 && (
+      {visibleArticles.length > 0 && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Magazine counts */}
@@ -645,20 +654,38 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
 
       {/* Article list */}
       {articles.length > 0 && (() => {
-        const totalPages = Math.max(1, Math.ceil(articles.length / PAGE_SIZE));
+        const listSource = showDeleted ? deletedArticles : visibleArticles;
+        const totalPages = Math.max(1, Math.ceil(listSource.length / PAGE_SIZE));
         const page = Math.min(listPage, totalPages);
-        const pagedArticles = articles.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+        const pagedArticles = listSource.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
         return (
         <div>
-          <div ref={listTopRef} className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-medium text-zinc-400">記事一覧（{articles.length}本）</h3>
-            <button
-              onClick={handleDownload}
-              className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
-            >
-              ↓ データベースをダウンロード
-            </button>
+          <div ref={listTopRef} className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h3 className="text-sm font-medium text-zinc-400">
+              {showDeleted ? `削除済み（${deletedArticles.length}件）` : `記事一覧（${visibleArticles.length}本）`}
+            </h3>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setShowDeleted((v) => !v); setListPage(1); setDeleteConfirmId(null); }}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+                  showDeleted
+                    ? "border-zinc-500 bg-zinc-600 text-white"
+                    : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500"
+                }`}
+              >
+                {showDeleted ? "通常表示に戻る" : `削除済みを表示${deletedArticles.length > 0 ? `（${deletedArticles.length}）` : ""}`}
+              </button>
+              <button
+                onClick={handleDownload}
+                className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+              >
+                ↓ データベースをダウンロード
+              </button>
+            </div>
           </div>
+          {showDeleted && deletedArticles.length === 0 && (
+            <p className="text-xs text-zinc-500 mb-3">削除済みの記事はありません</p>
+          )}
           <div className="space-y-2">
             {pagedArticles.map((a) => (
               <div key={a.id} className="bg-zinc-800 rounded-lg overflow-hidden">
@@ -699,20 +726,54 @@ export default function TabDatabase({ articles, usingLocalFallback, onImport, on
                       {(a.magazines ?? [a.magazine]).map((m) => m.split("──")[0].trim()).join("・")}
                     </p>
                   </div>
-                  <button
-                    onClick={() => editingId === a.id ? setEditingId(null) : openEdit(a)}
-                    className={`shrink-0 text-xs px-2.5 py-1 rounded-lg border transition-colors ${
-                      editingId === a.id
-                        ? "border-zinc-500 text-zinc-400 hover:text-zinc-200"
-                        : "border-zinc-600 text-zinc-500 hover:text-zinc-300"
-                    }`}
-                  >
-                    {editingId === a.id ? "閉じる" : "編集"}
-                  </button>
+                  {showDeleted ? (
+                    <button
+                      onClick={() => onRestoreArticle(a.id)}
+                      className="shrink-0 text-xs px-2.5 py-1 rounded-lg border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+                    >
+                      復元
+                    </button>
+                  ) : (
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      <button
+                        onClick={() => editingId === a.id ? setEditingId(null) : openEdit(a)}
+                        className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${
+                          editingId === a.id
+                            ? "border-zinc-500 text-zinc-400 hover:text-zinc-200"
+                            : "border-zinc-600 text-zinc-500 hover:text-zinc-300"
+                        }`}
+                      >
+                        {editingId === a.id ? "閉じる" : "編集"}
+                      </button>
+                      {deleteConfirmId === a.id ? (
+                        <>
+                          <button
+                            onClick={() => { onDeleteArticle(a.id); setDeleteConfirmId(null); if (editingId === a.id) setEditingId(null); }}
+                            className="text-xs px-2.5 py-1 border border-red-700 bg-red-700/20 text-red-400 rounded-lg"
+                          >
+                            削除する
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirmId(null)}
+                            className="text-xs px-1.5 py-1 text-zinc-500 hover:text-zinc-300 transition-colors"
+                          >
+                            ×
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setDeleteConfirmId(a.id)}
+                          className="text-xs px-2 py-1 text-zinc-600 hover:text-red-400 transition-colors"
+                        >
+                          削除
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Inline edit area */}
-                {editingId === a.id && (
+                {!showDeleted && editingId === a.id && (
                   <div className="border-t border-zinc-700 p-4 space-y-3 bg-zinc-800/60">
                     {/* Title */}
                     <div>

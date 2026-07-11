@@ -164,6 +164,23 @@ export function useArticlesDB(accountId: string) {
     [storageKey, accountId]
   );
 
+  // ソフト削除・復元：物理削除は行わない。updateArticleの薄いラッパーで、
+  // deletedAtを設定/解除するだけ。localStorage → DBミラーという既存の
+  // 書き込み経路をそのまま使う（新しい特殊な保存経路は作らない）。
+  const deleteArticle = useCallback(
+    (id: string) => {
+      updateArticle(id, { deletedAt: new Date().toISOString() });
+    },
+    [updateArticle]
+  );
+
+  const restoreArticle = useCallback(
+    (id: string) => {
+      updateArticle(id, { deletedAt: undefined });
+    },
+    [updateArticle]
+  );
+
   const updateSummaries = useCallback(
     (updates: { id: string; summary: string }[]) => {
       setArticles((prev) => {
@@ -194,5 +211,5 @@ export function useArticlesDB(accountId: string) {
     [storageKey, accountId]
   );
 
-  return { articles, loaded, usingLocalFallback, save, addArticle, exportJSON, importJSON, updateArticle, updateSummaries, bulkUpdateBodies };
+  return { articles, loaded, usingLocalFallback, save, addArticle, exportJSON, importJSON, updateArticle, deleteArticle, restoreArticle, updateSummaries, bulkUpdateBodies };
 }

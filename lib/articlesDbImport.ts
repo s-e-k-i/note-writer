@@ -62,10 +62,10 @@ export async function importArticles(
       const rows = (await sql`
         INSERT INTO note_articles (
           note_account_id, legacy_id, legacy_key, number, title, body, body_hash,
-          summary, summary_status, url, is_paid, paid_price, magazine, magazines, published_at
+          summary, summary_status, url, is_paid, paid_price, magazine, magazines, published_at, deleted_at
         ) VALUES (
           ${p.note_account_id}, ${p.legacy_id}, ${p.legacy_key}, ${p.number}, ${p.title}, ${p.body}, ${p.body_hash},
-          ${p.summary}, ${p.summary_status}, ${p.url}, ${p.is_paid}, ${p.paid_price}, ${p.magazine}, ${p.magazines}, ${p.published_at}
+          ${p.summary}, ${p.summary_status}, ${p.url}, ${p.is_paid}, ${p.paid_price}, ${p.magazine}, ${p.magazines}, ${p.published_at}, ${p.deleted_at}
         )
         ON CONFLICT (note_account_id, legacy_id) DO UPDATE SET
           legacy_key = EXCLUDED.legacy_key,
@@ -81,6 +81,7 @@ export async function importArticles(
           magazine = EXCLUDED.magazine,
           magazines = EXCLUDED.magazines,
           published_at = EXCLUDED.published_at,
+          deleted_at = EXCLUDED.deleted_at,
           updated_at = now(),
           version = note_articles.version + 1
         RETURNING (xmax = 0) AS inserted
@@ -97,11 +98,11 @@ export async function importArticles(
       INSERT INTO note_articles (
         note_account_id, legacy_id, legacy_key, number, title, body, body_hash,
         summary, summary_status, url, is_paid, paid_price, magazine, magazines, published_at,
-        mirror_seq
+        deleted_at, mirror_seq
       ) VALUES (
         ${p.note_account_id}, ${p.legacy_id}, ${p.legacy_key}, ${p.number}, ${p.title}, ${p.body}, ${p.body_hash},
         ${p.summary}, ${p.summary_status}, ${p.url}, ${p.is_paid}, ${p.paid_price}, ${p.magazine}, ${p.magazines}, ${p.published_at},
-        ${clientWriteTs}
+        ${p.deleted_at}, ${clientWriteTs}
       )
       ON CONFLICT (note_account_id, legacy_id) DO UPDATE SET
         legacy_key = EXCLUDED.legacy_key,
@@ -117,6 +118,7 @@ export async function importArticles(
         magazine = EXCLUDED.magazine,
         magazines = EXCLUDED.magazines,
         published_at = EXCLUDED.published_at,
+        deleted_at = EXCLUDED.deleted_at,
         mirror_seq = EXCLUDED.mirror_seq,
         updated_at = now(),
         version = note_articles.version + 1

@@ -15,6 +15,7 @@ interface DbArticleRowLike {
   magazine: string | null;
   magazines: string[] | null;
   published_at: string | null;
+  deleted_at: string | null;
 }
 
 function dbRowToArticle(row: DbArticleRowLike): Article {
@@ -31,6 +32,7 @@ function dbRowToArticle(row: DbArticleRowLike): Article {
     paidPrice: row.paid_price ?? undefined,
     body: row.body ?? undefined,
     url: row.url ?? undefined,
+    deletedAt: row.deleted_at ?? undefined,
   };
 }
 

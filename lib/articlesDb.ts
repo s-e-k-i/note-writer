@@ -61,6 +61,7 @@ export function articleToInsertParams(noteAccountId: string, a: Article) {
     magazine: a.magazine ?? null,
     magazines: a.magazines ?? (a.magazine ? [a.magazine] : null),
     published_at: a.date ?? null,
+    deleted_at: a.deletedAt ?? null,
   };
 }
 

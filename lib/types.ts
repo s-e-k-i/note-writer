@@ -11,6 +11,7 @@ export interface Article {
   magazines?: string[];
   body?: string;
   url?: string;
+  deletedAt?: string;
 }
 
 export interface Newsletter {

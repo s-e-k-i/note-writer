@@ -20,9 +20,12 @@ export async function GET(request: Request) {
   // column into a JS Date object, which serializes to a UTC timestamp that
   // reads as the wrong calendar date in non-UTC timezones (same issue fixed
   // in scripts/db-verify.ts's comparison logic).
+  // Soft-deleted articles (deleted_at IS NOT NULL) are intentionally included
+  // here — the trash/restore UI needs them. The client filters by deletedAt
+  // for the default list view (see TabDatabase.tsx).
   const rows = await sql`
     SELECT *, published_at::text AS published_at FROM note_articles
-    WHERE note_account_id = ${noteAccountId} AND deleted_at IS NULL
+    WHERE note_account_id = ${noteAccountId}
     ORDER BY number NULLS LAST, created_at
   `;
   return Response.json({ articles: rows });
