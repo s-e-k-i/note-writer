@@ -85,6 +85,22 @@ export function useSnsDB(accountId: string) {
     });
   }, [postsKey]);
 
+  const updatePostUrl = useCallback((id: string, postedUrl: string) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, postedUrl } : p));
+      persist(postsKey, next);
+      return next;
+    });
+  }, [postsKey]);
+
+  const updatePostResults = useCallback((id: string, results: NonNullable<SnsPost["results"]>) => {
+    setPosts((prev) => {
+      const next = prev.map((p) => (p.id === id ? { ...p, results } : p));
+      persist(postsKey, next);
+      return next;
+    });
+  }, [postsKey]);
+
   const addDraft = useCallback((draft: Omit<SnsDraft, "id">) => {
     setDrafts((prev) => {
       const next = [{ ...draft, id: Date.now().toString() }, ...prev];
@@ -109,5 +125,5 @@ export function useSnsDB(accountId: string) {
     });
   }, [draftsKey]);
 
-  return { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft };
+  return { posts, drafts, loaded, addPost, updatePost, removePost, updatePostUrl, updatePostResults, addDraft, updateDraft, removeDraft };
 }

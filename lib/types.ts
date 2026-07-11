@@ -61,6 +61,15 @@ export interface SnsPost {
   text: string;
   postedDate: string;
   note?: string;
+  postedUrl?: string;
+  results?: {
+    impressions: number;
+    likes: number;
+    reposts: number;
+    replies: number;
+    bookmarks: number;
+    recordedAt: string;
+  };
 }
 
 export interface SnsDraft {

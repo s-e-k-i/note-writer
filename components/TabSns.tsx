@@ -35,7 +35,7 @@ function formatDateTime(iso: string): string {
 }
 
 export default function TabSns({ accountId, notebookEntries, articles }: Props) {
-  const { posts, drafts, loaded, addPost, updatePost, removePost, addDraft, updateDraft, removeDraft } = useSnsDB(accountId);
+  const { posts, drafts, loaded, addPost, updatePost, removePost, updatePostUrl, updatePostResults, addDraft, updateDraft, removeDraft } = useSnsDB(accountId);
   const [subTab, setSubTab] = useState<SubTab>("list");
 
   // --- 一覧 tab state ---
@@ -46,6 +46,18 @@ export default function TabSns({ accountId, notebookEntries, articles }: Props) 
   const [editPostDate, setEditPostDate] = useState("");
   const [editSaved, setEditSaved] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  // 効果測定（SNS-EM Gate 1）：結果記録フォームの開閉・入力状態。
+  // 数値は文字列で保持し、空文字（未入力）と"0"（入力済み0件）を区別する。
+  const [resultsEditId, setResultsEditId] = useState<string | null>(null);
+  const [resultsForm, setResultsForm] = useState({
+    impressions: "",
+    likes: "",
+    reposts: "",
+    replies: "",
+    bookmarks: "",
+  });
+  const [resultsError, setResultsError] = useState<string | null>(null);
 
   // 直接追加フォーム
   const [showAddForm, setShowAddForm] = useState(false);
@@ -109,6 +121,71 @@ export default function TabSns({ accountId, notebookEntries, articles }: Props) 
     removePost(id);
     setDeleteConfirmId(null);
     if (editPostId === id) closeEditPost();
+  };
+
+  // 投稿URL：入力欄からフォーカスが外れた時点でlocalStorageへ保存する
+  // （キー入力のたびに保存はしない。空文字も「URLを消した」として保存する）。
+  const handleBlurPostUrl = (id: string, value: string) => {
+    updatePostUrl(id, value.trim());
+  };
+
+  // 効果測定：結果記録フォームの開閉
+  const openRecordResults = (p: SnsPost) => {
+    setResultsEditId(p.id);
+    setResultsError(null);
+    setResultsForm(
+      p.results
+        ? {
+            impressions: String(p.results.impressions),
+            likes: String(p.results.likes),
+            reposts: String(p.results.reposts),
+            replies: String(p.results.replies),
+            bookmarks: String(p.results.bookmarks),
+          }
+        : { impressions: "", likes: "", reposts: "", replies: "", bookmarks: "" }
+    );
+  };
+  const closeRecordResults = () => {
+    setResultsEditId(null);
+    setResultsError(null);
+  };
+
+  // 0以上の整数だけを正当な値として扱う。空文字は「未入力」としてnullを返し、
+  // 呼び出し側で明示的なエラーにする（黙って0扱いにしない）。
+  const parseNonNegativeInt = (raw: string): number | null => {
+    const trimmed = raw.trim();
+    if (trimmed === "" || !/^\d+$/.test(trimmed)) return null;
+    return Number(trimmed);
+  };
+
+  const RESULTS_FIELDS: { key: keyof typeof resultsForm; label: string }[] = [
+    { key: "impressions", label: "表示数" },
+    { key: "likes", label: "いいね" },
+    { key: "reposts", label: "リポスト" },
+    { key: "replies", label: "返信" },
+    { key: "bookmarks", label: "ブックマーク" },
+  ];
+
+  const handleSaveResults = (id: string) => {
+    const parsed: Record<string, number> = {};
+    for (const { key, label } of RESULTS_FIELDS) {
+      const value = parseNonNegativeInt(resultsForm[key]);
+      if (value === null) {
+        setResultsError(`${label}は0以上の整数で入力してください（未入力のまま記録はできません）`);
+        return;
+      }
+      parsed[key] = value;
+    }
+    updatePostResults(id, {
+      impressions: parsed.impressions,
+      likes: parsed.likes,
+      reposts: parsed.reposts,
+      replies: parsed.replies,
+      bookmarks: parsed.bookmarks,
+      recordedAt: new Date().toISOString(),
+    });
+    setResultsEditId(null);
+    setResultsError(null);
   };
 
   // 直接追加
@@ -481,6 +558,83 @@ export default function TabSns({ accountId, notebookEntries, articles }: Props) 
                     </div>
                   </div>
                 )}
+
+                {/* 効果測定（SNS-EM Gate 1）：投稿URL・結果記録 */}
+                <div className="border-t border-zinc-700/60 px-3 py-2 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-zinc-500 shrink-0">投稿URL</label>
+                    <input
+                      key={p.id}
+                      type="text"
+                      defaultValue={p.postedUrl ?? ""}
+                      onBlur={(e) => handleBlurPostUrl(p.id, e.target.value)}
+                      placeholder="https://..."
+                      className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                    />
+                  </div>
+
+                  {resultsEditId === p.id ? (
+                    <div className="bg-zinc-900/60 border border-zinc-700 rounded-lg p-3 space-y-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                        {RESULTS_FIELDS.map(({ key, label }) => (
+                          <div key={key}>
+                            <label className="block text-[11px] text-zinc-500 mb-0.5">{label}</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={resultsForm[key]}
+                              onChange={(e) =>
+                                setResultsForm((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              placeholder="未入力"
+                              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      {resultsError && (
+                        <p className="text-xs text-red-400">{resultsError}</p>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSaveResults(p.id)}
+                          className="px-3 py-1.5 text-xs font-medium bg-zinc-600 hover:bg-zinc-500 text-white rounded-lg transition-colors"
+                        >
+                          保存
+                        </button>
+                        <button
+                          onClick={closeRecordResults}
+                          className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-300 rounded-lg transition-colors"
+                        >
+                          キャンセル
+                        </button>
+                      </div>
+                    </div>
+                  ) : p.results ? (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-2.5 flex-wrap text-xs text-zinc-400">
+                        <span>表示 {p.results.impressions}</span>
+                        <span>いいね {p.results.likes}</span>
+                        <span>リポスト {p.results.reposts}</span>
+                        <span>返信 {p.results.replies}</span>
+                        <span>ブックマーク {p.results.bookmarks}</span>
+                      </div>
+                      <button
+                        onClick={() => openRecordResults(p)}
+                        className="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-2 transition-colors"
+                      >
+                        結果を編集
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => openRecordResults(p)}
+                      className="text-xs px-2.5 py-1 border border-zinc-600 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 rounded-lg transition-colors"
+                    >
+                      結果を記録する
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}
