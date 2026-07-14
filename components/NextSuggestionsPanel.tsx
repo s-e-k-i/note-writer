@@ -34,7 +34,11 @@ function loadCollapsed(): boolean {
 
 export default function NextSuggestionsPanel({ accountId, articles, notebookEntries, onStartWriting }: Props) {
   const [data, setData] = useState<SuggestionData | null>(null);
+  // loading: generate()（POST・AI呼び出し）の実行中だけを表す。
+  // checking: checkCache()（GETのみ・キャッシュ確認）の実行中だけを表す。
+  // 両者を分けることで、キャッシュ確認中に「生成中」と誤解させる表示をしない。
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const initialized = useRef(false);
@@ -53,21 +57,32 @@ export default function NextSuggestionsPanel({ accountId, articles, notebookEntr
 
   const today = new Date().toISOString().split("T")[0];
 
-  const load = async (forceRegenerate = false) => {
+  // マウント時に自動実行してよいのはキャッシュ確認（GET）だけ。
+  // キャッシュが無くてもAI呼び出し（POST）へは絶対にフォールバックしない。
+  const checkCache = async () => {
+    setChecking(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/next-suggestions?account_id=${encodeURIComponent(accountId)}`);
+      if (res.ok) {
+        const d: SuggestionData = await res.json();
+        if (d.date === today && d.suggestions?.length > 0) {
+          setData(d);
+        }
+      }
+    } catch {
+      // キャッシュ確認に失敗しても「今日の提案がまだ無い」状態として扱うだけで、
+      // 自動生成はしない。
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  // AI呼び出し（POST）。利用者がボタンを押した時だけ呼ばれる。
+  const generate = async () => {
     setLoading(true);
     setError(null);
     try {
-      if (!forceRegenerate) {
-        const res = await fetch(`/api/next-suggestions?account_id=${encodeURIComponent(accountId)}`);
-        if (res.ok) {
-          const d: SuggestionData = await res.json();
-          if (d.date === today && d.suggestions?.length > 0) {
-            setData(d);
-            setLoading(false);
-            return;
-          }
-        }
-      }
       const res = await fetch("/api/next-suggestions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,7 +101,7 @@ export default function NextSuggestionsPanel({ accountId, articles, notebookEntr
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
-    load(false);
+    checkCache();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,7 +140,7 @@ export default function NextSuggestionsPanel({ accountId, articles, notebookEntr
             <span className="text-xs text-zinc-600">{formattedTime}生成</span>
           )}
           <button
-            onClick={() => load(true)}
+            onClick={() => generate()}
             disabled={loading}
             className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-40 transition-colors"
           >
@@ -142,6 +157,10 @@ export default function NextSuggestionsPanel({ accountId, articles, notebookEntr
             </div>
           )}
 
+          {checking && !data && (
+            <p className="text-xs text-zinc-600">確認中...</p>
+          )}
+
           {loading && !data && (
             <div className="space-y-3">
               {[0, 1, 2].map((i) => (
@@ -152,6 +171,18 @@ export default function NextSuggestionsPanel({ accountId, articles, notebookEntr
                   <div className="h-3 bg-zinc-700/70 rounded w-4/5" />
                 </div>
               ))}
+            </div>
+          )}
+
+          {!checking && !loading && !data && (
+            <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-xl p-4 text-center space-y-2">
+              <p className="text-xs text-zinc-500">今日の提案はまだ生成されていません</p>
+              <button
+                onClick={() => generate()}
+                className="px-4 py-2 bg-amber-500/90 hover:bg-amber-400 text-black text-xs font-bold rounded-lg transition-colors"
+              >
+                今日の提案を生成する
+              </button>
             </div>
           )}
 
