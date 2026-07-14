@@ -29,6 +29,8 @@ function pickRandom<T>(arr: T[], n: number): T[] {
 }
 
 export async function GET(req: Request) {
+  const authError = requireSitePassword(req);
+  if (authError) return authError;
   const { searchParams } = new URL(req.url);
   const accountId = searchParams.get("account_id") ?? SEKI_ID;
   try {
@@ -42,6 +44,8 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authError = requireSitePassword(request);
+  if (authError) return authError;
   try {
     const { account_id, role } = (await request.json()) as { account_id?: string; role: string };
     const accountId = account_id ?? SEKI_ID;
