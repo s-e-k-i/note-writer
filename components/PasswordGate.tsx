@@ -17,20 +17,23 @@ export default function PasswordGate({ children }: Props) {
 
   useEffect(() => {
     (async () => {
-      if (sessionStorage.getItem(SESSION_KEY) === "1") {
-        // Don't just trust the flag — confirm the session cookie it implies
-        // is actually still valid server-side. A stale flag with no (or an
-        // invalid) cookie would otherwise pass the UI gate here but silently
-        // fail every DB-backed API call afterward.
-        try {
-          const res = await fetch("/api/auth");
-          if (res.ok) {
-            setAuthenticated(true);
-          } else {
-            sessionStorage.removeItem(SESSION_KEY);
-          }
-        } catch {
-          // Network hiccup — don't lock the user out over a transient error.
+      // Always check the cookie directly, regardless of any sessionStorage
+      // flag — sessionStorage is cleared whenever the tab/app is fully closed
+      // (e.g. an iOS home-screen PWA relaunch), but the long-lived Cookie
+      // itself may still be valid. Gating this check behind sessionStorage
+      // would force a login screen every time even with a still-valid cookie.
+      try {
+        const res = await fetch("/api/auth");
+        if (res.ok) {
+          sessionStorage.setItem(SESSION_KEY, "1");
+          setAuthenticated(true);
+        } else {
+          sessionStorage.removeItem(SESSION_KEY);
+        }
+      } catch {
+        // Network hiccup — don't lock the user out over a transient error,
+        // but only if we previously had a locally-recorded successful login.
+        if (sessionStorage.getItem(SESSION_KEY) === "1") {
           setAuthenticated(true);
         }
       }

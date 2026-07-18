@@ -21,11 +21,13 @@ export async function POST(request: Request) {
   if (password === correct) {
     const token = siteSessionToken();
     const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+    const maxAge = 60 * 24 * 60 * 60; // 60 days — "ほぼログイン不要" レベルの長期保持
     const res = Response.json({ ok: true });
-    // Session cookie (no Max-Age) to match the existing sessionStorage-based
-    // "logged out when the tab closes" behavior. HttpOnly so client-side JS
-    // (and any XSS) can never read it back out.
-    res.headers.set("Set-Cookie", `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/${secure}`);
+    // HttpOnly so client-side JS (and any XSS) can never read it back out.
+    res.headers.set(
+      "Set-Cookie",
+      `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${secure}`
+    );
     return res;
   }
 
