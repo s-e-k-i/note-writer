@@ -1,0 +1,22 @@
+{
+  "name": "ネタ帳クイック入力",
+  "short_name": "ネタ帳クイック入力",
+  "description": "思いついたことをすぐにネタ帳へ保存する専用ページ",
+  "start_url": "/quick",
+  "scope": "/quick",
+  "display": "standalone",
+  "background_color": "#0e111f",
+  "theme_color": "#de6237",
+  "icons": [
+    {
+      "src": "/icons/quick-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/quick-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
